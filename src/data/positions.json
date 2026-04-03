@@ -1,0 +1,387 @@
+{
+  "last_updated": "2026-04-03",
+  "assigned_shares": [
+    {
+      "ticker": "HOOD",
+      "cost_basis_total": 88300,
+      "positions": [
+        {
+          "description": "Shares ($121, 300)",
+          "fronted": 36300
+        },
+        {
+          "description": "Shares ($130, 400)",
+          "fronted": 52000
+        }
+      ],
+      "active_cc": {
+        "ticker": "HOOD",
+        "type": "CC",
+        "strike": 78,
+        "contracts": 7,
+        "open_date": "2026-03-31",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 154,
+        "capital_fronted": 46361,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [
+        {
+          "ticker": "HOOD",
+          "type": "LEAPS",
+          "subtype": "Held",
+          "description": "LEAPS ($100, Jan 2027)",
+          "open_date": "2026-01-05",
+          "capital_fronted": 19938,
+          "source": "Ryan",
+          "notes": ""
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "ticker": "PLTR",
+      "cost_basis_total": 107500,
+      "positions": [
+        {
+          "description": "Shares (300, $175)",
+          "fronted": 52500
+        },
+        {
+          "description": "Shares (300, $185)",
+          "fronted": 55000
+        }
+      ],
+      "active_cc": {
+        "ticker": "PLTR",
+        "type": "CC",
+        "strike": 150,
+        "contracts": 6,
+        "open_date": "2026-03-31",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 252,
+        "capital_fronted": 85536,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [
+        {
+          "ticker": "PLTR",
+          "type": "LEAPS",
+          "subtype": "Held",
+          "description": "LEAPS ($140, June 2027)",
+          "open_date": "2026-03-26",
+          "capital_fronted": 24060,
+          "source": "Ryan",
+          "notes": ""
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "ticker": "SOFI",
+      "cost_basis_total": 85800,
+      "positions": [
+        {
+          "description": "Shares (3300, $26)",
+          "fronted": 85800
+        }
+      ],
+      "active_cc": {
+        "ticker": "SOFI",
+        "type": "CC",
+        "strike": 18,
+        "contracts": 33,
+        "open_date": "2026-04-01",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 165,
+        "capital_fronted": 51018,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [],
+      "notes": ""
+    },
+    {
+      "ticker": "SHOP",
+      "cost_basis_total": 29000,
+      "positions": [
+        {
+          "description": "Shares (200, $145)",
+          "fronted": 29000
+        }
+      ],
+      "active_cc": {
+        "ticker": "SHOP",
+        "type": "CC",
+        "strike": 132,
+        "contracts": 2,
+        "open_date": "2026-04-01",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 80,
+        "capital_fronted": 23676,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [
+        {
+          "ticker": "SHOP",
+          "type": "LEAPS",
+          "subtype": "Held",
+          "description": "LEAPS ($150, Jun 2027)",
+          "open_date": "2026-01-14",
+          "capital_fronted": 9700,
+          "source": "Ryan",
+          "notes": ""
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "ticker": "APP",
+      "cost_basis_total": 53000,
+      "positions": [
+        {
+          "description": "Shares (100, $530)",
+          "fronted": 53000
+        }
+      ],
+      "active_cc": {
+        "ticker": "APP",
+        "type": "CC",
+        "strike": 455,
+        "contracts": 1,
+        "open_date": "2026-04-01",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 140,
+        "capital_fronted": 38764,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [
+        {
+          "ticker": "APP",
+          "type": "LEAPS",
+          "subtype": "Held",
+          "description": "LEAPS ($550, Jan 2027)",
+          "open_date": "2026-01-14",
+          "capital_fronted": 19800,
+          "source": "Ryan",
+          "notes": ""
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "ticker": "CRDO",
+      "cost_basis_total": 81000,
+      "positions": [
+        {
+          "description": "Shares (600, $135)",
+          "fronted": 81000
+        }
+      ],
+      "active_cc": {
+        "ticker": "CRDO",
+        "type": "CC",
+        "strike": 114,
+        "contracts": 6,
+        "open_date": "2026-04-01",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 210,
+        "capital_fronted": 57924,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [],
+      "notes": ""
+    },
+    {
+      "ticker": "IREN",
+      "cost_basis_total": 52000,
+      "positions": [
+        {
+          "description": "Shares (1000, $52)",
+          "fronted": 52000
+        }
+      ],
+      "active_cc": {
+        "ticker": "IREN",
+        "type": "CC",
+        "strike": 41.5,
+        "contracts": 10,
+        "open_date": "2026-04-01",
+        "expiry_date": "2026-04-10",
+        "days_to_expiry": 7,
+        "premium_collected": 170,
+        "capital_fronted": 33780,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [
+        {
+          "ticker": "IREN",
+          "type": "LEAPS",
+          "subtype": "Held",
+          "description": "LEAPS ($45, Jan 2028)",
+          "open_date": "2026-02-04",
+          "capital_fronted": 16602,
+          "source": "Ryan",
+          "notes": ""
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "ticker": "CDE",
+      "cost_basis_total": 22000,
+      "positions": [
+        {
+          "description": "Shares (1000, $22)",
+          "fronted": 22000
+        }
+      ],
+      "active_cc": {
+        "ticker": "CDE",
+        "type": "CC",
+        "strike": 22,
+        "contracts": 10,
+        "open_date": "2026-03-31",
+        "expiry_date": "2026-05-01",
+        "days_to_expiry": 28,
+        "premium_collected": 460,
+        "capital_fronted": 17360,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [],
+      "notes": ""
+    },
+    {
+      "ticker": "NVDA",
+      "cost_basis_total": 18000,
+      "positions": [
+        {
+          "description": "Shares (100, $180)",
+          "fronted": 18000
+        }
+      ],
+      "active_cc": {
+        "ticker": "NVDA",
+        "type": "CC",
+        "strike": 180,
+        "contracts": 1,
+        "open_date": "2026-03-31",
+        "expiry_date": "2026-04-17",
+        "days_to_expiry": 14,
+        "premium_collected": 201,
+        "capital_fronted": 17104,
+        "source": "Ryan",
+        "notes": ""
+      },
+      "open_leaps": [],
+      "notes": ""
+    }
+  ],
+  "open_csps": [
+    {
+      "ticker": "KTOS",
+      "type": "CSP",
+      "strike": 77,
+      "contracts": 2,
+      "open_date": "2026-03-20",
+      "expiry_date": "2026-04-24",
+      "days_to_expiry": 21,
+      "premium_collected": 1000,
+      "capital_fronted": 15400,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "KTOS",
+      "type": "CSP",
+      "strike": 70,
+      "contracts": 2,
+      "open_date": "2026-03-24",
+      "expiry_date": "2026-04-24",
+      "days_to_expiry": 21,
+      "premium_collected": 700,
+      "capital_fronted": 14000,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "WDC",
+      "type": "CSP",
+      "strike": 260,
+      "contracts": 2,
+      "open_date": "2026-03-25",
+      "expiry_date": "2026-04-24",
+      "days_to_expiry": 21,
+      "premium_collected": 2560,
+      "capital_fronted": 52000,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "TSM",
+      "type": "CSP",
+      "strike": 315,
+      "contracts": 1,
+      "open_date": "2026-04-02",
+      "expiry_date": "2026-04-17",
+      "days_to_expiry": 14,
+      "premium_collected": 643,
+      "capital_fronted": 31500,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "CLS",
+      "type": "CSP",
+      "strike": 275,
+      "contracts": 1,
+      "open_date": "2026-04-02",
+      "expiry_date": "2026-04-17",
+      "days_to_expiry": 14,
+      "premium_collected": 1069,
+      "capital_fronted": 27500,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "CCJ",
+      "type": "CSP",
+      "strike": 105,
+      "contracts": 2,
+      "open_date": "2026-04-02",
+      "expiry_date": "2026-04-24",
+      "days_to_expiry": 21,
+      "premium_collected": 730,
+      "capital_fronted": 21000,
+      "source": "Ryan",
+      "notes": ""
+    },
+    {
+      "ticker": "GLW",
+      "type": "CSP",
+      "strike": 129,
+      "contracts": 2,
+      "open_date": "2026-04-02",
+      "expiry_date": "2026-05-01",
+      "days_to_expiry": 28,
+      "premium_collected": 1060,
+      "capital_fronted": 25800,
+      "source": "Ryan",
+      "notes": ""
+    }
+  ],
+  "open_leaps": []
+}
