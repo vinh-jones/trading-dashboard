@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.6.2";
+const VERSION = "1.7.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -83,6 +83,48 @@ function calcDTE(expiryISO) {
   today.setHours(0, 0, 0, 0);
   const expiry = new Date(expiryISO + "T00:00:00");
   return Math.max(0, Math.ceil((expiry - today) / (1000 * 60 * 60 * 24)));
+}
+
+function isMarketHours() {
+  const et  = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day  = et.getDay();
+  const time = et.getHours() + et.getMinutes() / 60;
+  return day >= 1 && day <= 5 && time >= 9.5 && time <= 16;
+}
+
+function useLiveVix(fallbackVix) {
+  const [vix, setVix]       = useState(fallbackVix);
+  const [source, setSource] = useState("manual");
+
+  useEffect(() => {
+    async function fetchVix() {
+      try {
+        const controller = new AbortController();
+        const timeout    = setTimeout(() => controller.abort(), 5000);
+        const r    = await fetch("/api/vix", { signal: controller.signal });
+        clearTimeout(timeout);
+        const data = await r.json();
+        if (data.vix != null) {
+          setVix(data.vix);
+          setSource("live");
+        } else {
+          setSource(fallbackVix != null ? "manual" : "null");
+        }
+      } catch {
+        setSource(fallbackVix != null ? "manual" : "null");
+      }
+    }
+
+    fetchVix();
+
+    const interval = setInterval(() => {
+      if (isMarketHours()) fetchVix();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return { vix, source };
 }
 
 function getVixBand(vix) {
@@ -1155,11 +1197,12 @@ function AccountBar() {
   const freeCashEst    = accountData.free_cash_est    ?? null;
   const freeCashPctEst = accountData.free_cash_pct_est ?? null;
 
-  // VIX band + deployment status
-  const band   = getVixBand(accountData.vix_current);
+  // Live VIX — fetches /api/vix on mount, falls back to account.vix_current
+  const { vix: liveVix, source: vixSource } = useLiveVix(accountData.vix_current);
+  const band   = getVixBand(liveVix);
   const status = !band || freeCashPctEst == null ? "unknown"
-    : freeCashPctEst < band.floorPct    ? "over"   // overdeployed — below cash floor
-    : freeCashPctEst > band.ceilingPct  ? "under"  // underdeployed — above cash ceiling
+    : freeCashPctEst < band.floorPct   ? "over"
+    : freeCashPctEst > band.ceilingPct ? "under"
     : "ok";
   const deltaAmt = accountData.account_value != null && band ? (() => {
     if (status === "over")  return (band.floorPct   - freeCashPctEst) * accountData.account_value;
@@ -1182,11 +1225,6 @@ function AccountBar() {
             : <span style={{ fontSize: 13, color: "#6e7681" }}>—</span>
           }
         </div>
-        {accountData.vix_current != null && (
-          <div style={{ fontSize: 11, color: "#8b949e", marginTop: 3 }}>
-            VIX {accountData.vix_current}
-          </div>
-        )}
         {band && (
           <div style={{ fontSize: 11, color: "#6e7681", marginTop: 1 }}>
             Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
@@ -1216,10 +1254,14 @@ function AccountBar() {
           <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? "#3fb950" : "#1f6feb", borderRadius: 3, transition: "width 0.3s" }} />
         </div>
       </div>
-      {accountData.vix_current != null && (
+      {liveVix != null && (
         <div>
           <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>VIX</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{accountData.vix_current}</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{liveVix.toFixed(2)}</div>
+          <div style={{ fontSize: 10, color: vixSource === "live" ? "#3fb950" : "#4e5a65", marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
+            {vixSource === "live" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#3fb950", display: "inline-block" }} />}
+            {vixSource === "live" ? "live" : vixSource === "manual" ? "manual" : "closed"}
+          </div>
         </div>
       )}
       <SyncButton />
