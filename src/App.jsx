@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.5.1";
+const VERSION = "1.6.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -83,6 +83,16 @@ function calcDTE(expiryISO) {
   today.setHours(0, 0, 0, 0);
   const expiry = new Date(expiryISO + "T00:00:00");
   return Math.max(0, Math.ceil((expiry - today) / (1000 * 60 * 60 * 24)));
+}
+
+function getVixBand(vix) {
+  if (vix == null) return null;
+  if (vix <= 12) return { label: "≤12",   floorPct: 0.40, ceilingPct: 0.50 };
+  if (vix <= 15) return { label: "12–15", floorPct: 0.30, ceilingPct: 0.40 };
+  if (vix <= 20) return { label: "15–20", floorPct: 0.20, ceilingPct: 0.25 };
+  if (vix <= 25) return { label: "20–25", floorPct: 0.10, ceilingPct: 0.15 };
+  if (vix <= 30) return { label: "25–30", floorPct: 0.05, ceilingPct: 0.10 };
+  return               { label: "≥30",   floorPct: 0.00, ceilingPct: 0.05 };
 }
 
 function allocColor(pct) {
@@ -1156,6 +1166,19 @@ function AccountBar() {
   const freeCashEst    = accountData.account_value != null ? accountData.account_value - capitalDeployed : null;
   const freeCashPctEst = accountData.account_value != null ? freeCashEst / accountData.account_value : null;
 
+  // VIX band + deployment status
+  const band   = getVixBand(accountData.vix_current);
+  const status = !band || freeCashPctEst == null ? "unknown"
+    : freeCashPctEst < band.floorPct    ? "over"   // overdeployed — below cash floor
+    : freeCashPctEst > band.ceilingPct  ? "under"  // underdeployed — above cash ceiling
+    : "ok";
+  const deltaAmt = accountData.account_value != null && band ? (() => {
+    if (status === "over")  return (band.floorPct   - freeCashPctEst) * accountData.account_value;
+    if (status === "under") return (freeCashPctEst  - band.ceilingPct) * accountData.account_value;
+    return null;
+  })() : null;
+  const statusColor = { ok: "#3fb950", over: "#f85149", under: "#e3b341", unknown: "#6e7681" }[status];
+
   return (
     <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
       <div>
@@ -1166,12 +1189,21 @@ function AccountBar() {
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Free Cash</div>
         <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
           {freeCashEst != null
-            ? <>
-                {formatDollarsFull(freeCashEst)}{" "}
-                <span style={{ fontSize: 12, color: "#8b949e" }}>({(freeCashPctEst * 100).toFixed(1)}%)</span>
-              </>
+            ? <>{formatDollarsFull(freeCashEst)}{" "}<span style={{ fontSize: 12, color: "#8b949e" }}>({(freeCashPctEst * 100).toFixed(1)}%)</span></>
             : <span style={{ fontSize: 13, color: "#6e7681" }}>—</span>
           }
+        </div>
+        {band && (
+          <div style={{ fontSize: 11, color: "#6e7681", marginTop: 2 }}>
+            Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
+            <span style={{ marginLeft: 6, color: "#4e5a65" }}>VIX {accountData.vix_current} · {band.label}</span>
+          </div>
+        )}
+        <div style={{ fontSize: 11, fontWeight: 500, color: statusColor, marginTop: 3 }}>
+          {status === "ok"      && "✓ Within band"}
+          {status === "over"    && `⚠ ${((band.floorPct - freeCashPctEst) * 100).toFixed(1)}% below floor · ~${formatDollars(deltaAmt)} to free up`}
+          {status === "under"   && `↓ ${((freeCashPctEst - band.ceilingPct) * 100).toFixed(1)}% above ceiling · ~${formatDollars(deltaAmt)} to deploy`}
+          {status === "unknown" && "Set VIX in account.json to activate"}
         </div>
       </div>
       <div>
