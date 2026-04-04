@@ -1277,8 +1277,8 @@ function SyncButton() {
         const syncData = await syncRes.json();
         if (!syncData.ok) throw new Error(syncData.error ?? "Sync failed");
 
-        // Re-fetch fresh data from Supabase
-        const dataRes = await fetch("/api/data");
+        // Re-fetch fresh data from Supabase (cache-bust to avoid stale CDN response)
+        const dataRes = await fetch(`/api/data?t=${Date.now()}`);
         const data    = await dataRes.json();
         if (data.ok) {
           refreshData(data);

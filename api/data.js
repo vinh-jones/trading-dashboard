@@ -166,7 +166,7 @@ export default async function handler(req, res) {
       notes:                 "",
     } : null;
 
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Content-Type", "application/json");
     res.status(200).json({ ok: true, trades, positions, account });
   } catch (err) {
