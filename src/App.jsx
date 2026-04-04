@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.6.0";
+const VERSION = "1.6.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1145,26 +1145,15 @@ function SyncButton() {
 // ─── ACCOUNT SUMMARY BAR ───────────────────────────────────────────────────
 
 function AccountBar() {
-  const { account: accountData, positions } = useData();
+  const { account: accountData } = useData();
   const mtd      = accountData.month_to_date_premium;
   const baseline = accountData.monthly_targets?.baseline ?? 15000;
   const stretch  = accountData.monthly_targets?.stretch  ?? 25000;
   const progress = Math.min((mtd / baseline) * 100, 100);
 
-  // Auto-calculate free cash from positions instead of relying on manual entry
-  const assignedShares  = positions?.assigned_shares ?? [];
-  const openCSPs        = positions?.open_csps       ?? [];
-  const standaloneLeaps = positions?.open_leaps      ?? [];
-
-  const capitalDeployed = (
-    assignedShares.reduce((s, p) => s + (p.cost_basis_total || 0), 0) +
-    assignedShares.flatMap(p => p.open_leaps ?? []).reduce((s, l) => s + (l.capital_fronted || 0), 0) +
-    openCSPs.reduce((s, c) => s + (c.capital_fronted || 0), 0) +
-    standaloneLeaps.reduce((s, l) => s + (l.capital_fronted || 0), 0)
-  );
-
-  const freeCashEst    = accountData.account_value != null ? accountData.account_value - capitalDeployed : null;
-  const freeCashPctEst = accountData.account_value != null ? freeCashEst / accountData.account_value : null;
+  // Free cash comes directly from the Allocations sheet (cell I7) via sync/api
+  const freeCashEst    = accountData.free_cash_est    ?? null;
+  const freeCashPctEst = accountData.free_cash_pct_est ?? null;
 
   // VIX band + deployment status
   const band   = getVixBand(accountData.vix_current);
