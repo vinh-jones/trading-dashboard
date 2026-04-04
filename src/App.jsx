@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.3.1";
+const VERSION = "1.4.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -83,6 +83,12 @@ function calcDTE(expiryISO) {
   today.setHours(0, 0, 0, 0);
   const expiry = new Date(expiryISO + "T00:00:00");
   return Math.max(0, Math.ceil((expiry - today) / (1000 * 60 * 60 * 24)));
+}
+
+function allocColor(pct) {
+  if (pct >= 0.15) return "#f85149";  // red — at hard ceiling
+  if (pct >= 0.10) return "#e3b341";  // amber — approaching limit
+  return "#8b949e";                    // gray — normal
 }
 
 function formatExpiry(expiryISO) {
@@ -800,7 +806,7 @@ function SixtyCheck() {
 // ─── OPEN POSITIONS TAB ────────────────────────────────────────────────────
 
 function OpenPositionsTab() {
-  const { positions } = useData();
+  const { positions, account } = useData();
   const { assigned_shares, open_csps, open_leaps } = positions;
 
   // Collect ALL open LEAPS: standalone ones + those nested inside assigned shares cards
@@ -808,6 +814,23 @@ function OpenPositionsTab() {
     ...open_leaps,
     ...assigned_shares.flatMap(pos => pos.open_leaps ?? []),
   ];
+
+  // ── Per-ticker allocation % — computed once, used in all three sections ──
+  const tickerAllocPct = {};
+  const accountValue = account?.account_value || 0;
+  if (accountValue > 0) {
+    open_csps.forEach(p => {
+      tickerAllocPct[p.ticker] = (tickerAllocPct[p.ticker] || 0) + (p.capital_fronted || 0);
+    });
+    assigned_shares.forEach(s => {
+      const total = s.positions.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
+      tickerAllocPct[s.ticker] = (tickerAllocPct[s.ticker] || 0) + total;
+    });
+    allOpenLeaps.forEach(l => {
+      tickerAllocPct[l.ticker] = (tickerAllocPct[l.ticker] || 0) + (l.capital_fronted || 0);
+    });
+    Object.keys(tickerAllocPct).forEach(t => { tickerAllocPct[t] /= accountValue; });
+  }
 
   const sectionHeader = (title) => (
     <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
@@ -831,7 +854,7 @@ function OpenPositionsTab() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
+                  {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI", "Alloc"].map((h) => (
                     <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {h}
                     </th>
@@ -874,6 +897,9 @@ function OpenPositionsTab() {
                       <td style={{ padding: "9px 10px", color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
                       <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatDollarsFull(csp.capital_fronted)}</td>
                       <td style={{ padding: "9px 10px", color: "#58a6ff", fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
+                      <td style={{ padding: "9px 10px", fontWeight: 600, color: allocColor(tickerAllocPct[csp.ticker] || 0) }}>
+                        {tickerAllocPct[csp.ticker] != null ? `${(tickerAllocPct[csp.ticker] * 100).toFixed(1)}%` : "—"}
+                      </td>
                     </tr>
                   );
                 })}
@@ -897,9 +923,16 @@ function OpenPositionsTab() {
                   {/* Header */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
                     <span style={{ fontSize: 16, fontWeight: 700, color: "#e6edf3" }}>{pos.ticker}</span>
-                    <span style={{ fontSize: 13, color: "#8b949e" }}>
-                      Cost basis: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
-                    </span>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                      <span style={{ fontSize: 13, color: "#8b949e" }}>
+                        Cost basis: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
+                      </span>
+                      {tickerAllocPct[pos.ticker] != null && (
+                        <span style={{ fontSize: 13, fontWeight: 600, color: allocColor(tickerAllocPct[pos.ticker]) }}>
+                          {(tickerAllocPct[pos.ticker] * 100).toFixed(1)}% of acct
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Lots */}
@@ -958,8 +991,15 @@ function OpenPositionsTab() {
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginRight: 12 }}>{l.ticker}</span>
                   <span style={{ fontSize: 13, color: "#c49df2" }}>{l.description}</span>
                 </div>
-                <div style={{ fontSize: 14, color: "#8b949e" }}>
-                  Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                  <span style={{ fontSize: 14, color: "#8b949e" }}>
+                    Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
+                  </span>
+                  {tickerAllocPct[l.ticker] != null && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: allocColor(tickerAllocPct[l.ticker]) }}>
+                      {(tickerAllocPct[l.ticker] * 100).toFixed(1)}%
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
