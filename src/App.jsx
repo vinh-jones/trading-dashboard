@@ -1409,9 +1409,9 @@ function AccountBar({ captureRate }) {
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Pipeline</div>
         {hasPipeline ? (
           <>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#3fb950" }}>~{formatDollarsFull(expectedPipeline)}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{formatDollarsFull(grossOpenPremium)}</div>
             <div style={{ fontSize: 11, color: "#8b949e", marginTop: 1 }}>
-              {formatDollarsFull(grossOpenPremium)} gross · {Math.round(captureRate * 100)}%
+              {formatDollarsFull(expectedPipeline)} est.
             </div>
           </>
         ) : (
