@@ -4,7 +4,7 @@
   "cost_basis": 875131.25,
   "free_cash_est": 51632.74,
   "free_cash_pct_est": 0.059,
-  "vix_current": null,
+  "vix_current": 23.87,
   "vix_band": "20-25",
   "monthly_targets": {
     "baseline": 15000,

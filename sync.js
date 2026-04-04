@@ -38,12 +38,11 @@ async function main() {
   const accountJson = {
     ...account,
     // ↓ manual fields — preserved from existing file, NOT overwritten by sync
-    free_cash_est:     existing.free_cash_est     ?? null,
-    free_cash_pct_est: existing.free_cash_pct_est ?? null,
-    vix_current:       existing.vix_current       ?? null,
-    vix_band:          existing.vix_band          ?? null,
-    monthly_targets:   existing.monthly_targets   ?? { baseline: 15000, stretch: 25000 },
-    notes: existing.notes ?? "Update free_cash_est + free_cash_pct_est manually from Fidelity.",
+    // free_cash_est + free_cash_pct_est now come from the sheet (Allocations I7), not preserved here
+    vix_current:     existing.vix_current     ?? null,
+    vix_band:        existing.vix_band        ?? null,
+    monthly_targets: existing.monthly_targets ?? { baseline: 15000, stretch: 25000 },
+    notes: existing.notes ?? "",
   };
 
   // ── Write files ──
