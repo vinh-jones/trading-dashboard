@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -135,6 +135,18 @@ function getVixBand(vix) {
   if (vix <= 25) return { label: "20–25", floorPct: 0.10, ceilingPct: 0.15 };
   if (vix <= 30) return { label: "25–30", floorPct: 0.05, ceilingPct: 0.10 };
   return               { label: "≥30",   floorPct: 0.00, ceilingPct: 0.05 };
+}
+
+function calcPipeline(positions, captureRate) {
+  const openPositions = [
+    ...positions.open_csps,
+    ...positions.assigned_shares
+      .filter(s => s.active_cc)
+      .map(s => s.active_cc),
+  ];
+  const grossOpenPremium = openPositions.reduce((sum, p) => sum + (p.premium_collected || 0), 0);
+  const expectedPipeline = Math.round(grossOpenPremium * captureRate);
+  return { grossOpenPremium, expectedPipeline, hasPositions: openPositions.length > 0 };
 }
 
 function allocColor(pct) {
@@ -465,8 +477,8 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
 
 // ─── CALENDAR TAB ───────────────────────────────────────────────────────────
 
-function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay }) {
-  const { trades: TRADES } = useData();
+function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay, captureRate, setCaptureRate }) {
+  const { trades: TRADES, positions, account } = useData();
   const [calMonth, setCalMonth] = useState(3); // default to April
 
   const monthInfo = MONTHS[calMonth];
@@ -544,10 +556,62 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
     return Object.values(map).sort((a, b) => b.premium - a.premium);
   }, [selectedTicker]);
 
-  const selectedDayTrades = useMemo(() => {
-    if (!selectedDay) return [];
-    return dailyData[selectedDay]?.trades || [];
-  }, [selectedDay, dailyData]);
+  const expiryMap = useMemo(() => {
+    const map = {};
+    const openPositions = [
+      ...positions.open_csps,
+      ...positions.assigned_shares
+        .filter(s => s.active_cc)
+        .map(s => s.active_cc),
+    ].filter(p => {
+      if (selectedTicker && p.ticker !== selectedTicker) return false;
+      if (selectedType && p.type !== selectedType) return false;
+      return true;
+    });
+    openPositions.forEach(p => {
+      if (!p.expiry_date) return;
+      const key = p.expiry_date;
+      if (!map[key]) map[key] = { tickers: [], totalPremium: 0, positions: [] };
+      map[key].tickers.push(p.ticker);
+      map[key].totalPremium += (p.premium_collected || 0);
+      map[key].positions.push(p);
+    });
+    return map;
+  }, [positions, selectedTicker, selectedType]);
+
+  const monthClosedTrades = useMemo(() => {
+    const result = [];
+    Object.entries(dailyData).forEach(([key, val]) => {
+      const [ky, km] = key.split("-").map(Number);
+      if (ky === monthInfo.year && km - 1 === monthInfo.month) {
+        result.push(...val.trades);
+      }
+    });
+    return result.sort((a, b) => (a.closeDate || 0) - (b.closeDate || 0));
+  }, [dailyData, calMonth]);
+
+  const monthExpiringPositions = useMemo(() => {
+    const result = [];
+    Object.entries(expiryMap).forEach(([key, val]) => {
+      const [ky, km] = key.split("-").map(Number);
+      if (ky === monthInfo.year && km - 1 === monthInfo.month) {
+        val.positions.forEach(p => result.push(p));
+      }
+    });
+    return result.sort((a, b) => (a.expiry_date || "").localeCompare(b.expiry_date || ""));
+  }, [expiryMap, calMonth]);
+
+  // Pipeline values for the planning panel
+  const { grossOpenPremium, expectedPipeline, hasPositions: hasPipelinePositions } = calcPipeline(positions, captureRate);
+  const mtdCollected      = account?.month_to_date_premium ?? 0;
+  const pipelineBaseline  = account?.monthly_targets?.baseline ?? 15000;
+  const impliedTotal      = mtdCollected + expectedPipeline;
+  const gapToBaseline     = pipelineBaseline - impliedTotal;
+
+  // Unified display: selected day, or whole month when nothing selected
+  const displayClosed   = selectedDay ? (dailyData[selectedDay]?.trades || []) : monthClosedTrades;
+  const displayExpiring = selectedDay ? (expiryMap[selectedDay]?.positions || []) : monthExpiringPositions;
+  const hasDisplay      = displayClosed.length > 0 || displayExpiring.length > 0;
 
   function getCellBg(premium) {
     const intensity = Math.min(Math.abs(premium) / maxAbsPremium, 1);
@@ -589,6 +653,55 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
             {ts.type} ({ts.count}) · {formatDollars(ts.premium)}
           </button>
         ))}
+      </div>
+
+      {/* Pipeline planning panel */}
+      <div style={{ padding: "16px 20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
+            Premium Pipeline
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#8b949e" }}>
+            Expected capture:
+            <select
+              value={captureRate}
+              onChange={e => setCaptureRate(parseFloat(e.target.value))}
+              style={{ background: "#0d1117", border: "1px solid #30363d", color: "#e6edf3", borderRadius: 4, padding: "3px 6px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}
+            >
+              <option value={0.50}>50%</option>
+              <option value={0.60}>60%</option>
+              <option value={0.70}>70%</option>
+              <option value={0.80}>80%</option>
+            </select>
+          </div>
+        </div>
+        {hasPipelinePositions ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+            {[
+              { label: "Gross open premium",                value: formatDollarsFull(grossOpenPremium), color: "#e6edf3" },
+              { label: `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: "#3fb950" },
+              { label: "MTD collected",                     value: formatDollarsFull(mtdCollected), color: "#e6edf3" },
+              { label: "Implied month total",               value: `~${formatDollarsFull(impliedTotal)}`, color: "#e6edf3" },
+              {
+                label: "Gap to baseline",
+                value: gapToBaseline > 0
+                  ? `-${formatDollarsFull(gapToBaseline)} to ${formatDollars(pipelineBaseline)}`
+                  : `✓ +${formatDollarsFull(Math.abs(gapToBaseline))} above`,
+                color: gapToBaseline > 0 ? "#f85149" : "#3fb950",
+              },
+            ].map(({ label, value, color }) => (
+              <div key={label}>
+                <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: "#6e7681" }}>No open CSPs or CCs — pipeline is empty.</div>
+        )}
+        <div style={{ fontSize: 11, color: "#4e5a65", marginTop: 10 }}>
+          Across all open expirations · assuming {Math.round(captureRate * 100)}% capture on open positions
+        </div>
       </div>
 
       {/* Month selector + monthly total */}
@@ -639,18 +752,20 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
               const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
               const data = dailyData[key];
               const hasTrades = inMonth && data && data.count > 0;
+              const hasExpiry = inMonth && !!expiryMap[key];
+              const isClickable = hasTrades || hasExpiry;
               const isSelected = selectedDay === key;
               const isWeekend = day.getDay() === 0 || day.getDay() === 6;
               return (
                 <div
                   key={di}
-                  onClick={() => { if (hasTrades) setSelectedDay(isSelected ? null : key); }}
+                  onClick={() => { if (isClickable) setSelectedDay(isSelected ? null : key); }}
                   style={{
                     padding: "10px 12px", minHeight: 80,
                     borderBottom: wi < weeks.length - 1 ? "1px solid #21262d" : "none",
                     borderRight: di < 6 ? "1px solid #161b22" : "none",
                     background: isSelected ? "#1c2333" : hasTrades ? getCellBg(data.premium) : (isWeekend && inMonth ? "#0a0e14" : "#0d1117"),
-                    cursor: hasTrades ? "pointer" : "default",
+                    cursor: isClickable ? "pointer" : "default",
                     opacity: inMonth ? 1 : 0.25,
                     transition: "background 0.15s",
                     border: isSelected ? "1px solid #58a6ff" : "1px solid transparent",
@@ -672,9 +787,20 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                       </div>
                     </>
                   )}
-                  {!hasTrades && inMonth && !isWeekend && (
+                  {!hasTrades && inMonth && !isWeekend && !hasExpiry && (
                     <div style={{ fontSize: 13, color: "#21262d" }}>$0</div>
                   )}
+                  {hasExpiry && (() => {
+                    const { tickers, totalPremium } = expiryMap[key];
+                    const shown = tickers.slice(0, 3);
+                    const extra = tickers.length - shown.length;
+                    return (
+                      <div style={{ marginTop: hasTrades ? 4 : 0, fontSize: 10, color: "#58a6ff", background: "rgba(88,166,255,0.08)", borderRadius: 2, padding: "2px 4px", lineHeight: 1.5 }}>
+                        ⚑ {shown.join(" · ")}{extra > 0 ? ` +${extra}` : ""}{" "}
+                        <span style={{ color: "#6e7681" }}>${totalPremium.toLocaleString()} gross</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -705,22 +831,26 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
         ))}
       </div>
 
-      {/* Selected day detail */}
-      {selectedDay && selectedDayTrades.length > 0 && (
+      {/* Unified detail panel — selected day or whole month default */}
+      {hasDisplay && (
         <div style={{ marginTop: 20, padding: "16px 20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
-              {new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+              {selectedDay
+                ? new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+                : `${MONTHS[calMonth].label} 2026 — All Transactions`}
             </div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: dailyData[selectedDay].premium >= 0 ? "#3fb950" : "#f85149" }}>
-              {formatDollarsFull(dailyData[selectedDay].premium)} · {selectedDayTrades.length} trade{selectedDayTrades.length !== 1 ? "s" : ""}
-            </div>
+            {selectedDay && displayClosed.length > 0 && dailyData[selectedDay] && (
+              <div style={{ fontSize: 15, fontWeight: 600, color: dailyData[selectedDay].premium >= 0 ? "#3fb950" : "#f85149" }}>
+                {formatDollarsFull(dailyData[selectedDay].premium)} · {displayClosed.length} trade{displayClosed.length !== 1 ? "s" : ""}
+              </div>
+            )}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Type", "", "Strike", "Ct", "Open", "Close", "Days", "Premium", "Kept"].map((h) => (
+                  {["Ticker", "Type", "Status", "Strike", "Ct", "Open", "Close/Expiry", "Days", "Premium", "Kept"].map((h) => (
                     <th key={h} style={{ padding: "8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {h}
                     </th>
@@ -728,18 +858,18 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                 </tr>
               </thead>
               <tbody>
-                {selectedDayTrades.map((t, i) => {
+                {displayClosed.map((t, i) => {
                   const tc = TYPE_COLORS[t.type] || {};
                   const isLoss = t.premium < 0;
                   return (
-                    <tr key={i} style={{ borderBottom: "1px solid #161b22" }}>
+                    <tr key={`closed-${i}`} style={{ borderBottom: "1px solid #161b22" }}>
                       <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{t.ticker}</td>
                       <td style={{ padding: "7px 8px" }}>
                         <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
                           {t.type}
                         </span>
                       </td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</td>
                       <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{t.strike ? `$${t.strike}` : "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.open}</td>
@@ -749,6 +879,34 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                         {formatDollarsFull(t.premium)}
                       </td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.kept}</td>
+                    </tr>
+                  );
+                })}
+                {displayClosed.length > 0 && displayExpiring.length > 0 && (
+                  <tr>
+                    <td colSpan={10} style={{ padding: "8px", textAlign: "center", fontSize: 12, color: "#6e7681", borderTop: "1px solid #21262d", borderBottom: "1px solid #21262d" }}>
+                      ── Open positions expiring ──
+                    </td>
+                  </tr>
+                )}
+                {displayExpiring.map((p, i) => {
+                  const tc = TYPE_COLORS[p.type] || {};
+                  return (
+                    <tr key={`expiry-${i}`} style={{ borderBottom: "1px solid #161b22", background: "#1c2333" }}>
+                      <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{p.ticker}</td>
+                      <td style={{ padding: "7px 8px" }}>
+                        <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
+                          {p.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: "7px 8px", fontSize: 12, color: "#58a6ff" }}>Expires {formatExpiry(p.expiry_date)}</td>
+                      <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{p.strike ? `$${p.strike}` : "—"}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.contracts || "—"}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
+                      <td style={{ padding: "7px 8px", color: "#58a6ff" }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
+                      <td style={{ padding: "7px 8px", fontWeight: 600, color: "#3fb950" }}>{formatDollarsFull(p.premium_collected)}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
                     </tr>
                   );
                 })}
@@ -1186,8 +1344,8 @@ function SyncButton() {
 
 // ─── ACCOUNT SUMMARY BAR ───────────────────────────────────────────────────
 
-function AccountBar() {
-  const { account: accountData } = useData();
+function AccountBar({ captureRate }) {
+  const { account: accountData, positions } = useData();
   const mtd      = accountData.month_to_date_premium;
   const baseline = accountData.monthly_targets?.baseline ?? 15000;
   const stretch  = accountData.monthly_targets?.stretch  ?? 25000;
@@ -1210,6 +1368,8 @@ function AccountBar() {
     return null;
   })() : null;
   const statusColor = { ok: "#3fb950", over: "#f85149", under: "#e3b341", unknown: "#6e7681" }[status];
+
+  const { grossOpenPremium, expectedPipeline, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
 
   return (
     <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -1244,6 +1404,19 @@ function AccountBar() {
       <div>
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>MTD Premium</div>
         <div style={{ fontSize: 15, fontWeight: 600, color: mtd >= baseline ? "#3fb950" : "#e6edf3" }}>{formatDollarsFull(mtd)}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Pipeline</div>
+        {hasPipeline ? (
+          <>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#3fb950" }}>~{formatDollarsFull(expectedPipeline)}</div>
+            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 1 }}>
+              {formatDollarsFull(grossOpenPremium)} gross · {Math.round(captureRate * 100)}%
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 15, color: "#6e7681" }}>—</div>
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 160 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
@@ -1299,6 +1472,7 @@ export default function TradeDashboard() {
   const [selectedType, setSelectedType]         = useState(null);
   const [selectedDuration, setSelectedDuration] = useState(null);
   const [selectedDay, setSelectedDay]           = useState(null);
+  const [captureRate, setCaptureRate]           = useState(0.60);
 
   const tabStyle = (tab) => ({
     padding: "10px 24px", fontSize: 15, fontFamily: "inherit",
@@ -1321,7 +1495,7 @@ export default function TradeDashboard() {
           <span style={{ fontSize: 11, color: "#30363d" }}>v{VERSION}</span>
         </div>
 
-        <AccountBar />
+        <AccountBar captureRate={captureRate} />
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #21262d", marginBottom: 20 }}>
@@ -1379,6 +1553,7 @@ export default function TradeDashboard() {
             selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
             selectedType={selectedType}     setSelectedType={setSelectedType}
             selectedDay={selectedDay}       setSelectedDay={setSelectedDay}
+            captureRate={captureRate}       setCaptureRate={setCaptureRate}
           />
         )}
         {activeTab === "positions" && <OpenPositionsTab />}
