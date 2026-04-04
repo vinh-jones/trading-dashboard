@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -815,22 +815,34 @@ function OpenPositionsTab() {
     ...assigned_shares.flatMap(pos => pos.open_leaps ?? []),
   ];
 
-  // ── Per-ticker allocation % — computed once, used in all three sections ──
-  const tickerAllocPct = {};
-  const accountValue = account?.account_value || 0;
-  if (accountValue > 0) {
-    open_csps.forEach(p => {
-      tickerAllocPct[p.ticker] = (tickerAllocPct[p.ticker] || 0) + (p.capital_fronted || 0);
-    });
-    assigned_shares.forEach(s => {
-      const total = s.positions.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
-      tickerAllocPct[s.ticker] = (tickerAllocPct[s.ticker] || 0) + total;
-    });
-    allOpenLeaps.forEach(l => {
-      tickerAllocPct[l.ticker] = (tickerAllocPct[l.ticker] || 0) + (l.capital_fronted || 0);
-    });
-    Object.keys(tickerAllocPct).forEach(t => { tickerAllocPct[t] /= accountValue; });
-  }
+  // ── Per-ticker allocation breakdown — drives the chart at the top ──
+  const accountValue = account?.account_value || 1;
+  const allocMap = {};
+  open_csps.forEach(p => {
+    if (!allocMap[p.ticker]) allocMap[p.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    allocMap[p.ticker].csp += (p.capital_fronted || 0);
+  });
+  assigned_shares.forEach(s => {
+    const sharesTotal = s.positions.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
+    const leapsTotal  = (s.open_leaps ?? []).reduce((sum, l) => sum + (l.capital_fronted || 0), 0);
+    if (!allocMap[s.ticker]) allocMap[s.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    allocMap[s.ticker].shares += sharesTotal;
+    allocMap[s.ticker].leaps  += leapsTotal;
+  });
+  open_leaps.forEach(l => {
+    if (!allocMap[l.ticker]) allocMap[l.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    allocMap[l.ticker].leaps += (l.capital_fronted || 0);
+  });
+  const allocRows = Object.entries(allocMap)
+    .map(([ticker, { csp, shares, leaps }]) => ({
+      ticker,
+      cspPct:    csp    / accountValue,
+      sharesPct: shares / accountValue,
+      leapsPct:  leaps  / accountValue,
+      totalPct:  (csp + shares + leaps) / accountValue,
+    }))
+    .sort((a, b) => b.totalPct - a.totalPct);
+  const SCALE = Math.max(allocRows[0]?.totalPct ?? 0.20, 0.20); // scale to largest bar, min 20%
 
   const sectionHeader = (title) => (
     <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
@@ -846,6 +858,46 @@ function OpenPositionsTab() {
 
   return (
     <div>
+      {/* ── Allocation Chart ── */}
+      {panel(
+        <>
+          {sectionHeader("Portfolio Allocation by Ticker")}
+          <div>
+            {allocRows.map((row) => {
+              const sharesW = (row.sharesPct / SCALE) * 100;
+              const leapsW  = (row.leapsPct  / SCALE) * 100;
+              const cspW    = (row.cspPct    / SCALE) * 100;
+              return (
+                <div key={row.ticker} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
+                  <div style={{ width: 52, fontSize: 12, fontWeight: 700, color: "#e6edf3", textAlign: "right", flexShrink: 0 }}>
+                    {row.ticker}
+                  </div>
+                  <div style={{ flex: 1, height: 16, background: "#21262d", borderRadius: 2, position: "relative" }}>
+                    {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: "#da3633", borderRadius: "2px 0 0 2px" }} />}
+                    {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: "#c49df2" }} />}
+                    {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: "#58a6ff", borderRadius: "0 2px 2px 0" }} />}
+                    {/* Threshold reference lines */}
+                    <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#e3b341", opacity: 0.8, zIndex: 2 }} />
+                    <div style={{ position: "absolute", left: `${(0.15 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#f85149", opacity: 0.8, zIndex: 2 }} />
+                  </div>
+                  <div style={{ width: 42, fontSize: 12, fontWeight: 600, color: allocColor(row.totalPct), textAlign: "right", flexShrink: 0 }}>
+                    {(row.totalPct * 100).toFixed(1)}%
+                  </div>
+                </div>
+              );
+            })}
+            {/* Legend */}
+            <div style={{ display: "flex", gap: 16, marginTop: 14, paddingLeft: 62, fontSize: 11, color: "#6e7681" }}>
+              <span><span style={{ color: "#da3633" }}>■</span> Shares</span>
+              <span><span style={{ color: "#c49df2" }}>■</span> LEAPS</span>
+              <span><span style={{ color: "#58a6ff" }}>■</span> CSP</span>
+              <span style={{ marginLeft: 8 }}><span style={{ color: "#e3b341" }}>│</span> 10%</span>
+              <span><span style={{ color: "#f85149" }}>│</span> 15%</span>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── Open CSPs ── */}
       {panel(
         <>
@@ -854,7 +906,7 @@ function OpenPositionsTab() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI", "Alloc"].map((h) => (
+                  {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
                     <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {h}
                     </th>
@@ -897,9 +949,6 @@ function OpenPositionsTab() {
                       <td style={{ padding: "9px 10px", color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
                       <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatDollarsFull(csp.capital_fronted)}</td>
                       <td style={{ padding: "9px 10px", color: "#58a6ff", fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
-                      <td style={{ padding: "9px 10px", fontWeight: 600, color: allocColor(tickerAllocPct[csp.ticker] || 0) }}>
-                        {tickerAllocPct[csp.ticker] != null ? `${(tickerAllocPct[csp.ticker] * 100).toFixed(1)}%` : "—"}
-                      </td>
                     </tr>
                   );
                 })}
@@ -923,16 +972,9 @@ function OpenPositionsTab() {
                   {/* Header */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
                     <span style={{ fontSize: 16, fontWeight: 700, color: "#e6edf3" }}>{pos.ticker}</span>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                      <span style={{ fontSize: 13, color: "#8b949e" }}>
-                        Cost basis: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
-                      </span>
-                      {tickerAllocPct[pos.ticker] != null && (
-                        <span style={{ fontSize: 13, fontWeight: 600, color: allocColor(tickerAllocPct[pos.ticker]) }}>
-                          {(tickerAllocPct[pos.ticker] * 100).toFixed(1)}% of acct
-                        </span>
-                      )}
-                    </div>
+                    <span style={{ fontSize: 13, color: "#8b949e" }}>
+                      Cost basis: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
+                    </span>
                   </div>
 
                   {/* Lots */}
@@ -991,15 +1033,8 @@ function OpenPositionsTab() {
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginRight: 12 }}>{l.ticker}</span>
                   <span style={{ fontSize: 13, color: "#c49df2" }}>{l.description}</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                  <span style={{ fontSize: 14, color: "#8b949e" }}>
-                    Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
-                  </span>
-                  {tickerAllocPct[l.ticker] != null && (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: allocColor(tickerAllocPct[l.ticker]) }}>
-                      {(tickerAllocPct[l.ticker] * 100).toFixed(1)}%
-                    </span>
-                  )}
+                <div style={{ fontSize: 14, color: "#8b949e" }}>
+                  Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
                 </div>
               </div>
             ))}
@@ -1188,7 +1223,7 @@ export default function TradeDashboard() {
       .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
   }, []);
 
-  const [activeTab, setActiveTab] = useState("summary");
+  const [activeTab, setActiveTab] = useState("positions");
   const [selectedTicker, setSelectedTicker]     = useState(null);
   const [selectedType, setSelectedType]         = useState(null);
   const [selectedDuration, setSelectedDuration] = useState(null);
@@ -1219,14 +1254,14 @@ export default function TradeDashboard() {
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #21262d", marginBottom: 20 }}>
+          <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
+            Open Positions
+          </button>
           <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
             Q1 Summary
           </button>
           <button style={tabStyle("calendar")} onClick={() => setActiveTab("calendar")}>
             Monthly Calendar
-          </button>
-          <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
-            Open Positions
           </button>
         </div>
 
