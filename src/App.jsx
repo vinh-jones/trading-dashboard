@@ -58,6 +58,8 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const VERSION = "1.2.0";
+
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
 function formatDollars(n) {
@@ -116,7 +118,12 @@ function useData() { return useContext(DataContext); }
 // ─── SUMMARY TAB ───────────────────────────────────────────────────────────
 
 function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
-  const { trades: TRADES } = useData();
+  const { trades: TRADES_ALL } = useData();
+  // Scope the entire Summary tab to Q1 2026 (Jan 1 – Mar 31)
+  const Q1_START = new Date("2026-01-01T00:00:00");
+  const Q1_END   = new Date("2026-03-31T23:59:59");
+  const TRADES = TRADES_ALL.filter(t => t.closeDate && t.closeDate >= Q1_START && t.closeDate <= Q1_END);
+
   const DURATION_BUCKETS = [
     { label: "0-1d",   min: 0,  max: 1    },
     { label: "2-3d",   min: 2,  max: 3    },
@@ -1149,8 +1156,9 @@ export default function TradeDashboard() {
         <h1 style={{ fontSize: 22, fontWeight: 600, color: "#e6edf3", marginBottom: 4, letterSpacing: "0.5px" }}>
           TRADE DASHBOARD
         </h1>
-        <div style={{ fontSize: 13, color: "#6e7681", marginBottom: 16 }}>
-          as of {account.last_updated}
+        <div style={{ fontSize: 13, color: "#6e7681", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <span>as of {account.last_updated}</span>
+          <span style={{ fontSize: 11, color: "#30363d" }}>v{VERSION}</span>
         </div>
 
         <AccountBar />
