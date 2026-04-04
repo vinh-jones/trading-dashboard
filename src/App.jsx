@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.6.1";
+const VERSION = "1.6.2";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1169,7 +1169,7 @@ function AccountBar() {
   const statusColor = { ok: "#3fb950", over: "#f85149", under: "#e3b341", unknown: "#6e7681" }[status];
 
   return (
-    <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
       <div>
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Account</div>
         <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{formatDollarsFull(accountData.account_value)}</div>
@@ -1182,18 +1182,26 @@ function AccountBar() {
             : <span style={{ fontSize: 13, color: "#6e7681" }}>—</span>
           }
         </div>
-        {band && (
-          <div style={{ fontSize: 11, color: "#6e7681", marginTop: 2 }}>
-            Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
-            <span style={{ marginLeft: 6, color: "#4e5a65" }}>VIX {accountData.vix_current} · {band.label}</span>
+        {accountData.vix_current != null && (
+          <div style={{ fontSize: 11, color: "#8b949e", marginTop: 3 }}>
+            VIX {accountData.vix_current}
           </div>
         )}
-        <div style={{ fontSize: 11, fontWeight: 500, color: statusColor, marginTop: 3 }}>
-          {status === "ok"      && "✓ Within band"}
-          {status === "over"    && `⚠ ${((band.floorPct - freeCashPctEst) * 100).toFixed(1)}% below floor · ~${formatDollars(deltaAmt)} to free up`}
-          {status === "under"   && `↓ ${((freeCashPctEst - band.ceilingPct) * 100).toFixed(1)}% above ceiling · ~${formatDollars(deltaAmt)} to deploy`}
-          {status === "unknown" && "Set VIX in account.json to activate"}
-        </div>
+        {band && (
+          <div style={{ fontSize: 11, color: "#6e7681", marginTop: 1 }}>
+            Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
+          </div>
+        )}
+        {status !== "unknown" && (
+          <div style={{ fontSize: 11, fontWeight: 500, color: statusColor, marginTop: 1 }}>
+            {status === "ok"    && "✓ Within band"}
+            {status === "over"  && `⚠ ${((band.floorPct - freeCashPctEst) * 100).toFixed(1)}% below floor · ~${formatDollars(deltaAmt)} to free up`}
+            {status === "under" && `↓ ${((freeCashPctEst - band.ceilingPct) * 100).toFixed(1)}% above ceiling · ~${formatDollars(deltaAmt)} to deploy`}
+          </div>
+        )}
+        {status === "unknown" && (
+          <div style={{ fontSize: 11, color: "#4e5a65", marginTop: 1 }}>Set VIX in account.json</div>
+        )}
       </div>
       <div>
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>MTD Premium</div>
