@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, createContext, useContext } from "react";
 import tradesData from "./data/trades.json";
 import positionsData from "./data/positions.json";
 import accountData from "./data/account.json";
@@ -29,8 +29,6 @@ function normalizeTrade(t) {
     notes: t.notes ?? "",
   };
 }
-
-const TRADES = tradesData.trades.map(normalizeTrade);
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────
 
@@ -107,9 +105,18 @@ function getCalendarWeeks(year, month) {
   return weeks;
 }
 
+// ─── DATA CONTEXT ──────────────────────────────────────────────────────────
+// Provides live trades/positions/account to all components.
+// Initialized from the static JSON imports; in production the TradeDashboard
+// fetches /api/data on mount and replaces the data with fresh sheet values.
+
+const DataContext = createContext(null);
+function useData() { return useContext(DataContext); }
+
 // ─── SUMMARY TAB ───────────────────────────────────────────────────────────
 
 function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
+  const { trades: TRADES } = useData();
   const DURATION_BUCKETS = [
     { label: "0-1d",   min: 0,  max: 1    },
     { label: "2-3d",   min: 2,  max: 3    },
@@ -393,6 +400,7 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
 // ─── CALENDAR TAB ───────────────────────────────────────────────────────────
 
 function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay }) {
+  const { trades: TRADES } = useData();
   const [calMonth, setCalMonth] = useState(2); // default to March
 
   const monthInfo = MONTHS[calMonth];
@@ -784,7 +792,8 @@ function SixtyCheck() {
 // ─── OPEN POSITIONS TAB ────────────────────────────────────────────────────
 
 function OpenPositionsTab() {
-  const { assigned_shares, open_csps, open_leaps } = positionsData;
+  const { positions } = useData();
+  const { assigned_shares, open_csps, open_leaps } = positions;
 
   // Collect ALL open LEAPS: standalone ones + those nested inside assigned shares cards
   const allOpenLeaps = [
@@ -959,28 +968,43 @@ function OpenPositionsTab() {
 // ─── SYNC BUTTON ───────────────────────────────────────────────────────────
 
 function SyncButton() {
+  const { refreshData } = useData();
   const [status, setStatus] = useState("idle"); // "idle" | "syncing" | "done" | "error"
   const [detail, setDetail] = useState("");
+  const isProd = import.meta.env.PROD;
 
   async function handleSync() {
     if (status === "syncing") return;
     setStatus("syncing");
     setDetail("");
     try {
-      const res  = await fetch("/api/sync", { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        setStatus("done");
-        // Extract the one-line summary (last non-empty line of sync output)
-        const lines = data.output.split("\n").map(l => l.trim()).filter(Boolean);
-        setDetail(lines[lines.length - 1] ?? "");
-        // Page will hot-reload automatically as JSON files update.
-        // Reset button state after 4 s (in case HMR is slow).
-        setTimeout(() => setStatus("idle"), 4000);
+      if (isProd) {
+        // Production: fetch live data from the Vercel serverless function
+        const res  = await fetch("/api/data");
+        const data = await res.json();
+        if (data.ok) {
+          refreshData(data);
+          setStatus("done");
+          setDetail(`${data.trades?.length ?? 0} trades · ${data.positions?.open_csps?.length ?? 0} open CSPs`);
+          setTimeout(() => setStatus("idle"), 4000);
+        } else {
+          throw new Error(data.error ?? "Unknown error");
+        }
       } else {
-        setStatus("error");
-        setDetail(data.error?.slice(0, 120) ?? "Unknown error");
-        setTimeout(() => setStatus("idle"), 6000);
+        // Dev: POST to /api/sync which writes JSON files and triggers HMR
+        const res  = await fetch("/api/sync", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          setStatus("done");
+          // Extract the one-line summary (last non-empty line of sync output)
+          const lines = data.output.split("\n").map(l => l.trim()).filter(Boolean);
+          setDetail(lines[lines.length - 1] ?? "");
+          // Page will hot-reload automatically as JSON files update.
+          // Reset button state after 4 s (in case HMR is slow).
+          setTimeout(() => setStatus("idle"), 4000);
+        } else {
+          throw new Error(data.error?.slice(0, 120) ?? "Unknown error");
+        }
       }
     } catch (err) {
       setStatus("error");
@@ -1028,9 +1052,10 @@ function SyncButton() {
 // ─── ACCOUNT SUMMARY BAR ───────────────────────────────────────────────────
 
 function AccountBar() {
+  const { account: accountData } = useData();
   const mtd      = accountData.month_to_date_premium;
-  const baseline = accountData.monthly_targets.baseline;
-  const stretch  = accountData.monthly_targets.stretch;
+  const baseline = accountData.monthly_targets?.baseline ?? 15000;
+  const stretch  = accountData.monthly_targets?.stretch  ?? 25000;
   const progress = Math.min((mtd / baseline) * 100, 100);
 
   return (
@@ -1080,6 +1105,28 @@ function AccountBar() {
 // ─── MAIN APP ──────────────────────────────────────────────────────────────
 
 export default function TradeDashboard() {
+  // ── Data state — initialized from static JSON imports ──
+  // In production, a useEffect below replaces this with live data from /api/data.
+  const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
+  const [positions, setPositions] = useState(() => positionsData);
+  const [account,   setAccount]   = useState(() => accountData);
+
+  // refreshData is called by SyncButton in production after fetching /api/data
+  function refreshData(data) {
+    if (data.trades)    setTrades(data.trades.map(normalizeTrade));
+    if (data.positions) setPositions(data.positions);
+    if (data.account)   setAccount(prev => ({ ...prev, ...data.account })); // preserve manual fields
+  }
+
+  // In production, fetch fresh data from Google Sheets on every page load
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    fetch("/api/data")
+      .then(r => r.json())
+      .then(data => { if (data.ok) refreshData(data); })
+      .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
+  }, []);
+
   const [activeTab, setActiveTab] = useState("summary");
   const [selectedTicker, setSelectedTicker]     = useState(null);
   const [selectedType, setSelectedType]         = useState(null);
@@ -1096,13 +1143,14 @@ export default function TradeDashboard() {
   });
 
   return (
+    <DataContext.Provider value={{ trades, positions, account, refreshData }}>
     <div style={{ fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace", background: "#0d1117", color: "#c9d1d9", minHeight: "100vh", padding: "20px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, color: "#e6edf3", marginBottom: 4, letterSpacing: "0.5px" }}>
           TRADE DASHBOARD
         </h1>
         <div style={{ fontSize: 13, color: "#6e7681", marginBottom: 16 }}>
-          as of {accountData.last_updated}
+          as of {account.last_updated}
         </div>
 
         <AccountBar />
@@ -1168,5 +1216,6 @@ export default function TradeDashboard() {
         {activeTab === "positions" && <OpenPositionsTab />}
       </div>
     </div>
+    </DataContext.Provider>
   );
 }
