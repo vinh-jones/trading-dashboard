@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.8.0";
+const VERSION = "1.9.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1272,13 +1272,18 @@ function SyncButton() {
     setDetail("");
     try {
       if (isProd) {
-        // Production: fetch live data from the Vercel serverless function
-        const res  = await fetch("/api/data");
-        const data = await res.json();
+        // Production: POST /api/sync → Google Sheets → Supabase, then re-read
+        const syncRes  = await fetch("/api/sync", { method: "POST" });
+        const syncData = await syncRes.json();
+        if (!syncData.ok) throw new Error(syncData.error ?? "Sync failed");
+
+        // Re-fetch fresh data from Supabase
+        const dataRes = await fetch("/api/data");
+        const data    = await dataRes.json();
         if (data.ok) {
           refreshData(data);
           setStatus("done");
-          setDetail(`${data.trades?.length ?? 0} trades · ${data.positions?.open_csps?.length ?? 0} open CSPs`);
+          setDetail(`${syncData.tradesCount} trades · ${syncData.positionsCount} positions synced`);
           setTimeout(() => setStatus("idle"), 4000);
         } else {
           throw new Error(data.error ?? "Unknown error");
