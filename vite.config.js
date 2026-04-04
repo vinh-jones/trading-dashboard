@@ -1,20 +1,30 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR  = join(__dirname, "src", "data");
 
 /**
- * Vite dev-server plugin that adds a POST /api/sync endpoint.
- * The React app calls this when you click the Sync button.
- * Uses process.execPath (the running node binary) so no PATH issues.
+ * Vite dev-server plugin that adds two endpoints:
+ *
+ *   POST /api/sync  — spawns sync.js, writes JSON files, triggers HMR
+ *   GET  /api/data  — reads the current JSON files and returns them as JSON
+ *                     (mirrors what the Vercel serverless function does in prod)
+ *
+ * The React app uses /api/data in production (live Google Sheets fetch via
+ * Vercel) and falls back to the static JSON imports in dev, while the Sync
+ * button in dev calls /api/sync to refresh those files.
  */
-function syncPlugin() {
+function sheetsPlugin() {
   return {
     name: "google-sheets-sync",
     configureServer(server) {
+
+      // ── POST /api/sync ────────────────────────────────────────────────────
       server.middlewares.use("/api/sync", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
@@ -26,7 +36,7 @@ function syncPlugin() {
         console.log("[sync] Fetching from Google Sheets...");
 
         const child = spawn(
-          process.execPath,                          // the node.exe running Vite right now
+          process.execPath,                         // the node.exe running Vite right now
           [join(__dirname, "sync.js")],
           { stdio: ["ignore", "pipe", "pipe"] }
         );
@@ -52,10 +62,45 @@ function syncPlugin() {
           res.end(JSON.stringify({ ok: false, error: err.message }));
         });
       });
+
+      // ── GET /api/data ─────────────────────────────────────────────────────
+      // Reads the local JSON files and returns them, matching the shape that
+      // the Vercel serverless function returns in production.
+      server.middlewares.use("/api/data", (req, res) => {
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+          return;
+        }
+
+        try {
+          const read = (name) => {
+            const p = join(DATA_DIR, name);
+            return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+          };
+          const tradesData    = read("trades.json");
+          const positionsData = read("positions.json");
+          const accountData   = read("account.json");
+
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({
+            ok:        true,
+            trades:    tradesData?.trades    ?? [],
+            positions: positionsData         ?? {},
+            account:   accountData           ?? {},
+          }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: err.message }));
+        }
+      });
     },
   };
 }
 
 export default defineConfig({
-  plugins: [react(), syncPlugin()],
+  plugins: [react(), sheetsPlugin()],
 });
