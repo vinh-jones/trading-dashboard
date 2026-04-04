@@ -58,7 +58,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.2.1";
+const VERSION = "1.3.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1059,11 +1059,26 @@ function SyncButton() {
 // ─── ACCOUNT SUMMARY BAR ───────────────────────────────────────────────────
 
 function AccountBar() {
-  const { account: accountData } = useData();
+  const { account: accountData, positions } = useData();
   const mtd      = accountData.month_to_date_premium;
   const baseline = accountData.monthly_targets?.baseline ?? 15000;
   const stretch  = accountData.monthly_targets?.stretch  ?? 25000;
   const progress = Math.min((mtd / baseline) * 100, 100);
+
+  // Auto-calculate free cash from positions instead of relying on manual entry
+  const assignedShares  = positions?.assigned_shares ?? [];
+  const openCSPs        = positions?.open_csps       ?? [];
+  const standaloneLeaps = positions?.open_leaps      ?? [];
+
+  const capitalDeployed = (
+    assignedShares.reduce((s, p) => s + (p.cost_basis_total || 0), 0) +
+    assignedShares.flatMap(p => p.open_leaps ?? []).reduce((s, l) => s + (l.capital_fronted || 0), 0) +
+    openCSPs.reduce((s, c) => s + (c.capital_fronted || 0), 0) +
+    standaloneLeaps.reduce((s, l) => s + (l.capital_fronted || 0), 0)
+  );
+
+  const freeCashEst    = accountData.account_value != null ? accountData.account_value - capitalDeployed : null;
+  const freeCashPctEst = accountData.account_value != null ? freeCashEst / accountData.account_value : null;
 
   return (
     <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
@@ -1074,14 +1089,12 @@ function AccountBar() {
       <div>
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Free Cash</div>
         <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
-          {accountData.free_cash_est != null
+          {freeCashEst != null
             ? <>
-                {formatDollarsFull(accountData.free_cash_est)}{" "}
-                {accountData.free_cash_pct_est != null &&
-                  <span style={{ fontSize: 12, color: "#8b949e" }}>({(accountData.free_cash_pct_est * 100).toFixed(1)}%)</span>
-                }
+                {formatDollarsFull(freeCashEst)}{" "}
+                <span style={{ fontSize: 12, color: "#8b949e" }}>({(freeCashPctEst * 100).toFixed(1)}%)</span>
               </>
-            : <span style={{ fontSize: 13, color: "#6e7681" }}>update manually</span>
+            : <span style={{ fontSize: 13, color: "#6e7681" }}>—</span>
           }
         </div>
       </div>
