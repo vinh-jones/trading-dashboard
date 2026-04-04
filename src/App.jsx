@@ -54,11 +54,12 @@ const MONTHS = [
   { label: "Jan", month: 0, year: 2026 },
   { label: "Feb", month: 1, year: 2026 },
   { label: "Mar", month: 2, year: 2026 },
+  { label: "Apr", month: 3, year: 2026 },
 ];
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.3.0";
+const VERSION = "1.3.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -408,7 +409,7 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
 
 function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay }) {
   const { trades: TRADES } = useData();
-  const [calMonth, setCalMonth] = useState(2); // default to March
+  const [calMonth, setCalMonth] = useState(3); // default to April
 
   const monthInfo = MONTHS[calMonth];
 
