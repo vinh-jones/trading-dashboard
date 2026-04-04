@@ -59,7 +59,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -873,11 +873,11 @@ function OpenPositionsTab() {
                     {row.ticker}
                   </div>
                   <div style={{ flex: 1, height: 16, background: "#21262d", borderRadius: 2, position: "relative" }}>
-                    {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: "#da3633", borderRadius: "2px 0 0 2px" }} />}
-                    {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: "#c49df2" }} />}
+                    {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: "#2eb88a", borderRadius: "2px 0 0 2px" }} />}
+                    {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: "#f0c040" }} />}
                     {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: "#58a6ff", borderRadius: "0 2px 2px 0" }} />}
                     {/* Threshold reference lines */}
-                    <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#e3b341", opacity: 0.8, zIndex: 2 }} />
+                    <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#8b949e", opacity: 0.8, zIndex: 2 }} />
                     <div style={{ position: "absolute", left: `${(0.15 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#f85149", opacity: 0.8, zIndex: 2 }} />
                   </div>
                   <div style={{ width: 42, fontSize: 12, fontWeight: 600, color: allocColor(row.totalPct), textAlign: "right", flexShrink: 0 }}>
@@ -888,10 +888,10 @@ function OpenPositionsTab() {
             })}
             {/* Legend */}
             <div style={{ display: "flex", gap: 16, marginTop: 14, paddingLeft: 62, fontSize: 11, color: "#6e7681" }}>
-              <span><span style={{ color: "#da3633" }}>■</span> Shares</span>
-              <span><span style={{ color: "#c49df2" }}>■</span> LEAPS</span>
+              <span><span style={{ color: "#2eb88a" }}>■</span> Shares</span>
+              <span><span style={{ color: "#f0c040" }}>■</span> LEAPS</span>
               <span><span style={{ color: "#58a6ff" }}>■</span> CSP</span>
-              <span style={{ marginLeft: 8 }}><span style={{ color: "#e3b341" }}>│</span> 10%</span>
+              <span style={{ marginLeft: 8 }}><span style={{ color: "#8b949e" }}>│</span> 10%</span>
               <span><span style={{ color: "#f85149" }}>│</span> 15%</span>
             </div>
           </div>
@@ -1031,7 +1031,7 @@ function OpenPositionsTab() {
               <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: 6 }}>
                 <div>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginRight: 12 }}>{l.ticker}</span>
-                  <span style={{ fontSize: 13, color: "#c49df2" }}>{l.description}</span>
+                  <span style={{ fontSize: 13, color: "#f0c040" }}>{l.description}</span>
                 </div>
                 <div style={{ fontSize: 14, color: "#8b949e" }}>
                   Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
