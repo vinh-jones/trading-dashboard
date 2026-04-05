@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/snapshot",
+      "schedule": "30 21 * * 1-5"
+    }
+  ]
+}
