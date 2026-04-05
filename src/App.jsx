@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, createContext, useContext } from "react";
 import tradesData from "./data/trades.json";
 import positionsData from "./data/positions.json";
 import accountData from "./data/account.json";
+import { supabase } from "./lib/supabase";
 
 // ─── ADAPTER ───────────────────────────────────────────────────────────────
 // Converts trades.json field names to the shape the components expect.
@@ -59,7 +60,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.10.0";
+const VERSION = "1.11.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1447,6 +1448,538 @@ function AccountBar({ captureRate }) {
   );
 }
 
+// ─── JOURNAL TAB ───────────────────────────────────────────────────────────
+
+const JOURNAL_BADGE = {
+  trade_note:    { label: "TRADE NOTE",    color: "#58a6ff" },
+  eod_update:    { label: "EOD UPDATE",    color: "#3fb950" },
+  position_note: { label: "POSITION NOTE", color: "#e3b341" },
+};
+
+const JOURNAL_ENTRY_TYPES = [
+  { key: "trade_note",    label: "Trade Note",    activeColor: "#58a6ff", activeBg: "#0d419d" },
+  { key: "eod_update",    label: "EOD Update",    activeColor: "#3fb950", activeBg: "#1a4a2a" },
+  { key: "position_note", label: "Position Note", activeColor: "#e3b341", activeBg: "#4a3a1a" },
+];
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function journalSinceDate(filter) {
+  const d = new Date();
+  if (filter === "this_month") return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  if (filter === "last_30")    { d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); }
+  if (filter === "last_90")    { d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10); }
+  return null;
+}
+
+function fmtEntryDate(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function buildAutoTitle(entryType, linkedPosition, linkedTrade) {
+  if (entryType === "eod_update") return `EOD — ${todayISO()}`;
+  if (linkedPosition) {
+    const p = linkedPosition;
+    if (p.type === "CSP")   return `CSP $${p.strike} ${formatExpiry(p.expiry_date)} — Open`;
+    if (p.type === "CC")    return `CC $${p.strike} ${formatExpiry(p.expiry_date)} — Active`;
+    if (p.type === "LEAPS") return `LEAPS — ${p.description || "Open"}`;
+    return `Shares — Open`;
+  }
+  if (linkedTrade) {
+    const t = linkedTrade;
+    const strike = t.strike ? ` $${t.strike}` : "";
+    return `${t.type}${strike} — Closed ${t.close} (${t.kept})`;
+  }
+  return "";
+}
+
+function JournalEntryCard({ entry, onEdit, onDelete }) {
+  const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
+  const isEOD = entry.entry_type === "eod_update";
+  return (
+    <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16, marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+        <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
+          {badge.label}
+        </span>
+        <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+      </div>
+
+      {/* Context line: ticker + title, shown for trade/position notes only */}
+      {!isEOD && (entry.ticker || entry.title) && (
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          {entry.ticker && <span style={{ color: "#e6edf3", fontWeight: 600 }}>{entry.ticker}</span>}
+          {entry.ticker && entry.title && <span style={{ color: "#8b949e" }}> · {entry.title}</span>}
+          {!entry.ticker && entry.title && <span style={{ color: "#e6edf3", fontWeight: 500 }}>{entry.title}</span>}
+        </div>
+      )}
+
+      {/* Body */}
+      <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap" }}>
+        {entry.body}
+      </div>
+
+      {/* Tags */}
+      {entry.tags?.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {entry.tags.map(tag => (
+            <span key={tag} style={{ background: "#1c2333", color: "#58a6ff", fontSize: 11, padding: "2px 8px", borderRadius: 4, marginRight: 6, display: "inline-block", marginBottom: 4 }}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+        <button onClick={() => onEdit(entry)} style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: 0 }}>Edit</button>
+        <button onClick={() => onDelete(entry.id)} style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: 0 }}>Delete</button>
+      </div>
+    </div>
+  );
+}
+
+function JournalTab() {
+  const { trades, positions } = useData();
+
+  // Feed
+  const [entries,   setEntries]   = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [feedError, setFeedError] = useState(null);
+
+  // Filters
+  const [filterType,   setFilterType]   = useState("all");
+  const [filterTicker, setFilterTicker] = useState("all");
+  const [filterSince,  setFilterSince]  = useState("this_month");
+
+  // Form
+  const [entryType,      setEntryType]      = useState("trade_note");
+  const [editingId,      setEditingId]      = useState(null);
+  const [linkedPosition, setLinkedPosition] = useState(null);
+  const [linkedTrade,    setLinkedTrade]    = useState(null);
+  const [formTitle,      setFormTitle]      = useState("");
+  const [formSource,     setFormSource]     = useState("Self");
+  const [formTags,       setFormTags]       = useState("");
+  const [formDate,       setFormDate]       = useState(todayISO());
+  const [formBody,       setFormBody]       = useState("");
+  const [saveError,      setSaveError]      = useState(null);
+  const [saving,         setSaving]         = useState(false);
+
+  // Tickers seen in the feed (for filter dropdown)
+  const feedTickers = useMemo(
+    () => [...new Set(entries.map(e => e.ticker).filter(Boolean))].sort(),
+    [entries]
+  );
+
+  // All open positions flattened into selectable options
+  const positionOptions = useMemo(() => {
+    const opts = [];
+    (positions.open_csps || []).forEach(p => opts.push({
+      label: `${p.ticker} CSP $${p.strike} exp ${formatExpiry(p.expiry_date)}`,
+      ticker: p.ticker, obj: p, group: "Open CSPs",
+    }));
+    (positions.assigned_shares || []).forEach(s => {
+      if (s.active_cc) opts.push({
+        label: `${s.ticker} CC $${s.active_cc.strike} exp ${formatExpiry(s.active_cc.expiry_date)}`,
+        ticker: s.ticker, obj: s.active_cc, group: "Active CCs",
+      });
+      opts.push({
+        label: `${s.ticker} Shares — ${formatDollars(s.cost_basis_total)}`,
+        ticker: s.ticker, obj: { ...s, type: "Shares" }, group: "Assigned Shares",
+      });
+    });
+    (positions.open_leaps || []).forEach(l => opts.push({
+      label: `${l.ticker} LEAPS — ${l.description || ""}`,
+      ticker: l.ticker, obj: l, group: "Open LEAPS",
+    }));
+    return opts;
+  }, [positions]);
+
+  // Closed trades sorted newest-first for the trade link dropdown
+  const closedTradeOptions = useMemo(() =>
+    [...trades]
+      .sort((a, b) => (b.closeDate ?? 0) - (a.closeDate ?? 0))
+      .map(t => ({
+        label: `${t.ticker} ${t.type}${t.strike ? ` $${t.strike}` : ""} — ${t.close} (${t.kept})`,
+        ticker: t.ticker, obj: t,
+      })),
+  [trades]);
+
+  useEffect(() => { fetchEntries(); }, [filterType, filterTicker, filterSince]);
+
+  async function fetchEntries() {
+    setLoading(true);
+    setFeedError(null);
+    try {
+      let query = supabase
+        .from("journal_entries")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (filterType !== "all")   query = query.eq("entry_type", filterType);
+      if (filterTicker !== "all") query = query.eq("ticker", filterTicker);
+      const sd = journalSinceDate(filterSince);
+      if (sd) query = query.gte("entry_date", sd);
+      const { data, error } = await query;
+      if (error) throw error;
+      setEntries(data ?? []);
+    } catch (err) {
+      setFeedError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setFormTitle(""); setFormBody(""); setFormTags(""); setFormSource("Self");
+    setLinkedPosition(null); setLinkedTrade(null);
+    setFormDate(todayISO());
+    setSaveError(null);
+  }
+
+  function handleEdit(entry) {
+    setEditingId(entry.id);
+    setEntryType(entry.entry_type);
+    setFormTitle(entry.title ?? "");
+    setFormBody(entry.body ?? "");
+    setFormTags((entry.tags || []).join(", "));
+    setFormSource(entry.source ?? "Self");
+    setFormDate(entry.entry_date ?? todayISO());
+    setLinkedPosition(null);
+    setLinkedTrade(null);
+    setSaveError(null);
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Delete this entry? This cannot be undone.")) return;
+    const { error } = await supabase.from("journal_entries").delete().eq("id", id);
+    if (error) { window.alert(`Delete failed: ${error.message}`); return; }
+    setEntries(prev => prev.filter(e => e.id !== id));
+  }
+
+  async function handleSave() {
+    const isEOD = entryType === "eod_update";
+    const titleToSave = isEOD ? `EOD — ${formDate}` : formTitle.trim();
+    if (!isEOD && !titleToSave) { setSaveError("Title is required."); return; }
+    if (!formBody.trim())       { setSaveError("Notes are required."); return; }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const tags = [...new Set(
+        formTags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean)
+      )];
+      const ticker = linkedPosition?.ticker ?? linkedTrade?.ticker ?? null;
+      const now    = new Date().toISOString();
+      const src    = isEOD ? null : (formSource || null);
+
+      if (editingId) {
+        const { error } = await supabase
+          .from("journal_entries")
+          .update({ title: titleToSave, body: formBody.trim(), tags, source: src, updated_at: now })
+          .eq("id", editingId);
+        if (error) throw error;
+        setEntries(prev => prev.map(e =>
+          e.id === editingId
+            ? { ...e, title: titleToSave, body: formBody.trim(), tags, source: src }
+            : e
+        ));
+      } else {
+        const payload = {
+          entry_type:  entryType,
+          trade_id:    null,
+          position_id: linkedPosition?.id ?? null,
+          entry_date:  formDate,
+          ticker,
+          title:       titleToSave,
+          body:        formBody.trim(),
+          tags,
+          source:      src,
+          created_at:  now,
+          updated_at:  now,
+        };
+        const { data, error } = await supabase
+          .from("journal_entries")
+          .insert(payload)
+          .select()
+          .single();
+        if (error) throw error;
+        setEntries(prev => [data, ...prev]);
+      }
+      resetForm();
+    } catch (err) {
+      setSaveError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleLinkPosition(posOpt) {
+    setLinkedPosition(posOpt ? posOpt.obj : null);
+    setLinkedTrade(null);
+    if (posOpt && !editingId) setFormTitle(buildAutoTitle(entryType, posOpt.obj, null));
+  }
+
+  function handleLinkTrade(tradeOpt) {
+    setLinkedTrade(tradeOpt ? tradeOpt.obj : null);
+    setLinkedPosition(null);
+    if (tradeOpt && !editingId) setFormTitle(buildAutoTitle(entryType, null, tradeOpt.obj));
+  }
+
+  // Shared input style
+  const inputSt = {
+    background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
+    borderRadius: 4, padding: "8px 10px", fontFamily: "inherit", fontSize: 13,
+    width: "100%", boxSizing: "border-box",
+  };
+  const labelSt = {
+    display: "block", color: "#8b949e", fontSize: 11, textTransform: "uppercase",
+    letterSpacing: "0.8px", marginBottom: 6, fontWeight: 500,
+  };
+
+  function Field({ label, children }) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <label style={labelSt}>{label}</label>
+        {children}
+      </div>
+    );
+  }
+
+  function AutoTextarea({ value, onChange, minH, placeholder }) {
+    return (
+      <textarea
+        value={value}
+        onChange={onChange}
+        onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+        placeholder={placeholder}
+        style={{ ...inputSt, minHeight: minH, resize: "none", lineHeight: 1.6 }}
+      />
+    );
+  }
+
+  // Current select indices for position/trade dropdowns
+  const posSelectIdx  = linkedPosition ? positionOptions.findIndex(o => o.obj === linkedPosition) : -1;
+  const tradeSelectIdx = linkedTrade   ? closedTradeOptions.findIndex(o => o.obj === linkedTrade) : -1;
+
+  const posSelectEl = (label, optional = true) => (
+    <Field label={label}>
+      <select
+        style={inputSt}
+        value={posSelectIdx >= 0 ? posSelectIdx : ""}
+        onChange={e => handleLinkPosition(e.target.value !== "" ? positionOptions[+e.target.value] : null)}
+      >
+        <option value="">{optional ? "— none —" : "— select position —"}</option>
+        {positionOptions.map((o, i) => <option key={i} value={i}>[{o.group}] {o.label}</option>)}
+      </select>
+    </Field>
+  );
+
+  const filterSelectSt = {
+    background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
+    borderRadius: 4, padding: "4px 8px", fontFamily: "inherit", fontSize: 12,
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+
+      {/* ── LEFT: Activity Feed ──────────────────────────────────────────── */}
+      <div style={{ flex: "1 1 420px", minWidth: 0 }}>
+
+        {/* Filter bar */}
+        <div style={{
+          display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
+          padding: "10px 12px", background: "#161b22", borderRadius: 6,
+          border: "1px solid #21262d", marginBottom: 16,
+        }}>
+          <span style={{ color: "#6e7681", fontSize: 12, marginRight: 4 }}>Filter:</span>
+          <select style={filterSelectSt} value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <option value="all">All types</option>
+            <option value="trade_note">Trade Notes</option>
+            <option value="eod_update">EOD Updates</option>
+            <option value="position_note">Position Notes</option>
+          </select>
+          <select style={filterSelectSt} value={filterTicker} onChange={e => setFilterTicker(e.target.value)}>
+            <option value="all">All tickers</option>
+            {feedTickers.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select style={filterSelectSt} value={filterSince} onChange={e => setFilterSince(e.target.value)}>
+            <option value="this_month">This month</option>
+            <option value="last_30">Last 30 days</option>
+            <option value="last_90">Last 90 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+
+        {/* Feed content */}
+        {loading && (
+          <div style={{ color: "#8b949e", fontSize: 13, padding: "20px 0" }}>Loading...</div>
+        )}
+        {feedError && (
+          <div style={{ color: "#f85149", fontSize: 13, padding: "10px 12px", background: "#1a1a1a", borderRadius: 4, marginBottom: 12 }}>
+            Error loading feed: {feedError}
+          </div>
+        )}
+        {!loading && !feedError && entries.length === 0 && (
+          <div style={{ color: "#8b949e", fontSize: 13, padding: "40px 0", textAlign: "center", lineHeight: 1.9 }}>
+            No journal entries yet.<br />
+            Use the form to add your first trade note or EOD update.
+          </div>
+        )}
+        {!loading && entries.map(entry => (
+          <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
+        ))}
+      </div>
+
+      {/* ── RIGHT: New Entry Form ────────────────────────────────────────── */}
+      <div style={{ flex: "0 0 340px", minWidth: 300 }}>
+        <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16 }}>
+
+          {/* Form header */}
+          <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 600, color: editingId ? "#e3b341" : "#e6edf3" }}>
+            {editingId ? "Edit Entry" : "New Entry"}
+          </div>
+
+          {/* Entry type selector */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            {JOURNAL_ENTRY_TYPES.map(({ key, label, activeColor, activeBg }) => {
+              const active = entryType === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { if (!editingId) { resetForm(); setEntryType(key); } }}
+                  style={{
+                    flex: 1, padding: "7px 0", fontSize: 12, fontFamily: "inherit",
+                    cursor: editingId ? "not-allowed" : "pointer", borderRadius: 4,
+                    fontWeight: active ? 600 : 400,
+                    background: active ? activeBg : "transparent",
+                    color: active ? activeColor : "#8b949e",
+                    border: `1px solid ${active ? activeColor : "#30363d"}`,
+                    opacity: editingId && !active ? 0.4 : 1,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── Trade Note fields ── */}
+          {entryType === "trade_note" && (
+            <>
+              {!editingId && posSelectEl("Link to open position (optional)", true)}
+              {!editingId && (
+                <Field label="Link to closed trade (optional)">
+                  <select
+                    style={inputSt}
+                    value={tradeSelectIdx >= 0 ? tradeSelectIdx : ""}
+                    onChange={e => handleLinkTrade(e.target.value !== "" ? closedTradeOptions[+e.target.value] : null)}
+                  >
+                    <option value="">— none —</option>
+                    {closedTradeOptions.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label="Title">
+                <input
+                  type="text" style={inputSt} value={formTitle}
+                  onChange={e => setFormTitle(e.target.value)}
+                  placeholder="Auto-filled from linked trade, or enter manually"
+                />
+              </Field>
+              <Field label="Source">
+                <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+                  {["Ryan", "Self"].map(s => (
+                    <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#c9d1d9" }}>
+                      <input type="radio" name="journal-source" value={s} checked={formSource === s} onChange={() => setFormSource(s)} style={{ accentColor: "#58a6ff" }} />
+                      {s}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Tags (comma separated, optional)">
+                <input
+                  type="text" style={inputSt} value={formTags}
+                  onChange={e => setFormTags(e.target.value)}
+                  placeholder="ryan-signal, lower-bb, vix-elevated"
+                />
+              </Field>
+              <Field label="Notes">
+                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Trade rationale, setup details..." />
+              </Field>
+            </>
+          )}
+
+          {/* ── EOD Update fields ── */}
+          {entryType === "eod_update" && (
+            <>
+              {!editingId && (
+                <Field label="Date">
+                  <input type="date" style={inputSt} value={formDate} onChange={e => setFormDate(e.target.value)} />
+                </Field>
+              )}
+              <Field label="Notes">
+                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={200} placeholder="What happened today, macro context, anything worth noting for the monthly review..." />
+              </Field>
+            </>
+          )}
+
+          {/* ── Position Note fields ── */}
+          {entryType === "position_note" && (
+            <>
+              {!editingId && posSelectEl("Position", false)}
+              <Field label="Title">
+                <input
+                  type="text" style={inputSt} value={formTitle}
+                  onChange={e => setFormTitle(e.target.value)}
+                  placeholder="Auto-filled from position, or enter manually"
+                />
+              </Field>
+              <Field label="Notes">
+                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Ongoing observations, roll considerations, delta watch..." />
+              </Field>
+            </>
+          )}
+
+          {/* Save error */}
+          {saveError && (
+            <div style={{ color: "#f85149", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: "#1a1a1a", borderRadius: 4 }}>
+              {saveError}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              onClick={resetForm}
+              style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                background: "#238636", border: "none", color: "#fff",
+                cursor: saving ? "not-allowed" : "pointer",
+                fontSize: 13, fontFamily: "inherit", padding: "6px 16px",
+                borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving ? "Saving..." : editingId ? "Save Changes" : entryType === "eod_update" ? "Save Update" : "Save Note"}
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 // ─── MAIN APP ──────────────────────────────────────────────────────────────
 
 export default function TradeDashboard() {
@@ -1513,10 +2046,13 @@ export default function TradeDashboard() {
           <button style={tabStyle("calendar")} onClick={() => setActiveTab("calendar")}>
             Monthly Calendar
           </button>
+          <button style={tabStyle("journal")} onClick={() => setActiveTab("journal")}>
+            Journal
+          </button>
         </div>
 
         {/* Active filter chips — shown on Summary and Calendar */}
-        {activeTab !== "positions" && (selectedTicker || selectedType) && (
+        {activeTab !== "positions" && activeTab !== "journal" && (selectedTicker || selectedType) && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 14, color: "#8b949e", padding: "8px 12px", background: "#161b22", borderRadius: 6, border: "1px solid #21262d" }}>
             <span style={{ color: "#6e7681" }}>Filters:</span>
             {selectedTicker && (
@@ -1562,6 +2098,7 @@ export default function TradeDashboard() {
           />
         )}
         {activeTab === "positions" && <OpenPositionsTab />}
+        {activeTab === "journal" && <JournalTab />}
       </div>
     </div>
     </DataContext.Provider>
