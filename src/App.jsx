@@ -1621,6 +1621,7 @@ function JournalTab() {
       let query = supabase
         .from("journal_entries")
         .select("*")
+        .order("entry_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(50);
       if (filterType !== "all")   query = query.eq("entry_type", filterType);
@@ -1637,21 +1638,25 @@ function JournalTab() {
     }
   }
 
-  async function handleBackfill() {
-    if (!window.confirm("Backfill journal with all trades opened on or after Mar 1, 2026?\n\nExisting entries won't be duplicated. Each entry will have an empty body — click Edit on any card to add your notes.")) return;
+  async function handleBackfill(resync = false) {
+    const msg = resync
+      ? "Re-sync will delete all unannotated backfilled entries (empty body) and re-insert them with corrected dates.\n\nAny entries you've already added notes to will be preserved.\n\nContinue?"
+      : "Backfill journal with all trades opened on or after Mar 1, 2026?\n\nExisting entries won't be duplicated. Each entry will have an empty body — click Edit to add your notes.";
+    if (!window.confirm(msg)) return;
     setBackfilling(true);
     setBackfillMsg(null);
     try {
-      const res  = await fetch("/api/backfill-journal", { method: "POST" });
+      const url  = resync ? "/api/backfill-journal?resync=1" : "/api/backfill-journal";
+      const res  = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
       setBackfillMsg(data.created === 0
         ? "Already up to date — nothing new to backfill."
         : `Done. Created ${data.created} journal entr${data.created === 1 ? "y" : "ies"}.`
       );
-      await fetchEntries(); // refresh feed
+      await fetchEntries();
     } catch (err) {
-      setBackfillMsg(`Backfill failed: ${err.message}`);
+      setBackfillMsg(`Failed: ${err.message}`);
     } finally {
       setBackfilling(false);
     }
@@ -1838,10 +1843,10 @@ function JournalTab() {
           </select>
         </div>
 
-        {/* Backfill */}
-        <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+        {/* Backfill / re-sync controls */}
+        <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <button
-            onClick={handleBackfill}
+            onClick={() => handleBackfill(false)}
             disabled={backfilling}
             style={{
               background: "transparent", border: "1px solid #30363d", color: "#8b949e",
@@ -1849,10 +1854,21 @@ function JournalTab() {
               cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
             }}
           >
-            {backfilling ? "Backfilling..." : "Backfill from trades (Mar 1+)"}
+            {backfilling ? "Working..." : "Backfill (Mar 1+)"}
+          </button>
+          <button
+            onClick={() => handleBackfill(true)}
+            disabled={backfilling}
+            style={{
+              background: "transparent", border: "1px solid #30363d", color: "#8b949e",
+              borderRadius: 4, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
+              cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
+            }}
+          >
+            {backfilling ? "Working..." : "Re-sync backfill"}
           </button>
           {backfillMsg && (
-            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Backfill failed") ? "#f85149" : "#3fb950" }}>
+            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Failed") ? "#f85149" : "#3fb950" }}>
               {backfillMsg}
             </span>
           )}
