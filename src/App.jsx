@@ -1518,8 +1518,8 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
       )}
 
       {/* Body */}
-      <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap" }}>
-        {entry.body}
+      <div style={{ color: entry.body ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap", fontStyle: entry.body ? "normal" : "italic" }}>
+        {entry.body || "No notes yet — click Edit to add."}
       </div>
 
       {/* Tags */}
@@ -1567,6 +1567,10 @@ function JournalTab() {
   const [formBody,       setFormBody]       = useState("");
   const [saveError,      setSaveError]      = useState(null);
   const [saving,         setSaving]         = useState(false);
+
+  // Backfill state
+  const [backfilling,    setBackfilling]    = useState(false);
+  const [backfillMsg,    setBackfillMsg]    = useState(null);
 
   // Tickers seen in the feed (for filter dropdown)
   const feedTickers = useMemo(
@@ -1630,6 +1634,26 @@ function JournalTab() {
       setFeedError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleBackfill() {
+    if (!window.confirm("Backfill journal with all trades opened on or after Mar 1, 2026?\n\nExisting entries won't be duplicated. Each entry will have an empty body — click Edit on any card to add your notes.")) return;
+    setBackfilling(true);
+    setBackfillMsg(null);
+    try {
+      const res  = await fetch("/api/backfill-journal", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      setBackfillMsg(data.created === 0
+        ? "Already up to date — nothing new to backfill."
+        : `Done. Created ${data.created} journal entr${data.created === 1 ? "y" : "ies"}.`
+      );
+      await fetchEntries(); // refresh feed
+    } catch (err) {
+      setBackfillMsg(`Backfill failed: ${err.message}`);
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -1812,6 +1836,26 @@ function JournalTab() {
             <option value="last_90">Last 90 days</option>
             <option value="all">All time</option>
           </select>
+        </div>
+
+        {/* Backfill */}
+        <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={handleBackfill}
+            disabled={backfilling}
+            style={{
+              background: "transparent", border: "1px solid #30363d", color: "#8b949e",
+              borderRadius: 4, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
+              cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
+            }}
+          >
+            {backfilling ? "Backfilling..." : "Backfill from trades (Mar 1+)"}
+          </button>
+          {backfillMsg && (
+            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Backfill failed") ? "#f85149" : "#3fb950" }}>
+              {backfillMsg}
+            </span>
+          )}
         </div>
 
         {/* Feed content */}
