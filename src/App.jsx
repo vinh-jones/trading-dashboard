@@ -1456,6 +1456,40 @@ const JOURNAL_BADGE = {
   position_note: { label: "POSITION NOTE", color: "#e3b341" },
 };
 
+const MOODS = [
+  { emoji: "🟢", label: "Clean",    activeBg: "#1a4a2a", activeBorder: "#3fb950" },
+  { emoji: "🟡", label: "Mixed",    activeBg: "#4a3a1a", activeBorder: "#e3b341" },
+  { emoji: "🔴", label: "Rough",    activeBg: "#4a1a1a", activeBorder: "#f85149" },
+  { emoji: "🌪️", label: "Volatile", activeBg: "#2a1a4a", activeBorder: "#8b5cf6" },
+  { emoji: "🎯", label: "Target",   activeBg: "#1a3a5c", activeBorder: "#58a6ff" },
+];
+
+// Computed at render time from a normalized trade object (from DataContext).
+// Returns null only when called with null (unlinked/unmatched note — show nothing).
+function getTradeEmoji(trade) {
+  const premium = trade.premium ?? 0;
+  const subtype = trade.subtype;
+  const keptPct = trade.kept && trade.kept !== "—" ? parseFloat(trade.kept) / 100 : null;
+  const days    = trade.days;
+  const type    = trade.type;
+
+  if (premium < 0)                                         return "🔴";
+  if (subtype === "Assigned")                              return "📌";
+  if (subtype === "Expired")                               return "💨";
+  if (keptPct != null && keptPct >= 0.80 && days <= 7)    return "⚡";
+  if (keptPct != null && keptPct >= 0.80)                  return "🎯";
+  if (keptPct != null && keptPct >= 0.60 && days <= 3)    return "⚡";
+  if (keptPct != null && keptPct >= 0.60)                  return "✅";
+  if (keptPct != null && keptPct >= 0.40)                  return "🟡";
+  if (keptPct != null && keptPct < 0.40 && premium > 0)   return "🏃";
+  if (type === "Spread")                                   return "🛡️";
+  if (type === "LEAPS")                                    return "🔭";
+  if (type === "Shares" && premium > 0)                    return "💰";
+  if (type === "Shares" && premium < 0)                    return "💸";
+  if (type === "Interest")                                 return "💵";
+  return "📋";
+}
+
 const JOURNAL_ENTRY_TYPES = [
   { key: "trade_note",    label: "Trade Note",    activeColor: "#58a6ff", activeBg: "#0d419d" },
   { key: "eod_update",    label: "EOD Update",    activeColor: "#3fb950", activeBg: "#1a4a2a" },
@@ -1497,20 +1531,53 @@ function buildAutoTitle(entryType, linkedPosition, linkedTrade) {
 }
 
 function JournalEntryCard({ entry, onEdit, onDelete }) {
+  const { trades } = useData();
+
+  // Look up the matching trade for emoji computation.
+  // Match on ticker + entry_date (= close_date for backfilled entries) + type + strike parsed from title.
+  // Returns null if no match — emoji is suppressed for unlinked/unmatched notes.
+  const linkedTrade = useMemo(() => {
+    if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
+    const typeMatch   = entry.title?.match(/^(\w+)/);
+    const strikeMatch = entry.title?.match(/\$(\d+(?:\.\d+)?)/);
+    const titleType   = typeMatch?.[1];
+    const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
+    return trades.find(t =>
+      t.ticker === entry.ticker &&
+      t.closeDate?.toISOString().slice(0, 10) === entry.entry_date &&
+      (!titleType   || t.type   === titleType) &&
+      (!titleStrike || t.strike === titleStrike)
+    ) ?? null;
+  }, [trades, entry.ticker, entry.entry_date, entry.title, entry.entry_type]);
+
+  // Emoji for context line: computed for trade notes, fixed for position notes, none for EOD
+  const cardEmoji =
+    entry.entry_type === "trade_note"    ? (linkedTrade ? getTradeEmoji(linkedTrade) : null) :
+    entry.entry_type === "position_note" ? "👁️" :
+    null;
+
   const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
   const isEOD = entry.entry_type === "eod_update";
+
   return (
     <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16, marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
-          {badge.label}
-        </span>
+      {/* Header row: badge (+ mood for EOD) and date */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
+            {badge.label}
+          </span>
+          {isEOD && entry.mood && (
+            <span style={{ fontSize: 16, lineHeight: 1 }}>{entry.mood}</span>
+          )}
+        </div>
         <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
       </div>
 
-      {/* Context line: ticker + title, shown for trade/position notes only */}
+      {/* Context line: emoji + ticker + title (trade/position notes only) */}
       {!isEOD && (entry.ticker || entry.title) && (
-        <div style={{ fontSize: 13, marginBottom: 8 }}>
+        <div style={{ fontSize: 13, marginBottom: 8, display: "flex", alignItems: "baseline", gap: 5 }}>
+          {cardEmoji && <span style={{ fontSize: 15 }}>{cardEmoji}</span>}
           {entry.ticker && <span style={{ color: "#e6edf3", fontWeight: 600 }}>{entry.ticker}</span>}
           {entry.ticker && entry.title && <span style={{ color: "#8b949e" }}> · {entry.title}</span>}
           {!entry.ticker && entry.title && <span style={{ color: "#e6edf3", fontWeight: 500 }}>{entry.title}</span>}
@@ -1567,6 +1634,7 @@ function JournalTab() {
   const [formBody,       setFormBody]       = useState("");
   const [saveError,      setSaveError]      = useState(null);
   const [saving,         setSaving]         = useState(false);
+  const [formMood,       setFormMood]       = useState("🟡");
 
   // Backfill state
   const [backfilling,    setBackfilling]    = useState(false);
@@ -1667,6 +1735,7 @@ function JournalTab() {
     setFormTitle(""); setFormBody(""); setFormTags(""); setFormSource("Self");
     setLinkedPosition(null); setLinkedTrade(null);
     setFormDate(todayISO());
+    setFormMood("🟡");
     setSaveError(null);
   }
 
@@ -1678,6 +1747,7 @@ function JournalTab() {
     setFormTags((entry.tags || []).join(", "));
     setFormSource(entry.source ?? "Self");
     setFormDate(entry.entry_date ?? todayISO());
+    setFormMood(entry.mood ?? "🟡");
     setLinkedPosition(null);
     setLinkedTrade(null);
     setSaveError(null);
@@ -1705,15 +1775,17 @@ function JournalTab() {
       const now    = new Date().toISOString();
       const src    = isEOD ? null : (formSource || null);
 
+      const mood = isEOD ? formMood : null;
+
       if (editingId) {
         const { error } = await supabase
           .from("journal_entries")
-          .update({ title: titleToSave, body: formBody.trim(), tags, source: src, updated_at: now })
+          .update({ title: titleToSave, body: formBody.trim(), tags, source: src, mood, updated_at: now })
           .eq("id", editingId);
         if (error) throw error;
         setEntries(prev => prev.map(e =>
           e.id === editingId
-            ? { ...e, title: titleToSave, body: formBody.trim(), tags, source: src }
+            ? { ...e, title: titleToSave, body: formBody.trim(), tags, source: src, mood }
             : e
         ));
       } else {
@@ -1727,6 +1799,7 @@ function JournalTab() {
           body:        formBody.trim(),
           tags,
           source:      src,
+          mood,
           created_at:  now,
           updated_at:  now,
         };
@@ -1981,6 +2054,29 @@ function JournalTab() {
                   <input type="date" style={inputSt} value={formDate} onChange={e => setFormDate(e.target.value)} />
                 </Field>
               )}
+              <Field label="Mood">
+                <div style={{ display: "flex", gap: 6 }}>
+                  {MOODS.map(m => {
+                    const active = formMood === m.emoji;
+                    return (
+                      <button
+                        key={m.emoji}
+                        onClick={() => setFormMood(m.emoji)}
+                        style={{
+                          flex: 1, padding: "8px 2px", borderRadius: 4, cursor: "pointer",
+                          border: `2px solid ${active ? m.activeBorder : "#30363d"}`,
+                          background: active ? m.activeBg : "transparent",
+                          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{m.emoji}</span>
+                        <span style={{ fontSize: 10, color: active ? m.activeBorder : "#6e7681" }}>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
               <Field label="Notes">
                 <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={200} placeholder="What happened today, macro context, anything worth noting for the monthly review..." />
               </Field>
