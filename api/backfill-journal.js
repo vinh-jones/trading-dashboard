@@ -1,16 +1,21 @@
 /**
  * api/backfill-journal.js — Vercel serverless function
  *
- * POST /api/backfill-journal
+ * POST /api/backfill-journal          → add missing entries, skip existing
+ * POST /api/backfill-journal?resync=1 → delete all empty-body backfilled entries
+ *                                       in range, then re-insert with correct dates
  *
- * One-time operation: creates trade_note journal entries for every trade
- * in the trades table with open_date >= 2026-03-01, skipping any that
- * already have a matching journal entry (deduped by ticker + entry_date + title).
+ * Entry date logic:
+ *   - Closed trade (has close_date) → entry_date = close_date
+ *   - Still open (no close_date)    → entry_date = open_date
  *
- * Body in each created entry is empty — user fills it in via the Edit flow.
+ * Dedup key: ticker + entry_date + title (safe to run multiple times).
+ * Re-sync only deletes entries where body = '' (not yet annotated by user).
  */
 
 import { createClient } from "@supabase/supabase-js";
+
+const BACKFILL_FROM = "2026-03-01";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
@@ -35,25 +40,37 @@ export default async function handler(req, res) {
     return;
   }
 
+  const resync = req.query.resync === "1";
+
   try {
     const supabase = getSupabase();
 
-    // Fetch trades opened on or after 2026-03-01
+    // ── Re-sync: delete all empty-body backfilled entries first ──
+    if (resync) {
+      const { error: delErr } = await supabase
+        .from("journal_entries")
+        .delete()
+        .eq("entry_type", "trade_note")
+        .eq("body", "")
+        .gte("entry_date", BACKFILL_FROM);
+      if (delErr) throw delErr;
+    }
+
+    // ── Fetch trades opened on or after BACKFILL_FROM ──
     const { data: trades, error: tradesErr } = await supabase
       .from("trades")
       .select("*")
-      .gte("open_date", "2026-03-01")
+      .gte("open_date", BACKFILL_FROM)
       .order("open_date", { ascending: true });
     if (tradesErr) throw tradesErr;
 
-    // Fetch existing trade_note journal entries to detect duplicates
+    // ── Fetch existing trade_note entries to dedup ──
     const { data: existing, error: existErr } = await supabase
       .from("journal_entries")
       .select("ticker, entry_date, title")
       .eq("entry_type", "trade_note");
     if (existErr) throw existErr;
 
-    // Build a Set of "ticker|entry_date|title" keys that already exist
     const existingKeys = new Set(
       (existing || []).map(e => `${e.ticker}|${e.entry_date}|${e.title}`)
     );
@@ -62,14 +79,16 @@ export default async function handler(req, res) {
 
     const toInsert = [];
     for (const t of trades) {
-      const title = buildTitle(t);
-      const key   = `${t.ticker}|${t.open_date}|${title}`;
-      if (existingKeys.has(key)) continue; // already backfilled
+      // Use close_date for closed trades, open_date for positions still open
+      const entryDate = t.close_date || t.open_date;
+      const title     = buildTitle(t);
+      const key       = `${t.ticker}|${entryDate}|${title}`;
+      if (existingKeys.has(key)) continue; // already exists
       toInsert.push({
         entry_type:  "trade_note",
         trade_id:    null,
         position_id: null,
-        entry_date:  t.open_date,
+        entry_date:  entryDate,
         ticker:      t.ticker,
         title,
         body:        "",
@@ -81,7 +100,7 @@ export default async function handler(req, res) {
     }
 
     if (toInsert.length === 0) {
-      res.status(200).json({ ok: true, created: 0, message: "Nothing new to backfill." });
+      res.status(200).json({ ok: true, created: 0, deleted: resync, message: "Nothing new to backfill." });
       return;
     }
 
