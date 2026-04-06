@@ -2864,14 +2864,14 @@ export default function TradeDashboard() {
           <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
             Open Positions
           </button>
-          <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
-            Q1 Summary
+          <button style={tabStyle("journal")} onClick={() => setActiveTab("journal")}>
+            Journal
           </button>
           <button style={tabStyle("calendar")} onClick={() => setActiveTab("calendar")}>
             Monthly Calendar
           </button>
-          <button style={tabStyle("journal")} onClick={() => setActiveTab("journal")}>
-            Journal
+          <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
+            Q1 Summary
           </button>
         </div>
 
