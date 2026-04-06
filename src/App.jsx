@@ -62,7 +62,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.13.0";
+const VERSION = "1.13.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -503,7 +503,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
       map[key].trades.push(t);
     });
     return map;
-  }, [selectedTicker, selectedType]);
+  }, [TRADES, selectedTicker, selectedType]);
 
   const weeks = useMemo(() => getCalendarWeeks(monthInfo.year, monthInfo.month), [calMonth]);
 
@@ -557,7 +557,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
       map[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [selectedTicker]);
+  }, [TRADES, selectedTicker]);
 
   const expiryMap = useMemo(() => {
     const map = {};
@@ -885,7 +885,9 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.kept}</td>
                       <td style={{ padding: "7px 4px" }}>
                         <button
-                          onClick={() => deleteTrade(t)}
+                          onClick={() => {
+                            if (window.confirm(`Delete ${t.ticker} ${t.type} closed ${t.close}?`)) deleteTrade(t);
+                          }}
                           title="Delete trade"
                           style={{ background: "none", border: "none", cursor: "pointer", color: "#6e7681", fontSize: 14, padding: "2px 4px", lineHeight: 1, borderRadius: 3 }}
                           onMouseEnter={e => e.currentTarget.style.color = "#f85149"}
