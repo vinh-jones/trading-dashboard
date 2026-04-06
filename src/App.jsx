@@ -1639,14 +1639,19 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
       ? (entry.body.length > 120 ? entry.body.slice(0, 120) + "…" : entry.body)
       : "";
 
+    // Shared label style for the metadata grid
+    const CELL_LBL = { color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.5px", fontSize: 11, marginBottom: 5 };
+    const CELL_VAL = { fontSize: 13, fontWeight: 600, color: "#e6edf3" };
+    const SEC_HDR  = { color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.8px", fontSize: 11, fontWeight: 700, marginBottom: 10 };
+
     return (
       <div style={{ marginBottom: 12 }}>
         {/* ── Collapsed card ── */}
         <div
           onClick={() => setExpanded(prev => !prev)}
-          style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16, cursor: "pointer", userSelect: "none" }}
+          style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: expanded ? "6px 6px 0 0" : 6, padding: 16, cursor: "pointer", userSelect: "none" }}
         >
-          {/* Header: badge + mood + date */}
+          {/* Header: badge + mood · date · arrow */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
@@ -1654,7 +1659,10 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
               </span>
               {entry.mood && <span style={{ fontSize: 16, lineHeight: 1 }}>{entry.mood}</span>}
             </div>
-            <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+              <span style={{ color: "#6e7681", fontSize: 16, lineHeight: 1, width: 14, textAlign: "center" }}>{expanded ? "↑" : "↓"}</span>
+            </div>
           </div>
 
           {/* Stinger line */}
@@ -1662,7 +1670,7 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
             {md.vix != null && <span>VIX {md.vix}</span>}
             {md.free_cash_pct != null && (
               <>
-                <span style={{ color: "#6e7681" }}>·</span>
+                <span>·</span>
                 <span>
                   Cash {md.free_cash_pct}%
                   {floorLbl && <span style={{ color: floorLbl.color, marginLeft: 4 }}>{floorLbl.text}</span>}
@@ -1671,130 +1679,117 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
             )}
             {md.mtd_realized != null && (
               <>
-                <span style={{ color: "#6e7681" }}>·</span>
+                <span>·</span>
                 <span>MTD ${md.mtd_realized.toLocaleString()}</span>
               </>
             )}
             {activityLbl && (
               <>
-                <span style={{ color: "#6e7681" }}>·</span>
+                <span>·</span>
                 <span>{activityLbl}</span>
               </>
             )}
           </div>
 
-          <div style={{ borderTop: "1px solid #21262d", marginBottom: 8 }} />
+          <div style={{ borderTop: "1px solid #21262d", marginBottom: expanded ? 0 : 10 }} />
 
-          {/* Body preview (collapsed only) + expand toggle */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-            {!expanded && (
-              <div style={{ color: truncatedBody ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, fontStyle: truncatedBody ? "normal" : "italic", flex: 1 }}>
-                {truncatedBody || "No notes yet."}
-              </div>
-            )}
-            <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}>
-              {expanded ? "Collapse ↑" : "Expand ↓"}
-            </span>
-          </div>
-
-          {/* Delete only (Edit lives in expanded view) */}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-            <button
-              onClick={e => { e.stopPropagation(); onDelete(entry.id); }}
-              style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: 0 }}
-            >
-              Delete
-            </button>
-          </div>
+          {/* Body preview — only when collapsed */}
+          {!expanded && (
+            <div style={{ color: truncatedBody ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, fontStyle: truncatedBody ? "normal" : "italic" }}>
+              {truncatedBody || "No notes yet."}
+            </div>
+          )}
         </div>
 
         {/* ── Expanded detail view ── */}
         {expanded && (
-          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderTop: "none", borderRadius: "0 0 6px 6px", padding: 16, fontSize: 12 }}>
+          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "16px 16px 12px" }}>
 
             {/* ── Section A: Metadata grid ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 16px", marginBottom: 16 }}>
-              {/* Row 1 */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px 20px", marginBottom: 20 }}>
               <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Free Cash</div>
-                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.free_cash_pct != null ? `${md.free_cash_pct}%` : "—"}</div>
+                <div style={CELL_LBL}>Free Cash</div>
+                <div style={CELL_VAL}>{md.free_cash_pct != null ? `${md.free_cash_pct}%` : "—"}</div>
               </div>
               <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Deployment Status</div>
+                <div style={CELL_LBL}>Deployment Status</div>
                 {floorLbl
-                  ? <div style={{ color: floorLbl.color, fontWeight: 600 }}>
+                  ? <div style={{ fontSize: 13, fontWeight: 600, color: floorLbl.color }}>
                       {floorLbl.text}
-                      {md.floor_delta != null && <span style={{ fontWeight: 400, color: "#8b949e" }}> ({(md.floor_delta * 100).toFixed(1)}%)</span>}
+                      {md.floor_delta != null && <span style={{ fontWeight: 400, color: "#8b949e", fontSize: 12 }}> ({(md.floor_delta * 100).toFixed(1)}%)</span>}
                     </div>
-                  : <div style={{ color: "#6e7681" }}>—</div>}
+                  : <div style={{ fontSize: 13, color: "#6e7681" }}>—</div>}
                 {md.floor_band_low != null && (
-                  <div style={{ color: "#6e7681", fontSize: 11 }}>Floor: {md.floor_band_low}–{md.floor_band_high}%</div>
+                  <div style={{ color: "#6e7681", fontSize: 11, marginTop: 4 }}>Floor: {md.floor_band_low}–{md.floor_band_high}%</div>
                 )}
               </div>
               <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>VIX</div>
-                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.vix ?? "—"}</div>
-              </div>
-              {/* Row 2 */}
-              <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>MTD Realized</div>
-                <div style={{ color: "#3fb950", fontWeight: 600 }}>{md.mtd_realized != null ? `$${md.mtd_realized.toLocaleString()}` : "—"}</div>
+                <div style={CELL_LBL}>VIX</div>
+                <div style={CELL_VAL}>{md.vix ?? "—"}</div>
               </div>
               <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Pipeline Total</div>
-                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.pipeline_total != null ? `$${md.pipeline_total.toLocaleString()}` : "—"}</div>
+                <div style={CELL_LBL}>MTD Realized</div>
+                <div style={{ ...CELL_VAL, color: "#3fb950" }}>{md.mtd_realized != null ? `$${md.mtd_realized.toLocaleString()}` : "—"}</div>
               </div>
               <div>
-                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Pipeline Est.</div>
-                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.pipeline_est != null ? `$${md.pipeline_est.toLocaleString()}` : "—"}</div>
+                <div style={CELL_LBL}>Pipeline Total</div>
+                <div style={CELL_VAL}>{md.pipeline_total != null ? `$${md.pipeline_total.toLocaleString()}` : "—"}</div>
+              </div>
+              <div>
+                <div style={CELL_LBL}>Pipeline Est.</div>
+                <div style={CELL_VAL}>{md.pipeline_est != null ? `$${md.pipeline_est.toLocaleString()}` : "—"}</div>
               </div>
             </div>
 
-            {/* Monthly targets */}
+            {/* Monthly targets with progress bars */}
             {account?.monthly_targets && (
-              <div style={{ color: "#6e7681", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #21262d", fontSize: 11 }}>
-                Targets — Baseline: ${account.monthly_targets.baseline.toLocaleString()}
-                {md.mtd_realized != null && (
-                  <span style={{ color: md.mtd_realized >= account.monthly_targets.baseline ? "#3fb950" : "#8b949e" }}>
-                    {" "}({Math.round(md.mtd_realized / account.monthly_targets.baseline * 100)}%)
-                  </span>
-                )}
-                {" · "}
-                Stretch: ${account.monthly_targets.stretch.toLocaleString()}
-                {md.mtd_realized != null && (
-                  <span style={{ color: "#8b949e" }}>
-                    {" "}({Math.round(md.mtd_realized / account.monthly_targets.stretch * 100)}%)
-                  </span>
-                )}
+              <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #21262d" }}>
+                <div style={SEC_HDR}>Monthly Targets</div>
+                {[
+                  { label: "Baseline", target: account.monthly_targets.baseline, color: "#3fb950" },
+                  { label: "Stretch",  target: account.monthly_targets.stretch,  color: "#58a6ff" },
+                ].map(({ label, target, color }) => {
+                  const pct    = md.mtd_realized != null ? (md.mtd_realized / target) * 100 : 0;
+                  const pctStr = md.mtd_realized != null ? pct.toFixed(1) + "%" : "—";
+                  const barColor = pct >= 100 ? color : color + "99";
+                  return (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <span style={{ color: "#8b949e", fontSize: 12, width: 56 }}>{label}</span>
+                      <span style={{ color: "#c9d1d9", fontSize: 12, width: 58 }}>${(target / 1000).toFixed(0)}k</span>
+                      <div style={{ flex: 1, height: 5, background: "#21262d", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: barColor, borderRadius: 3, transition: "width 0.3s ease" }} />
+                      </div>
+                      <span style={{ color: md.mtd_realized != null && pct >= 100 ? color : "#8b949e", fontSize: 12, width: 38, textAlign: "right" }}>{pctStr}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {/* ── Section B: Today's Activity ── */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
-                Today's Activity
-              </div>
-              <div style={{ borderTop: "1px solid #21262d", paddingTop: 8 }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={SEC_HDR}>Today's Activity</div>
+              <div style={{ borderTop: "1px solid #21262d", paddingTop: 10 }}>
                 {(!md.activity?.closed?.length && !md.activity?.opened?.length) ? (
-                  <div style={{ color: "#6e7681", fontStyle: "italic" }}>No trades on this date</div>
+                  <div style={{ color: "#6e7681", fontStyle: "italic", fontSize: 12 }}>No trades on this date</div>
                 ) : (
                   <>
                     {(md.activity.closed || []).map((t, i) => (
-                      <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ color: "#8b949e", minWidth: 42 }}>Closed</span>
-                        <span style={{ fontWeight: 600 }}>{t.ticker}</span>
-                        <span style={{ color: "#8b949e" }}>{t.type} ${t.strike}</span>
-                        {t.pct_kept != null && <span style={{ color: "#3fb950" }}>+{t.pct_kept}%</span>}
-                        {t.dte_remaining != null && <span style={{ color: "#6e7681" }}>({t.dte_remaining}d DTE rem.)</span>}
+                      <div key={i} style={{ marginBottom: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                        <span style={{ color: "#6e7681", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.4px", minWidth: 44 }}>Closed</span>
+                        <span style={{ color: "#e6edf3", fontWeight: 700, fontSize: 13 }}>{t.ticker}</span>
+                        <span style={{ color: "#8b949e", fontSize: 12 }}>{t.type} ${t.strike}</span>
+                        {t.pct_kept != null && <span style={{ color: "#3fb950", fontSize: 12 }}>+{t.pct_kept}%</span>}
+                        {t.dte_remaining != null && <span style={{ color: "#6e7681", fontSize: 12 }}>({t.dte_remaining}d DTE rem. @ close)</span>}
                       </div>
                     ))}
                     {(md.activity.opened || []).map((p, i) => (
-                      <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ color: "#8b949e", minWidth: 42 }}>Opened</span>
-                        <span style={{ fontWeight: 600 }}>{p.ticker}</span>
-                        <span style={{ color: "#8b949e" }}>{p.type} ${p.strike}</span>
-                        {p.expiry && <span style={{ color: "#6e7681" }}>exp {formatExpiry(p.expiry)}</span>}
-                        {p.premium && <span style={{ color: "#3fb950" }}>+${p.premium.toLocaleString()}</span>}
+                      <div key={i} style={{ marginBottom: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                        <span style={{ color: "#6e7681", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.4px", minWidth: 44 }}>Opened</span>
+                        <span style={{ color: "#e6edf3", fontWeight: 700, fontSize: 13 }}>{p.ticker}</span>
+                        <span style={{ color: "#8b949e", fontSize: 12 }}>{p.type} ${p.strike}</span>
+                        {p.expiry && <span style={{ color: "#6e7681", fontSize: 12 }}>exp {formatExpiry(p.expiry)}</span>}
+                        {p.premium && <span style={{ color: "#3fb950", fontSize: 12 }}>+${p.premium.toLocaleString()}</span>}
                       </div>
                     ))}
                   </>
@@ -1803,34 +1798,32 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
             </div>
 
             {/* ── Section C: Open CSP Snapshot ── */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
-                Open CSP Positions (as of save time)
-              </div>
-              <div style={{ borderTop: "1px solid #21262d", paddingTop: 8 }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={SEC_HDR}>Open CSP Positions <span style={{ color: "#6e7681", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(as of save time)</span></div>
+              <div style={{ borderTop: "1px solid #21262d", paddingTop: 10 }}>
                 {!md.csp_snapshot?.length ? (
-                  <div style={{ color: "#6e7681", fontStyle: "italic" }}>No open CSPs at time of save</div>
+                  <div style={{ color: "#6e7681", fontStyle: "italic", fontSize: 12 }}>No open CSPs at time of save</div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                       <thead>
                         <tr>
                           {["Ticker", "Strike", "Expiry", "DTE", "% Left", "Premium", "Capital", "ROI"].map(h => (
-                            <th key={h} style={{ color: "#6e7681", textAlign: "left", padding: "3px 8px 6px 0", fontWeight: 600, whiteSpace: "nowrap" }}>{h}</th>
+                            <th key={h} style={{ color: "#6e7681", textAlign: "left", padding: "0 12px 8px 0", fontWeight: 600, fontSize: 11, whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {md.csp_snapshot.map((row, i) => (
-                          <tr key={i}>
-                            <td style={{ color: "#e6edf3", fontWeight: 600, padding: "3px 8px 3px 0" }}>{row.ticker}</td>
-                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>${row.strike}</td>
-                            <td style={{ color: "#8b949e", padding: "3px 8px 3px 0" }}>{formatExpiry(row.expiry)}</td>
-                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.dte}d</td>
-                            <td style={{ color: row.dte_pct >= 60 ? "#3fb950" : "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.dte_pct}%</td>
-                            <td style={{ color: "#3fb950", padding: "3px 8px 3px 0" }}>${row.premium?.toLocaleString()}</td>
-                            <td style={{ color: "#8b949e", padding: "3px 8px 3px 0" }}>${row.capital?.toLocaleString()}</td>
-                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.roi}%</td>
+                          <tr key={i} style={{ borderTop: "1px solid #161b22" }}>
+                            <td style={{ color: "#e6edf3", fontWeight: 700, padding: "5px 12px 5px 0" }}>{row.ticker}</td>
+                            <td style={{ color: "#c9d1d9", padding: "5px 12px 5px 0" }}>${row.strike}</td>
+                            <td style={{ color: "#8b949e", padding: "5px 12px 5px 0" }}>{formatExpiry(row.expiry)}</td>
+                            <td style={{ color: "#c9d1d9", padding: "5px 12px 5px 0" }}>{row.dte}d</td>
+                            <td style={{ color: row.dte_pct >= 60 ? "#3fb950" : "#c9d1d9", padding: "5px 12px 5px 0", fontWeight: row.dte_pct >= 60 ? 600 : 400 }}>{row.dte_pct}%</td>
+                            <td style={{ color: "#3fb950", padding: "5px 12px 5px 0", fontWeight: 500 }}>${row.premium?.toLocaleString()}</td>
+                            <td style={{ color: "#8b949e", padding: "5px 12px 5px 0" }}>${row.capital?.toLocaleString()}</td>
+                            <td style={{ color: "#c9d1d9", padding: "5px 0 5px 0" }}>{Number(row.roi).toFixed(2)}%</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1842,16 +1835,22 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
 
             {/* Body text */}
             {entry.body && (
-              <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 16, paddingTop: 12, borderTop: "1px solid #21262d" }}>
+              <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 16, paddingTop: 14, borderTop: "1px solid #21262d" }}>
                 {entry.body}
               </div>
             )}
 
-            {/* Edit button inside expanded view */}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            {/* Edit + Delete at bottom */}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
-                onClick={() => onEdit(entry)}
-                style={{ background: "none", border: "1px solid #30363d", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: "5px 12px", borderRadius: 4 }}
+                onClick={e => { e.stopPropagation(); onDelete(entry.id); }}
+                style={{ background: "none", border: "none", color: "#6e7681", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: "5px 8px" }}
+              >
+                Delete
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); onEdit(entry); }}
+                style={{ background: "none", border: "1px solid #30363d", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: "5px 14px", borderRadius: 4 }}
               >
                 Edit
               </button>
