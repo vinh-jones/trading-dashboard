@@ -1429,10 +1429,6 @@ function AccountBar({ captureRate }) {
   return (
     <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
       <div>
-        <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Account</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{formatDollarsFull(accountData.account_value)}</div>
-      </div>
-      <div>
         <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Free Cash</div>
         <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
           {freeCashEst != null
