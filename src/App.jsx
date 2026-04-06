@@ -1628,7 +1628,7 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
 
   const badge  = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
   const isEOD  = entry.entry_type === "eod_update";
-  const hasMeta = isEOD && entry.metadata?.vix != null;
+  const hasMeta = isEOD && entry.metadata != null;
 
   // ── New-style EOD card (has metadata) ─────────────────────────────────────
   if (hasMeta) {
