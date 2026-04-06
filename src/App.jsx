@@ -60,7 +60,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.12.0";
+const VERSION = "1.12.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1585,15 +1585,21 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
       )}
 
       {/* Trade metadata row: premium, strike, expiry, days, % kept */}
-      {linkedTrade && (
-        <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <span>{formatDollars(linkedTrade.premium)}</span>
-          {linkedTrade.strike && <span>· ${linkedTrade.strike}</span>}
-          {linkedTrade.close && linkedTrade.close !== "—" && <span>· exp {linkedTrade.close}</span>}
-          {linkedTrade.days && <span>· {linkedTrade.days}d</span>}
-          {linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
-        </div>
-      )}
+      {linkedTrade && (() => {
+        const strikeSuffix = linkedTrade.type === "CSP" ? "p" : linkedTrade.type === "CC" ? "c" : "";
+        const premStr = linkedTrade.premium != null
+          ? (linkedTrade.premium >= 0 ? "+" : "") + formatDollars(linkedTrade.premium)
+          : "—";
+        return (
+          <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <span>{premStr}</span>
+            {linkedTrade.strike && <span>· ${linkedTrade.strike}{strikeSuffix}</span>}
+            {linkedTrade.close && linkedTrade.close !== "—" && <span>· exp {linkedTrade.close}</span>}
+            {linkedTrade.days && <span>· {linkedTrade.days}d</span>}
+            {linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
+          </div>
+        );
+      })()}
 
       {/* Body */}
       <div style={{ color: entry.body ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap", fontStyle: entry.body ? "normal" : "italic" }}>
