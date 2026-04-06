@@ -2135,8 +2135,8 @@ function JournalTab() {
     account?.free_cash_pct_est != null ? +(account.free_cash_pct_est * 100).toFixed(1) : null,
   [account]);
 
-  // VIX from last sync
-  const eodAutoVix = useMemo(() => account?.vix_current ?? null, [account]);
+  // VIX — live from /api/vix (same source as AccountBar), falls back to last-synced snapshot value
+  const { vix: eodAutoVix } = useLiveVix(account?.vix_current ?? null);
 
   // Gross open pipeline = sum of premium from all open CSPs + active CCs
   const eodAutoPipeline = useMemo(() => {
