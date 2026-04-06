@@ -1685,12 +1685,14 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
 
           <div style={{ borderTop: "1px solid #21262d", marginBottom: 8 }} />
 
-          {/* Body preview + expand toggle */}
+          {/* Body preview (collapsed only) + expand toggle */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-            <div style={{ color: truncatedBody ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, fontStyle: truncatedBody ? "normal" : "italic", flex: 1 }}>
-              {truncatedBody || "No notes yet."}
-            </div>
-            <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}>
+            {!expanded && (
+              <div style={{ color: truncatedBody ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, fontStyle: truncatedBody ? "normal" : "italic", flex: 1 }}>
+                {truncatedBody || "No notes yet."}
+              </div>
+            )}
+            <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}>
               {expanded ? "Collapse ↑" : "Expand ↓"}
             </span>
           </div>
@@ -1709,13 +1711,6 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
         {/* ── Expanded detail view ── */}
         {expanded && (
           <div style={{ background: "#0d1117", border: "1px solid #21262d", borderTop: "none", borderRadius: "0 0 6px 6px", padding: 16, fontSize: 12 }}>
-
-            {/* Full body (if truncated) */}
-            {entry.body && entry.body.length > 120 && (
-              <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #21262d" }}>
-                {entry.body}
-              </div>
-            )}
 
             {/* ── Section A: Metadata grid ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 16px", marginBottom: 16 }}>
@@ -1793,18 +1788,15 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
                         {t.dte_remaining != null && <span style={{ color: "#6e7681" }}>({t.dte_remaining}d DTE rem.)</span>}
                       </div>
                     ))}
-                    {(md.activity.opened || []).length > 0
-                      ? (md.activity.opened || []).map((p, i) => (
-                          <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <span style={{ color: "#8b949e", minWidth: 42 }}>Opened</span>
-                            <span style={{ fontWeight: 600 }}>{p.ticker}</span>
-                            <span style={{ color: "#8b949e" }}>{p.type} ${p.strike}</span>
-                            {p.expiry && <span style={{ color: "#6e7681" }}>exp {formatExpiry(p.expiry)}</span>}
-                            {p.premium && <span style={{ color: "#3fb950" }}>+${p.premium.toLocaleString()}</span>}
-                          </div>
-                        ))
-                      : <div style={{ color: "#6e7681" }}><span style={{ color: "#8b949e", minWidth: 42, display: "inline-block" }}>Opened</span> —</div>
-                    }
+                    {(md.activity.opened || []).map((p, i) => (
+                      <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ color: "#8b949e", minWidth: 42 }}>Opened</span>
+                        <span style={{ fontWeight: 600 }}>{p.ticker}</span>
+                        <span style={{ color: "#8b949e" }}>{p.type} ${p.strike}</span>
+                        {p.expiry && <span style={{ color: "#6e7681" }}>exp {formatExpiry(p.expiry)}</span>}
+                        {p.premium && <span style={{ color: "#3fb950" }}>+${p.premium.toLocaleString()}</span>}
+                      </div>
+                    ))}
                   </>
                 )}
               </div>
@@ -1847,6 +1839,13 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
                 )}
               </div>
             </div>
+
+            {/* Body text */}
+            {entry.body && (
+              <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 16, paddingTop: 12, borderTop: "1px solid #21262d" }}>
+                {entry.body}
+              </div>
+            )}
 
             {/* Edit button inside expanded view */}
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
