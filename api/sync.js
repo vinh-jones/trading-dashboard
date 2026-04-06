@@ -56,7 +56,9 @@ export default async function handler(req, res) {
     const toInsert = (trades || []).reduce((acc, t) => {
       const entryDate = t.close_date || t.open_date;
       const title = buildTitle(t);
-      if (!existingKeys.has(`${t.ticker}|${entryDate}|${title}`)) {
+      const key = `${t.ticker}|${entryDate}|${title}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key); // prevent same-sync duplicates from duplicate trade rows
         acc.push({
           entry_type:  "trade_note",
           trade_id:    null,
