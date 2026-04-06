@@ -13,6 +13,7 @@ function normalizeTrade(t) {
   const keptStr =
     t.kept_pct != null ? `${Math.round(t.kept_pct * 100)}%` : "—";
   return {
+    id: t.id ?? null,
     ticker: t.ticker,
     type: t.type,
     subtype: t.subtype,
@@ -20,6 +21,7 @@ function normalizeTrade(t) {
     contracts: t.contracts ?? null,
     open: fmtDate(t.open_date),
     close: fmtDate(t.close_date),
+    expiry: fmtDate(t.expiry_date),  // option expiration date (separate from close)
     closeDate,               // Date object — used by calendar
     days: t.days_held ?? null,
     premium: t.premium_collected ?? 0,
@@ -60,7 +62,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.12.1";
+const VERSION = "1.13.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -479,7 +481,7 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
 // ─── CALENDAR TAB ───────────────────────────────────────────────────────────
 
 function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay, captureRate, setCaptureRate }) {
-  const { trades: TRADES, positions, account } = useData();
+  const { trades: TRADES, positions, account, deleteTrade } = useData();
   const [calMonth, setCalMonth] = useState(3); // default to April
 
   const monthInfo = MONTHS[calMonth];
@@ -851,7 +853,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Type", "Status", "Strike", "Ct", "Open", "Close/Expiry", "Days", "Premium", "Kept"].map((h) => (
+                  {["Ticker", "Type", "Status", "Strike", "Ct", "Open", "Close", "Expiry", "Days", "Premium", "Kept", ""].map((h) => (
                     <th key={h} style={{ padding: "8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {h}
                     </th>
@@ -875,17 +877,27 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.open}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.close}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.expiry !== "—" ? t.expiry : "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.days != null ? `${t.days}d` : "—"}</td>
                       <td style={{ padding: "7px 8px", fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950" }}>
                         {formatDollarsFull(t.premium)}
                       </td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.kept}</td>
+                      <td style={{ padding: "7px 4px" }}>
+                        <button
+                          onClick={() => deleteTrade(t)}
+                          title="Delete trade"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#6e7681", fontSize: 14, padding: "2px 4px", lineHeight: 1, borderRadius: 3 }}
+                          onMouseEnter={e => e.currentTarget.style.color = "#f85149"}
+                          onMouseLeave={e => e.currentTarget.style.color = "#6e7681"}
+                        >×</button>
+                      </td>
                     </tr>
                   );
                 })}
                 {displayClosed.length > 0 && displayExpiring.length > 0 && (
                   <tr>
-                    <td colSpan={10} style={{ padding: "8px", textAlign: "center", fontSize: 12, color: "#6e7681", borderTop: "1px solid #21262d", borderBottom: "1px solid #21262d" }}>
+                    <td colSpan={12} style={{ padding: "8px", textAlign: "center", fontSize: 12, color: "#6e7681", borderTop: "1px solid #21262d", borderBottom: "1px solid #21262d" }}>
                       ── Open positions expiring ──
                     </td>
                   </tr>
@@ -904,10 +916,12 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
                       <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{p.strike ? `$${p.strike}` : "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.contracts || "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
+                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
                       <td style={{ padding: "7px 8px", color: "#58a6ff" }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
                       <td style={{ padding: "7px 8px", fontWeight: 600, color: "#3fb950" }}>{formatDollarsFull(p.premium_collected)}</td>
                       <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
+                      <td style={{ padding: "7px 8px" }}></td>
                     </tr>
                   );
                 })}
@@ -1594,7 +1608,7 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
           <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>{premStr}</span>
             {linkedTrade.strike && <span>· ${linkedTrade.strike}{strikeSuffix}</span>}
-            {linkedTrade.close && linkedTrade.close !== "—" && <span>· exp {linkedTrade.close}</span>}
+            {linkedTrade.expiry && linkedTrade.expiry !== "—" && <span>· exp {linkedTrade.expiry}</span>}
             {linkedTrade.days && <span>· {linkedTrade.days}d</span>}
             {linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
           </div>
@@ -2295,6 +2309,19 @@ export default function TradeDashboard() {
     if (data.account)   setAccount(prev => ({ ...prev, ...data.account })); // preserve manual fields
   }
 
+  async function deleteTrade(trade) {
+    // Optimistic update — remove from local state immediately
+    setTrades(prev => prev.filter(t => t !== trade));
+    // Persist to Supabase in production (id is null for local JSON trades)
+    if (trade.id && import.meta.env.PROD) {
+      try {
+        await fetch(`/api/delete-trade?id=${encodeURIComponent(trade.id)}`, { method: "DELETE" });
+      } catch (err) {
+        console.warn("[deleteTrade] failed:", err.message);
+      }
+    }
+  }
+
   // In production, fetch fresh data from Google Sheets on every page load
   useEffect(() => {
     if (!import.meta.env.PROD) return;
@@ -2321,7 +2348,7 @@ export default function TradeDashboard() {
   });
 
   return (
-    <DataContext.Provider value={{ trades, positions, account, refreshData }}>
+    <DataContext.Provider value={{ trades, positions, account, refreshData, deleteTrade }}>
     <div style={{ fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace", background: "#0d1117", color: "#c9d1d9", minHeight: "100vh", padding: "20px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, color: "#e6edf3", marginBottom: 4, letterSpacing: "0.5px" }}>
