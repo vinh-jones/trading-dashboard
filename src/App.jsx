@@ -27,6 +27,8 @@ function normalizeTrade(t) {
     premium: t.premium_collected ?? 0,
     kept: keptStr,
     fronted: t.capital_fronted ?? null,
+    expiry_date: t.expiry_date ?? null,
+    open_date:   t.open_date   ?? null,
     description: t.description ?? null,
     source: t.source ?? "",
     notes: t.notes ?? "",
@@ -62,7 +64,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.13.1";
+const VERSION = "1.14.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -138,6 +140,37 @@ function getVixBand(vix) {
   if (vix <= 25) return { label: "20–25", floorPct: 0.10, ceilingPct: 0.15 };
   if (vix <= 30) return { label: "25–30", floorPct: 0.05, ceilingPct: 0.10 };
   return               { label: "≥30",   floorPct: 0.00, ceilingPct: 0.05 };
+}
+
+// Builds the metadata JSONB snapshot stored on every EOD journal entry.
+// Pure function — all inputs passed in, no side effects.
+function computeEodMetadata({ freeCashPct, vix, pipelineTotal, mtdRealized, activity, cspSnapshot }) {
+  const band    = getVixBand(vix);
+  const ceiling = band?.ceilingPct ?? null;
+  const floor   = band?.floorPct   ?? null;
+  const cashFrac = (freeCashPct != null && freeCashPct !== "") ? freeCashPct / 100 : null;
+  const floorStatus =
+    cashFrac == null || ceiling == null ? null
+    : cashFrac > ceiling ? "above"
+    : cashFrac < floor   ? "below"
+    : "within";
+  const floorDelta =
+    floorStatus === "above" ? +(cashFrac - ceiling).toFixed(3)
+    : floorStatus === "below" ? +(floor - cashFrac).toFixed(3)
+    : null;
+  return {
+    free_cash_pct:   freeCashPct != null && freeCashPct !== "" ? +freeCashPct : null,
+    vix:             vix         != null && vix         !== "" ? +vix         : null,
+    mtd_realized:    mtdRealized  ?? null,
+    pipeline_total:  pipelineTotal != null && pipelineTotal !== "" ? +pipelineTotal : null,
+    pipeline_est:    pipelineTotal != null && pipelineTotal !== "" ? Math.round(+pipelineTotal * 0.60) : null,
+    floor_band_low:  floor   != null ? Math.round(floor   * 100) : null,
+    floor_band_high: ceiling != null ? Math.round(ceiling * 100) : null,
+    floor_status:    floorStatus,
+    floor_delta:     floorDelta,
+    activity:        activity    ?? { closed: [], opened: [] },
+    csp_snapshot:    cspSnapshot ?? [],
+  };
 }
 
 function calcPipeline(positions, captureRate) {
@@ -1546,8 +1579,29 @@ function buildAutoTitle(entryType, linkedPosition, linkedTrade) {
   return "";
 }
 
+// Helper: floor status label + color for EOD stinger line
+function eodFloorLabel(status) {
+  if (status === "above") return { text: "↑ ceiling", color: "#e3b341" };
+  if (status === "below") return { text: "↓ floor",   color: "#f85149" };
+  if (status === "within") return { text: "✓ in band", color: "#3fb950" };
+  return null;
+}
+
+// Helper: build activity count label for stinger (e.g. "2 closes", "1 open · 1 close")
+function eodActivityLabel(activity) {
+  if (!activity) return null;
+  const c = activity.closed?.length ?? 0;
+  const o = activity.opened?.length ?? 0;
+  if (c === 0 && o === 0) return null;
+  const parts = [];
+  if (o > 0) parts.push(`${o} open`);
+  if (c > 0) parts.push(`${c} close${c !== 1 ? "s" : ""}`);
+  return parts.join(" · ");
+}
+
 function JournalEntryCard({ entry, onEdit, onDelete }) {
-  const { trades } = useData();
+  const { trades, account } = useData();
+  const [expanded, setExpanded] = useState(false);
 
   // Look up the matching trade for emoji computation.
   // Match on ticker + entry_date (= close_date for backfilled entries) + type + strike parsed from title.
@@ -1572,9 +1626,244 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
     entry.entry_type === "position_note" ? "👁️" :
     null;
 
-  const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
-  const isEOD = entry.entry_type === "eod_update";
+  const badge  = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
+  const isEOD  = entry.entry_type === "eod_update";
+  const hasMeta = isEOD && entry.metadata?.vix != null;
 
+  // ── New-style EOD card (has metadata) ─────────────────────────────────────
+  if (hasMeta) {
+    const md = entry.metadata;
+    const floorLbl    = eodFloorLabel(md.floor_status);
+    const activityLbl = eodActivityLabel(md.activity);
+    const truncatedBody = entry.body
+      ? (entry.body.length > 120 ? entry.body.slice(0, 120) + "…" : entry.body)
+      : "";
+
+    return (
+      <div style={{ marginBottom: 12 }}>
+        {/* ── Collapsed card ── */}
+        <div
+          onClick={() => setExpanded(prev => !prev)}
+          style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16, cursor: "pointer", userSelect: "none" }}
+        >
+          {/* Header: badge + mood + date */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
+                {badge.label}
+              </span>
+              {entry.mood && <span style={{ fontSize: 16, lineHeight: 1 }}>{entry.mood}</span>}
+            </div>
+            <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+          </div>
+
+          {/* Stinger line */}
+          <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", flexWrap: "wrap", gap: "0 6px" }}>
+            {md.vix != null && <span>VIX {md.vix}</span>}
+            {md.free_cash_pct != null && (
+              <>
+                <span style={{ color: "#6e7681" }}>·</span>
+                <span>
+                  Cash {md.free_cash_pct}%
+                  {floorLbl && <span style={{ color: floorLbl.color, marginLeft: 4 }}>{floorLbl.text}</span>}
+                </span>
+              </>
+            )}
+            {md.mtd_realized != null && (
+              <>
+                <span style={{ color: "#6e7681" }}>·</span>
+                <span>MTD ${md.mtd_realized.toLocaleString()}</span>
+              </>
+            )}
+            {activityLbl && (
+              <>
+                <span style={{ color: "#6e7681" }}>·</span>
+                <span>{activityLbl}</span>
+              </>
+            )}
+          </div>
+
+          <div style={{ borderTop: "1px solid #21262d", marginBottom: 8 }} />
+
+          {/* Body preview + expand toggle */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ color: truncatedBody ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, fontStyle: truncatedBody ? "normal" : "italic", flex: 1 }}>
+              {truncatedBody || "No notes yet."}
+            </div>
+            <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {expanded ? "Collapse ↑" : "Expand ↓"}
+            </span>
+          </div>
+
+          {/* Delete only (Edit lives in expanded view) */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(entry.id); }}
+              style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: 0 }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+
+        {/* ── Expanded detail view ── */}
+        {expanded && (
+          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderTop: "none", borderRadius: "0 0 6px 6px", padding: 16, fontSize: 12 }}>
+
+            {/* Full body (if truncated) */}
+            {entry.body && entry.body.length > 120 && (
+              <div style={{ color: "#c9d1d9", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #21262d" }}>
+                {entry.body}
+              </div>
+            )}
+
+            {/* ── Section A: Metadata grid ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 16px", marginBottom: 16 }}>
+              {/* Row 1 */}
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Free Cash</div>
+                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.free_cash_pct != null ? `${md.free_cash_pct}%` : "—"}</div>
+              </div>
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Deployment Status</div>
+                {floorLbl
+                  ? <div style={{ color: floorLbl.color, fontWeight: 600 }}>
+                      {floorLbl.text}
+                      {md.floor_delta != null && <span style={{ fontWeight: 400, color: "#8b949e" }}> ({(md.floor_delta * 100).toFixed(1)}%)</span>}
+                    </div>
+                  : <div style={{ color: "#6e7681" }}>—</div>}
+                {md.floor_band_low != null && (
+                  <div style={{ color: "#6e7681", fontSize: 11 }}>Floor: {md.floor_band_low}–{md.floor_band_high}%</div>
+                )}
+              </div>
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>VIX</div>
+                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.vix ?? "—"}</div>
+              </div>
+              {/* Row 2 */}
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>MTD Realized</div>
+                <div style={{ color: "#3fb950", fontWeight: 600 }}>{md.mtd_realized != null ? `$${md.mtd_realized.toLocaleString()}` : "—"}</div>
+              </div>
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Pipeline Total</div>
+                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.pipeline_total != null ? `$${md.pipeline_total.toLocaleString()}` : "—"}</div>
+              </div>
+              <div>
+                <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, marginBottom: 3 }}>Pipeline Est.</div>
+                <div style={{ color: "#e6edf3", fontWeight: 600 }}>{md.pipeline_est != null ? `$${md.pipeline_est.toLocaleString()}` : "—"}</div>
+              </div>
+            </div>
+
+            {/* Monthly targets */}
+            {account?.monthly_targets && (
+              <div style={{ color: "#6e7681", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #21262d", fontSize: 11 }}>
+                Targets — Baseline: ${account.monthly_targets.baseline.toLocaleString()}
+                {md.mtd_realized != null && (
+                  <span style={{ color: md.mtd_realized >= account.monthly_targets.baseline ? "#3fb950" : "#8b949e" }}>
+                    {" "}({Math.round(md.mtd_realized / account.monthly_targets.baseline * 100)}%)
+                  </span>
+                )}
+                {" · "}
+                Stretch: ${account.monthly_targets.stretch.toLocaleString()}
+                {md.mtd_realized != null && (
+                  <span style={{ color: "#8b949e" }}>
+                    {" "}({Math.round(md.mtd_realized / account.monthly_targets.stretch * 100)}%)
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* ── Section B: Today's Activity ── */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
+                Today's Activity
+              </div>
+              <div style={{ borderTop: "1px solid #21262d", paddingTop: 8 }}>
+                {(!md.activity?.closed?.length && !md.activity?.opened?.length) ? (
+                  <div style={{ color: "#6e7681", fontStyle: "italic" }}>No trades on this date</div>
+                ) : (
+                  <>
+                    {(md.activity.closed || []).map((t, i) => (
+                      <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ color: "#8b949e", minWidth: 42 }}>Closed</span>
+                        <span style={{ fontWeight: 600 }}>{t.ticker}</span>
+                        <span style={{ color: "#8b949e" }}>{t.type} ${t.strike}</span>
+                        {t.pct_kept != null && <span style={{ color: "#3fb950" }}>+{t.pct_kept}%</span>}
+                        {t.dte_remaining != null && <span style={{ color: "#6e7681" }}>({t.dte_remaining}d DTE rem.)</span>}
+                      </div>
+                    ))}
+                    {(md.activity.opened || []).length > 0
+                      ? (md.activity.opened || []).map((p, i) => (
+                          <div key={i} style={{ color: "#c9d1d9", marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ color: "#8b949e", minWidth: 42 }}>Opened</span>
+                            <span style={{ fontWeight: 600 }}>{p.ticker}</span>
+                            <span style={{ color: "#8b949e" }}>{p.type} ${p.strike}</span>
+                            {p.expiry && <span style={{ color: "#6e7681" }}>exp {formatExpiry(p.expiry)}</span>}
+                            {p.premium && <span style={{ color: "#3fb950" }}>+${p.premium.toLocaleString()}</span>}
+                          </div>
+                        ))
+                      : <div style={{ color: "#6e7681" }}><span style={{ color: "#8b949e", minWidth: 42, display: "inline-block" }}>Opened</span> —</div>
+                    }
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* ── Section C: Open CSP Snapshot ── */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.6px", fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
+                Open CSP Positions (as of save time)
+              </div>
+              <div style={{ borderTop: "1px solid #21262d", paddingTop: 8 }}>
+                {!md.csp_snapshot?.length ? (
+                  <div style={{ color: "#6e7681", fontStyle: "italic" }}>No open CSPs at time of save</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          {["Ticker", "Strike", "Expiry", "DTE", "% Left", "Premium", "Capital", "ROI"].map(h => (
+                            <th key={h} style={{ color: "#6e7681", textAlign: "left", padding: "3px 8px 6px 0", fontWeight: 600, whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {md.csp_snapshot.map((row, i) => (
+                          <tr key={i}>
+                            <td style={{ color: "#e6edf3", fontWeight: 600, padding: "3px 8px 3px 0" }}>{row.ticker}</td>
+                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>${row.strike}</td>
+                            <td style={{ color: "#8b949e", padding: "3px 8px 3px 0" }}>{formatExpiry(row.expiry)}</td>
+                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.dte}d</td>
+                            <td style={{ color: row.dte_pct >= 60 ? "#3fb950" : "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.dte_pct}%</td>
+                            <td style={{ color: "#3fb950", padding: "3px 8px 3px 0" }}>${row.premium?.toLocaleString()}</td>
+                            <td style={{ color: "#8b949e", padding: "3px 8px 3px 0" }}>${row.capital?.toLocaleString()}</td>
+                            <td style={{ color: "#c9d1d9", padding: "3px 8px 3px 0" }}>{row.roi}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Edit button inside expanded view */}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => onEdit(entry)}
+                style={{ background: "none", border: "1px solid #30363d", color: "#8b949e", cursor: "pointer", fontSize: 12, fontFamily: "inherit", padding: "5px 12px", borderRadius: 4 }}
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Legacy EOD card (no metadata) and all non-EOD cards ───────────────────
   return (
     <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16, marginBottom: 12 }}>
       {/* Header row: badge (+ mood for EOD) and date */}
@@ -1675,7 +1964,7 @@ function JournalAutoTextarea({ value, onChange, minH, placeholder }) {
 }
 
 // Inline edit form — expands in-place inside the feed, replacing the card being edited.
-function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, onSave, onCancel, saving, error }) {
+function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, freeCash, onFreeCashChange, vix, onVixChange, pipeline, onPipelineChange, onSave, onCancel, saving, error }) {
   const isEOD = entry.entry_type === "eod_update";
   const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
   return (
@@ -1714,6 +2003,24 @@ function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange
             })}
           </div>
         </JournalField>
+      )}
+
+      {/* Snapshot numeric fields (EOD only) */}
+      {isEOD && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+          <div>
+            <label style={JOURNAL_LABEL_ST}>Free Cash %</label>
+            <input type="number" step="0.1" style={JOURNAL_INPUT_ST} value={freeCash} onChange={onFreeCashChange} placeholder="15.4" />
+          </div>
+          <div>
+            <label style={JOURNAL_LABEL_ST}>VIX</label>
+            <input type="number" step="0.01" style={JOURNAL_INPUT_ST} value={vix} onChange={onVixChange} placeholder="24.42" />
+          </div>
+          <div>
+            <label style={JOURNAL_LABEL_ST}>Pipeline $</label>
+            <input type="number" style={JOURNAL_INPUT_ST} value={pipeline} onChange={onPipelineChange} placeholder="6391" />
+          </div>
+        </div>
       )}
 
       {/* Notes */}
@@ -1761,7 +2068,7 @@ function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange
 }
 
 function JournalTab() {
-  const { trades, positions } = useData();
+  const { trades, positions, account } = useData();
 
   // Feed
   const [entries,   setEntries]   = useState([]);
@@ -1784,8 +2091,11 @@ function JournalTab() {
   const [inlineTags,    setInlineTags]    = useState("");
   const [inlineSource,  setInlineSource]  = useState("Self");
   const [inlineMood,    setInlineMood]    = useState("🟡");
-  const [inlineSaving,  setInlineSaving]  = useState(false);
-  const [inlineError,   setInlineError]   = useState(null);
+  const [inlineSaving,     setInlineSaving]     = useState(false);
+  const [inlineError,      setInlineError]      = useState(null);
+  const [inlineFreeCash,   setInlineFreeCash]   = useState("");
+  const [inlineVix,        setInlineVix]        = useState("");
+  const [inlinePipeline,   setInlinePipeline]   = useState("");
   const [linkedTrade,    setLinkedTrade]    = useState(null);
   const [formTitle,      setFormTitle]      = useState("");
   const [formSource,     setFormSource]     = useState("Self");
@@ -1795,6 +2105,9 @@ function JournalTab() {
   const [saveError,      setSaveError]      = useState(null);
   const [saving,         setSaving]         = useState(false);
   const [formMood,       setFormMood]       = useState("🟡");
+  const [formFreeCash,   setFormFreeCash]   = useState("");
+  const [formVix,        setFormVix]        = useState("");
+  const [formPipeline,   setFormPipeline]   = useState("");
 
   // Backfill state
   const [backfilling,    setBackfilling]    = useState(false);
@@ -1839,6 +2152,88 @@ function JournalTab() {
         ticker: t.ticker, obj: t,
       })),
   [trades]);
+
+  // ── EOD preview data — derived from existing app state, no extra API call ──
+
+  // Today's closed CSP trades (for EOD form preview + metadata snapshot)
+  const eodClosedToday = useMemo(() => {
+    const dateKey = formDate;
+    return trades
+      .filter(t => t.closeDate?.toISOString().slice(0, 10) === dateKey)
+      .map(t => {
+        const dteRemaining = t.expiry_date && t.closeDate
+          ? Math.max(0, Math.ceil(
+              (new Date(t.expiry_date + "T12:00:00") - t.closeDate) / 86400000
+            ))
+          : null;
+        return {
+          ticker:        t.ticker,
+          type:          t.type,
+          strike:        t.strike,
+          pct_kept:      t.kept !== "—" ? Math.round(parseFloat(t.kept)) : null,
+          dte_remaining: dteRemaining,
+        };
+      });
+  }, [trades, formDate]);
+
+  // Today's opened CSP positions
+  const eodOpenedToday = useMemo(() => {
+    const dateKey = formDate;
+    return (positions.open_csps || [])
+      .filter(p => p.open_date === dateKey)
+      .map(p => ({
+        ticker:  p.ticker,
+        type:    p.type,
+        strike:  p.strike,
+        expiry:  p.expiry_date,
+        premium: p.premium_collected,
+      }));
+  }, [positions, formDate]);
+
+  // Current open CSPs with computed DTE metrics (for EOD form preview + metadata snapshot)
+  const eodOpenCsps = useMemo(() => {
+    const refDate = formDate || todayISO();
+    return (positions.open_csps || [])
+      .filter(p => p.type === "CSP")
+      .map(p => {
+        const expiryMs   = new Date(p.expiry_date + "T12:00:00").getTime();
+        const refMs      = new Date(refDate       + "T12:00:00").getTime();
+        const openMs     = new Date(p.open_date   + "T12:00:00").getTime();
+        const dte        = Math.max(0, Math.ceil((expiryMs - refMs)    / 86400000));
+        const totalDays  = Math.max(1, Math.ceil((expiryMs - openMs)   / 86400000));
+        const dte_pct    = Math.round(dte / totalDays * 100);
+        const roi        = p.capital_fronted > 0
+          ? +(p.premium_collected / p.capital_fronted * 100).toFixed(2)
+          : 0;
+        return {
+          ticker:   p.ticker,
+          strike:   p.strike,
+          expiry:   p.expiry_date,
+          dte,
+          dte_pct,
+          premium:  p.premium_collected,
+          capital:  p.capital_fronted,
+          roi,
+        };
+      });
+  }, [positions, formDate]);
+
+  // Live deployment status preview from form inputs
+  const eodDeploymentPreview = useMemo(() => {
+    if (!formFreeCash || !formVix) return null;
+    const band    = getVixBand(+formVix);
+    if (!band) return null;
+    const cashFrac = +formFreeCash / 100;
+    const status   =
+      cashFrac > band.ceilingPct ? "above"
+      : cashFrac < band.floorPct ? "below"
+      : "within";
+    const delta =
+      status === "above" ? +(cashFrac - band.ceilingPct).toFixed(3)
+      : status === "below" ? +(band.floorPct - cashFrac).toFixed(3)
+      : null;
+    return { band, status, delta };
+  }, [formFreeCash, formVix]);
 
   useEffect(() => { fetchEntries(); }, [filterType, filterTicker, filterSince]);
 
@@ -1895,6 +2290,7 @@ function JournalTab() {
     setLinkedPosition(null); setLinkedTrade(null);
     setFormDate(todayISO());
     setFormMood("🟡");
+    setFormFreeCash(""); setFormVix(""); setFormPipeline("");
     setSaveError(null);
   }
 
@@ -1905,6 +2301,9 @@ function JournalTab() {
     setInlineTags((entry.tags || []).join(", "));
     setInlineSource(entry.source ?? "Self");
     setInlineMood(entry.mood ?? "🟡");
+    setInlineFreeCash(entry.metadata?.free_cash_pct  != null ? String(entry.metadata.free_cash_pct)  : "");
+    setInlineVix(entry.metadata?.vix                 != null ? String(entry.metadata.vix)             : "");
+    setInlinePipeline(entry.metadata?.pipeline_total != null ? String(entry.metadata.pipeline_total)  : "");
     setInlineError(null);
   }
 
@@ -1913,7 +2312,7 @@ function JournalTab() {
     setInlineError(null);
   }
 
-  async function handleInlineSave(entryType) {
+  async function handleInlineSave(entryType, existingEntry) {
     const isEOD = entryType === "eod_update";
     const titleToSave = isEOD ? inlineTitle : inlineTitle.trim();
     if (!isEOD && !titleToSave) { setInlineError("Title is required."); return; }
@@ -1927,14 +2326,28 @@ function JournalTab() {
       const src  = isEOD ? null : (inlineSource || null);
       const mood = isEOD ? inlineMood : null;
       const now  = new Date().toISOString();
+
+      // For EOD entries, rebuild metadata preserving stored activity + csp_snapshot snapshots.
+      const metadata = isEOD ? computeEodMetadata({
+        freeCashPct:   inlineFreeCash,
+        vix:           inlineVix,
+        pipelineTotal: inlinePipeline,
+        mtdRealized:   existingEntry?.metadata?.mtd_realized ?? null,
+        activity:      existingEntry?.metadata?.activity     ?? { closed: [], opened: [] },
+        cspSnapshot:   existingEntry?.metadata?.csp_snapshot ?? [],
+      }) : undefined;
+
+      const updateFields = { title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, updated_at: now };
+      if (isEOD) updateFields.metadata = metadata;
+
       const { error } = await supabase
         .from("journal_entries")
-        .update({ title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, updated_at: now })
+        .update(updateFields)
         .eq("id", inlineEditId);
       if (error) throw error;
       setEntries(prev => prev.map(e =>
         e.id === inlineEditId
-          ? { ...e, title: titleToSave, body: inlineBody.trim(), tags, source: src, mood }
+          ? { ...e, title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, ...(isEOD ? { metadata } : {}) }
           : e
       ));
       setInlineEditId(null);
@@ -1969,6 +2382,15 @@ function JournalTab() {
 
       const mood = isEOD ? formMood : null;
 
+      const metadata = isEOD ? computeEodMetadata({
+        freeCashPct:   formFreeCash,
+        vix:           formVix,
+        pipelineTotal: formPipeline,
+        mtdRealized:   account?.month_to_date_premium ?? null,
+        activity:      { closed: eodClosedToday, opened: eodOpenedToday },
+        cspSnapshot:   eodOpenCsps,
+      }) : null;
+
       const payload = {
         entry_type:  entryType,
         trade_id:    null,
@@ -1980,6 +2402,7 @@ function JournalTab() {
         tags,
         source:      src,
         mood,
+        metadata,
         created_at:  now,
         updated_at:  now,
       };
@@ -2115,12 +2538,15 @@ function JournalTab() {
             ? <JournalInlineEditForm
                 key={entry.id}
                 entry={entry}
-                title={inlineTitle}       onTitleChange={e => setInlineTitle(e.target.value)}
-                body={inlineBody}         onBodyChange={e => setInlineBody(e.target.value)}
-                tags={inlineTags}         onTagsChange={e => setInlineTags(e.target.value)}
-                source={inlineSource}     onSourceChange={setInlineSource}
-                mood={inlineMood}         onMoodChange={setInlineMood}
-                onSave={() => handleInlineSave(entry.entry_type)}
+                title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
+                body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
+                tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
+                source={inlineSource}         onSourceChange={setInlineSource}
+                mood={inlineMood}             onMoodChange={setInlineMood}
+                freeCash={inlineFreeCash}     onFreeCashChange={e => setInlineFreeCash(e.target.value)}
+                vix={inlineVix}              onVixChange={e => setInlineVix(e.target.value)}
+                pipeline={inlinePipeline}     onPipelineChange={e => setInlinePipeline(e.target.value)}
+                onSave={() => handleInlineSave(entry.entry_type, entry)}
                 onCancel={handleInlineCancel}
                 saving={inlineSaving}
                 error={inlineError}
@@ -2236,6 +2662,95 @@ function JournalTab() {
                   })}
                 </div>
               </JournalField>
+
+              {/* Numeric snapshot fields */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+                <div>
+                  <label style={JOURNAL_LABEL_ST}>Free Cash %</label>
+                  <input type="number" step="0.1" style={JOURNAL_INPUT_ST} value={formFreeCash} onChange={e => setFormFreeCash(e.target.value)} placeholder="15.4" />
+                </div>
+                <div>
+                  <label style={JOURNAL_LABEL_ST}>VIX</label>
+                  <input type="number" step="0.01" style={JOURNAL_INPUT_ST} value={formVix} onChange={e => setFormVix(e.target.value)} placeholder="24.42" />
+                </div>
+                <div>
+                  <label style={JOURNAL_LABEL_ST}>Pipeline $</label>
+                  <input type="number" style={JOURNAL_INPUT_ST} value={formPipeline} onChange={e => setFormPipeline(e.target.value)} placeholder="6391" />
+                </div>
+              </div>
+
+              {/* Auto-populated preview panel */}
+              <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
+                <div style={{ color: "#6e7681", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8, fontSize: 11 }}>
+                  Preview (auto-populated)
+                </div>
+
+                {/* Deployment status */}
+                {eodDeploymentPreview ? (
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: "#8b949e" }}>Deployment: </span>
+                    <span style={{
+                      color: eodDeploymentPreview.status === "above" ? "#e3b341"
+                           : eodDeploymentPreview.status === "below" ? "#f85149"
+                           : "#3fb950",
+                    }}>
+                      {eodDeploymentPreview.status === "above"
+                        ? `↑ ${(eodDeploymentPreview.delta * 100).toFixed(1)}% above ceiling`
+                        : eodDeploymentPreview.status === "below"
+                        ? `↓ ${(eodDeploymentPreview.delta * 100).toFixed(1)}% below floor`
+                        : "✓ in band"}
+                    </span>
+                    <span style={{ color: "#6e7681" }}> · Floor: {eodDeploymentPreview.band.floorPct * 100}–{eodDeploymentPreview.band.ceilingPct * 100}%</span>
+                  </div>
+                ) : (
+                  <div style={{ color: "#6e7681", marginBottom: 6 }}>Deployment: — (enter VIX + Free Cash)</div>
+                )}
+
+                {/* MTD Realized */}
+                <div style={{ marginBottom: 6 }}>
+                  <span style={{ color: "#8b949e" }}>MTD Realized: </span>
+                  <span style={{ color: "#c9d1d9" }}>
+                    {account?.month_to_date_premium != null
+                      ? `$${account.month_to_date_premium.toLocaleString()}`
+                      : "—"}
+                  </span>
+                </div>
+
+                {/* Pipeline Est (60%) */}
+                {formPipeline && (
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ color: "#8b949e" }}>Pipeline Est. (60%): </span>
+                    <span style={{ color: "#c9d1d9" }}>${Math.round(+formPipeline * 0.60).toLocaleString()}</span>
+                  </div>
+                )}
+
+                {/* Today's activity */}
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ color: "#8b949e" }}>Today's activity: </span>
+                  {eodClosedToday.length === 0 && eodOpenedToday.length === 0
+                    ? <span style={{ color: "#6e7681" }}>No trades on {formDate}</span>
+                    : null}
+                </div>
+                {eodClosedToday.map((t, i) => (
+                  <div key={i} style={{ color: "#6e7681", paddingLeft: 8, marginBottom: 2 }}>
+                    Closed {t.ticker} {t.type} ${t.strike}
+                    {t.pct_kept != null && <span> · {t.pct_kept}%</span>}
+                    {t.dte_remaining != null && <span> · {t.dte_remaining}d DTE rem.</span>}
+                  </div>
+                ))}
+                {eodOpenedToday.map((p, i) => (
+                  <div key={i} style={{ color: "#6e7681", paddingLeft: 8, marginBottom: 2 }}>
+                    Opened {p.ticker} {p.type} ${p.strike} · exp {formatExpiry(p.expiry)}
+                    {p.premium && <span> · ${p.premium.toLocaleString()}</span>}
+                  </div>
+                ))}
+
+                {/* Open CSPs count */}
+                <div style={{ marginTop: 4, color: "#8b949e" }}>
+                  Open CSPs: <span style={{ color: "#c9d1d9" }}>{eodOpenCsps.length} position{eodOpenCsps.length !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
+
               <JournalField label="Notes">
                 <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={200} placeholder="What happened today, macro context, anything worth noting for the monthly review..." />
               </JournalField>
