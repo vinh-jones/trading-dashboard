@@ -1963,7 +1963,7 @@ function JournalAutoTextarea({ value, onChange, minH, placeholder }) {
 }
 
 // Inline edit form — expands in-place inside the feed, replacing the card being edited.
-function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, freeCash, onFreeCashChange, vix, onVixChange, pipeline, onPipelineChange, onSave, onCancel, saving, error }) {
+function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, onSave, onCancel, saving, error }) {
   const isEOD = entry.entry_type === "eod_update";
   const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
   return (
@@ -2002,24 +2002,6 @@ function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange
             })}
           </div>
         </JournalField>
-      )}
-
-      {/* Snapshot numeric fields (EOD only) */}
-      {isEOD && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-          <div>
-            <label style={JOURNAL_LABEL_ST}>Free Cash %</label>
-            <input type="number" step="0.1" style={JOURNAL_INPUT_ST} value={freeCash} onChange={onFreeCashChange} placeholder="15.4" />
-          </div>
-          <div>
-            <label style={JOURNAL_LABEL_ST}>VIX</label>
-            <input type="number" step="0.01" style={JOURNAL_INPUT_ST} value={vix} onChange={onVixChange} placeholder="24.42" />
-          </div>
-          <div>
-            <label style={JOURNAL_LABEL_ST}>Pipeline $</label>
-            <input type="number" style={JOURNAL_INPUT_ST} value={pipeline} onChange={onPipelineChange} placeholder="6391" />
-          </div>
-        </div>
       )}
 
       {/* Notes */}
@@ -2092,9 +2074,6 @@ function JournalTab() {
   const [inlineMood,    setInlineMood]    = useState("🟡");
   const [inlineSaving,     setInlineSaving]     = useState(false);
   const [inlineError,      setInlineError]      = useState(null);
-  const [inlineFreeCash,   setInlineFreeCash]   = useState("");
-  const [inlineVix,        setInlineVix]        = useState("");
-  const [inlinePipeline,   setInlinePipeline]   = useState("");
   const [linkedTrade,    setLinkedTrade]    = useState(null);
   const [formTitle,      setFormTitle]      = useState("");
   const [formSource,     setFormSource]     = useState("Self");
@@ -2104,9 +2083,6 @@ function JournalTab() {
   const [saveError,      setSaveError]      = useState(null);
   const [saving,         setSaving]         = useState(false);
   const [formMood,       setFormMood]       = useState("🟡");
-  const [formFreeCash,   setFormFreeCash]   = useState("");
-  const [formVix,        setFormVix]        = useState("");
-  const [formPipeline,   setFormPipeline]   = useState("");
 
   // Backfill state
   const [backfilling,    setBackfilling]    = useState(false);
@@ -2151,6 +2127,23 @@ function JournalTab() {
         ticker: t.ticker, obj: t,
       })),
   [trades]);
+
+  // ── EOD auto-populated values — derived from account + positions, no form input needed ──
+
+  // Free Cash % as a display percentage (e.g. 15.4)
+  const eodAutoFreeCash = useMemo(() =>
+    account?.free_cash_pct_est != null ? +(account.free_cash_pct_est * 100).toFixed(1) : null,
+  [account]);
+
+  // VIX from last sync
+  const eodAutoVix = useMemo(() => account?.vix_current ?? null, [account]);
+
+  // Gross open pipeline = sum of premium from all open CSPs + active CCs
+  const eodAutoPipeline = useMemo(() => {
+    const csps = (positions.open_csps || []).reduce((sum, p) => sum + (p.premium_collected || 0), 0);
+    const ccs  = (positions.assigned_shares || []).reduce((sum, s) => sum + (s.active_cc?.premium_collected || 0), 0);
+    return csps + ccs;
+  }, [positions]);
 
   // ── EOD preview data — derived from existing app state, no extra API call ──
 
@@ -2217,12 +2210,12 @@ function JournalTab() {
       });
   }, [positions, formDate]);
 
-  // Live deployment status preview from form inputs
+  // Live deployment status preview from auto-computed account values
   const eodDeploymentPreview = useMemo(() => {
-    if (!formFreeCash || !formVix) return null;
-    const band    = getVixBand(+formVix);
+    if (eodAutoVix == null || eodAutoFreeCash == null) return null;
+    const band     = getVixBand(eodAutoVix);
     if (!band) return null;
-    const cashFrac = +formFreeCash / 100;
+    const cashFrac = eodAutoFreeCash / 100;
     const status   =
       cashFrac > band.ceilingPct ? "above"
       : cashFrac < band.floorPct ? "below"
@@ -2232,7 +2225,7 @@ function JournalTab() {
       : status === "below" ? +(band.floorPct - cashFrac).toFixed(3)
       : null;
     return { band, status, delta };
-  }, [formFreeCash, formVix]);
+  }, [eodAutoFreeCash, eodAutoVix]);
 
   useEffect(() => { fetchEntries(); }, [filterType, filterTicker, filterSince]);
 
@@ -2289,7 +2282,6 @@ function JournalTab() {
     setLinkedPosition(null); setLinkedTrade(null);
     setFormDate(todayISO());
     setFormMood("🟡");
-    setFormFreeCash(""); setFormVix(""); setFormPipeline("");
     setSaveError(null);
   }
 
@@ -2300,9 +2292,6 @@ function JournalTab() {
     setInlineTags((entry.tags || []).join(", "));
     setInlineSource(entry.source ?? "Self");
     setInlineMood(entry.mood ?? "🟡");
-    setInlineFreeCash(entry.metadata?.free_cash_pct  != null ? String(entry.metadata.free_cash_pct)  : "");
-    setInlineVix(entry.metadata?.vix                 != null ? String(entry.metadata.vix)             : "");
-    setInlinePipeline(entry.metadata?.pipeline_total != null ? String(entry.metadata.pipeline_total)  : "");
     setInlineError(null);
   }
 
@@ -2328,9 +2317,9 @@ function JournalTab() {
 
       // For EOD entries, rebuild metadata preserving stored activity + csp_snapshot snapshots.
       const metadata = isEOD ? computeEodMetadata({
-        freeCashPct:   inlineFreeCash,
-        vix:           inlineVix,
-        pipelineTotal: inlinePipeline,
+        freeCashPct:   eodAutoFreeCash,
+        vix:           eodAutoVix,
+        pipelineTotal: eodAutoPipeline,
         mtdRealized:   existingEntry?.metadata?.mtd_realized ?? null,
         activity:      existingEntry?.metadata?.activity     ?? { closed: [], opened: [] },
         cspSnapshot:   existingEntry?.metadata?.csp_snapshot ?? [],
@@ -2382,9 +2371,9 @@ function JournalTab() {
       const mood = isEOD ? formMood : null;
 
       const metadata = isEOD ? computeEodMetadata({
-        freeCashPct:   formFreeCash,
-        vix:           formVix,
-        pipelineTotal: formPipeline,
+        freeCashPct:   eodAutoFreeCash,
+        vix:           eodAutoVix,
+        pipelineTotal: eodAutoPipeline,
         mtdRealized:   account?.month_to_date_premium ?? null,
         activity:      { closed: eodClosedToday, opened: eodOpenedToday },
         cspSnapshot:   eodOpenCsps,
@@ -2542,9 +2531,6 @@ function JournalTab() {
                 tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
                 source={inlineSource}         onSourceChange={setInlineSource}
                 mood={inlineMood}             onMoodChange={setInlineMood}
-                freeCash={inlineFreeCash}     onFreeCashChange={e => setInlineFreeCash(e.target.value)}
-                vix={inlineVix}              onVixChange={e => setInlineVix(e.target.value)}
-                pipeline={inlinePipeline}     onPipelineChange={e => setInlinePipeline(e.target.value)}
                 onSave={() => handleInlineSave(entry.entry_type, entry)}
                 onCancel={handleInlineCancel}
                 saving={inlineSaving}
@@ -2662,21 +2648,18 @@ function JournalTab() {
                 </div>
               </JournalField>
 
-              {/* Numeric snapshot fields */}
+              {/* Snapshot values — auto-populated from synced account data, read-only */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-                <div>
-                  <label style={JOURNAL_LABEL_ST}>Free Cash %</label>
-                  <input type="number" step="0.1" style={JOURNAL_INPUT_ST} value={formFreeCash} onChange={e => setFormFreeCash(e.target.value)} placeholder="15.4" />
-                </div>
-                <div>
-                  <label style={JOURNAL_LABEL_ST}>VIX</label>
-                  <input type="number" step="0.01" style={JOURNAL_INPUT_ST} value={formVix} onChange={e => setFormVix(e.target.value)} placeholder="24.42" />
-                </div>
-                <div>
-                  <label style={JOURNAL_LABEL_ST}>Pipeline $</label>
-                  <input type="number" style={JOURNAL_INPUT_ST} value={formPipeline} onChange={e => setFormPipeline(e.target.value)} placeholder="6391" />
-                </div>
-              </div>
+                {[
+                  { label: "Free Cash %", value: eodAutoFreeCash != null ? `${eodAutoFreeCash}%` : "—" },
+                  { label: "VIX",         value: eodAutoVix      != null ? eodAutoVix            : "—" },
+                  { label: "Pipeline $",  value: eodAutoPipeline  > 0    ? `$${eodAutoPipeline.toLocaleString()}` : "—" },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <label style={JOURNAL_LABEL_ST}>{label}</label>
+                    <div style={{ ...JOURNAL_INPUT_ST, color: "#e6edf3", fontWeight: 500 }}>{value}</div>
+                  </div>
+                ))}</div>
 
               {/* Auto-populated preview panel */}
               <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
@@ -2716,10 +2699,10 @@ function JournalTab() {
                 </div>
 
                 {/* Pipeline Est (60%) */}
-                {formPipeline && (
+                {eodAutoPipeline > 0 && (
                   <div style={{ marginBottom: 6 }}>
                     <span style={{ color: "#8b949e" }}>Pipeline Est. (60%): </span>
-                    <span style={{ color: "#c9d1d9" }}>${Math.round(+formPipeline * 0.60).toLocaleString()}</span>
+                    <span style={{ color: "#c9d1d9" }}>${Math.round(eodAutoPipeline * 0.60).toLocaleString()}</span>
                   </div>
                 )}
 
