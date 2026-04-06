@@ -128,6 +128,7 @@ export default async function handler(req, res) {
 
     // Map trade rows — shape must match what normalizeTrade() in App.jsx expects
     const trades = tradeRows.map(t => ({
+      id:                t.id,
       ticker:            t.ticker,
       type:              t.type,
       subtype:           t.subtype,
