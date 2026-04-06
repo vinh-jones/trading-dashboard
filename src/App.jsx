@@ -60,7 +60,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.11.0";
+const VERSION = "1.12.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -1584,6 +1584,17 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
         </div>
       )}
 
+      {/* Trade metadata row: premium, strike, expiry, days, % kept */}
+      {linkedTrade && (
+        <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <span>{formatDollars(linkedTrade.premium)}</span>
+          {linkedTrade.strike && <span>· ${linkedTrade.strike}</span>}
+          {linkedTrade.close && linkedTrade.close !== "—" && <span>· exp {linkedTrade.close}</span>}
+          {linkedTrade.days && <span>· {linkedTrade.days}d</span>}
+          {linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
+        </div>
+      )}
+
       {/* Body */}
       <div style={{ color: entry.body ? "#c9d1d9" : "#6e7681", fontSize: 13, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap", fontStyle: entry.body ? "normal" : "italic" }}>
         {entry.body || "No notes yet — click Edit to add."}
@@ -1609,6 +1620,124 @@ function JournalEntryCard({ entry, onEdit, onDelete }) {
   );
 }
 
+// ── Shared journal form styles — module-level so React never remounts form elements ──
+const JOURNAL_INPUT_ST = {
+  background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
+  borderRadius: 4, padding: "8px 10px", fontFamily: "inherit", fontSize: 13,
+  width: "100%", boxSizing: "border-box",
+};
+const JOURNAL_LABEL_ST = {
+  display: "block", color: "#8b949e", fontSize: 11, textTransform: "uppercase",
+  letterSpacing: "0.8px", marginBottom: 6, fontWeight: 500,
+};
+
+function JournalField({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={JOURNAL_LABEL_ST}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function JournalAutoTextarea({ value, onChange, minH, placeholder }) {
+  return (
+    <textarea
+      value={value}
+      onChange={onChange}
+      onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+      placeholder={placeholder}
+      style={{ ...JOURNAL_INPUT_ST, minHeight: minH, resize: "none", lineHeight: 1.6 }}
+    />
+  );
+}
+
+// Inline edit form — expands in-place inside the feed, replacing the card being edited.
+function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, onSave, onCancel, saving, error }) {
+  const isEOD = entry.entry_type === "eod_update";
+  const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
+  return (
+    <div style={{ background: "#161b22", border: "2px solid #e3b341", borderRadius: 6, padding: 16, marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#e3b341", textTransform: "uppercase", letterSpacing: "0.8px" }}>
+          Editing — <span style={{ color: badge.color }}>{badge.label}</span>
+        </span>
+        <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+      </div>
+
+      {/* Title (not for EOD — title is auto-generated) */}
+      {!isEOD && (
+        <JournalField label="Title">
+          <input type="text" style={JOURNAL_INPUT_ST} value={title} onChange={onTitleChange} />
+        </JournalField>
+      )}
+
+      {/* Mood (EOD only) */}
+      {isEOD && (
+        <JournalField label="Mood">
+          <div style={{ display: "flex", gap: 6 }}>
+            {MOODS.map(m => {
+              const active = mood === m.emoji;
+              return (
+                <button key={m.emoji} onClick={() => onMoodChange(m.emoji)} style={{
+                  flex: 1, padding: "8px 2px", borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
+                  border: `2px solid ${active ? m.activeBorder : "#30363d"}`,
+                  background: active ? m.activeBg : "transparent",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                }}>
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>{m.emoji}</span>
+                  <span style={{ fontSize: 10, color: active ? m.activeBorder : "#6e7681" }}>{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </JournalField>
+      )}
+
+      {/* Notes */}
+      <JournalField label="Notes">
+        <JournalAutoTextarea value={body} onChange={onBodyChange} minH={140} placeholder="Your notes..." />
+      </JournalField>
+
+      {/* Source (trade / position notes) */}
+      {!isEOD && (
+        <JournalField label="Source">
+          <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+            {["Ryan", "Self"].map(s => (
+              <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#c9d1d9" }}>
+                <input type="radio" name="inline-source" value={s} checked={source === s} onChange={() => onSourceChange(s)} style={{ accentColor: "#58a6ff" }} />
+                {s}
+              </label>
+            ))}
+          </div>
+        </JournalField>
+      )}
+
+      {/* Tags (trade / position notes) */}
+      {!isEOD && (
+        <JournalField label="Tags (comma separated, optional)">
+          <input type="text" style={JOURNAL_INPUT_ST} value={tags} onChange={onTagsChange} placeholder="ryan-signal, lower-bb, vix-elevated" />
+        </JournalField>
+      )}
+
+      {error && (
+        <div style={{ color: "#f85149", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: "#1a1a1a", borderRadius: 4 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={onCancel} style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}>
+          Cancel
+        </button>
+        <button onClick={onSave} disabled={saving} style={{ background: "#238636", border: "none", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 16px", borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1 }}>
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function JournalTab() {
   const { trades, positions } = useData();
 
@@ -1624,8 +1753,17 @@ function JournalTab() {
 
   // Form
   const [entryType,      setEntryType]      = useState("trade_note");
-  const [editingId,      setEditingId]      = useState(null);
   const [linkedPosition, setLinkedPosition] = useState(null);
+
+  // Inline edit state (replaces right-panel edit mode)
+  const [inlineEditId,  setInlineEditId]  = useState(null);
+  const [inlineTitle,   setInlineTitle]   = useState("");
+  const [inlineBody,    setInlineBody]    = useState("");
+  const [inlineTags,    setInlineTags]    = useState("");
+  const [inlineSource,  setInlineSource]  = useState("Self");
+  const [inlineMood,    setInlineMood]    = useState("🟡");
+  const [inlineSaving,  setInlineSaving]  = useState(false);
+  const [inlineError,   setInlineError]   = useState(null);
   const [linkedTrade,    setLinkedTrade]    = useState(null);
   const [formTitle,      setFormTitle]      = useState("");
   const [formSource,     setFormSource]     = useState("Self");
@@ -1731,7 +1869,6 @@ function JournalTab() {
   }
 
   function resetForm() {
-    setEditingId(null);
     setFormTitle(""); setFormBody(""); setFormTags(""); setFormSource("Self");
     setLinkedPosition(null); setLinkedTrade(null);
     setFormDate(todayISO());
@@ -1740,17 +1877,50 @@ function JournalTab() {
   }
 
   function handleEdit(entry) {
-    setEditingId(entry.id);
-    setEntryType(entry.entry_type);
-    setFormTitle(entry.title ?? "");
-    setFormBody(entry.body ?? "");
-    setFormTags((entry.tags || []).join(", "));
-    setFormSource(entry.source ?? "Self");
-    setFormDate(entry.entry_date ?? todayISO());
-    setFormMood(entry.mood ?? "🟡");
-    setLinkedPosition(null);
-    setLinkedTrade(null);
-    setSaveError(null);
+    setInlineEditId(entry.id);
+    setInlineTitle(entry.title ?? "");
+    setInlineBody(entry.body ?? "");
+    setInlineTags((entry.tags || []).join(", "));
+    setInlineSource(entry.source ?? "Self");
+    setInlineMood(entry.mood ?? "🟡");
+    setInlineError(null);
+  }
+
+  function handleInlineCancel() {
+    setInlineEditId(null);
+    setInlineError(null);
+  }
+
+  async function handleInlineSave(entryType) {
+    const isEOD = entryType === "eod_update";
+    const titleToSave = isEOD ? inlineTitle : inlineTitle.trim();
+    if (!isEOD && !titleToSave) { setInlineError("Title is required."); return; }
+    if (!inlineBody.trim())     { setInlineError("Notes are required."); return; }
+    setInlineSaving(true);
+    setInlineError(null);
+    try {
+      const tags = [...new Set(
+        inlineTags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean)
+      )];
+      const src  = isEOD ? null : (inlineSource || null);
+      const mood = isEOD ? inlineMood : null;
+      const now  = new Date().toISOString();
+      const { error } = await supabase
+        .from("journal_entries")
+        .update({ title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, updated_at: now })
+        .eq("id", inlineEditId);
+      if (error) throw error;
+      setEntries(prev => prev.map(e =>
+        e.id === inlineEditId
+          ? { ...e, title: titleToSave, body: inlineBody.trim(), tags, source: src, mood }
+          : e
+      ));
+      setInlineEditId(null);
+    } catch (err) {
+      setInlineError(err.message);
+    } finally {
+      setInlineSaving(false);
+    }
   }
 
   async function handleDelete(id) {
@@ -1777,40 +1947,27 @@ function JournalTab() {
 
       const mood = isEOD ? formMood : null;
 
-      if (editingId) {
-        const { error } = await supabase
-          .from("journal_entries")
-          .update({ title: titleToSave, body: formBody.trim(), tags, source: src, mood, updated_at: now })
-          .eq("id", editingId);
-        if (error) throw error;
-        setEntries(prev => prev.map(e =>
-          e.id === editingId
-            ? { ...e, title: titleToSave, body: formBody.trim(), tags, source: src, mood }
-            : e
-        ));
-      } else {
-        const payload = {
-          entry_type:  entryType,
-          trade_id:    null,
-          position_id: linkedPosition?.id ?? null,
-          entry_date:  formDate,
-          ticker,
-          title:       titleToSave,
-          body:        formBody.trim(),
-          tags,
-          source:      src,
-          mood,
-          created_at:  now,
-          updated_at:  now,
-        };
-        const { data, error } = await supabase
-          .from("journal_entries")
-          .insert(payload)
-          .select()
-          .single();
-        if (error) throw error;
-        setEntries(prev => [data, ...prev]);
-      }
+      const payload = {
+        entry_type:  entryType,
+        trade_id:    null,
+        position_id: linkedPosition?.id ?? null,
+        entry_date:  formDate,
+        ticker,
+        title:       titleToSave,
+        body:        formBody.trim(),
+        tags,
+        source:      src,
+        mood,
+        created_at:  now,
+        updated_at:  now,
+      };
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .insert(payload)
+        .select()
+        .single();
+      if (error) throw error;
+      setEntries(prev => [data, ...prev]);
       resetForm();
     } catch (err) {
       setSaveError(err.message);
@@ -1822,62 +1979,31 @@ function JournalTab() {
   function handleLinkPosition(posOpt) {
     setLinkedPosition(posOpt ? posOpt.obj : null);
     setLinkedTrade(null);
-    if (posOpt && !editingId) setFormTitle(buildAutoTitle(entryType, posOpt.obj, null));
+    if (posOpt) setFormTitle(buildAutoTitle(entryType, posOpt.obj, null));
   }
 
   function handleLinkTrade(tradeOpt) {
     setLinkedTrade(tradeOpt ? tradeOpt.obj : null);
     setLinkedPosition(null);
-    if (tradeOpt && !editingId) setFormTitle(buildAutoTitle(entryType, null, tradeOpt.obj));
+    if (tradeOpt) setFormTitle(buildAutoTitle(entryType, null, tradeOpt.obj));
   }
 
   // Shared input style
-  const inputSt = {
-    background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
-    borderRadius: 4, padding: "8px 10px", fontFamily: "inherit", fontSize: 13,
-    width: "100%", boxSizing: "border-box",
-  };
-  const labelSt = {
-    display: "block", color: "#8b949e", fontSize: 11, textTransform: "uppercase",
-    letterSpacing: "0.8px", marginBottom: 6, fontWeight: 500,
-  };
-
-  function Field({ label, children }) {
-    return (
-      <div style={{ marginBottom: 14 }}>
-        <label style={labelSt}>{label}</label>
-        {children}
-      </div>
-    );
-  }
-
-  function AutoTextarea({ value, onChange, minH, placeholder }) {
-    return (
-      <textarea
-        value={value}
-        onChange={onChange}
-        onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-        placeholder={placeholder}
-        style={{ ...inputSt, minHeight: minH, resize: "none", lineHeight: 1.6 }}
-      />
-    );
-  }
-
   // Current select indices for position/trade dropdowns
   const posSelectIdx  = linkedPosition ? positionOptions.findIndex(o => o.obj === linkedPosition) : -1;
   const tradeSelectIdx = linkedTrade   ? closedTradeOptions.findIndex(o => o.obj === linkedTrade) : -1;
 
   const posSelectEl = (label, optional = true) => (
-    <Field label={label}>
+    <JournalField label={label}>
       <select
-        style={inputSt}
+        style={JOURNAL_INPUT_ST}
         value={posSelectIdx >= 0 ? posSelectIdx : ""}
         onChange={e => handleLinkPosition(e.target.value !== "" ? positionOptions[+e.target.value] : null)}
       >
         <option value="">{optional ? "— none —" : "— select position —"}</option>
         {positionOptions.map((o, i) => <option key={i} value={i}>[{o.group}] {o.label}</option>)}
       </select>
-    </Field>
+    </JournalField>
   );
 
   const filterSelectSt = {
@@ -1962,9 +2088,23 @@ function JournalTab() {
             Use the form to add your first trade note or EOD update.
           </div>
         )}
-        {!loading && entries.map(entry => (
-          <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
-        ))}
+        {!loading && entries.map(entry =>
+          entry.id === inlineEditId
+            ? <JournalInlineEditForm
+                key={entry.id}
+                entry={entry}
+                title={inlineTitle}       onTitleChange={e => setInlineTitle(e.target.value)}
+                body={inlineBody}         onBodyChange={e => setInlineBody(e.target.value)}
+                tags={inlineTags}         onTagsChange={e => setInlineTags(e.target.value)}
+                source={inlineSource}     onSourceChange={setInlineSource}
+                mood={inlineMood}         onMoodChange={setInlineMood}
+                onSave={() => handleInlineSave(entry.entry_type)}
+                onCancel={handleInlineCancel}
+                saving={inlineSaving}
+                error={inlineError}
+              />
+            : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
+        )}
       </div>
 
       {/* ── RIGHT: New Entry Form ────────────────────────────────────────── */}
@@ -1972,8 +2112,8 @@ function JournalTab() {
         <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16 }}>
 
           {/* Form header */}
-          <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 600, color: editingId ? "#e3b341" : "#e6edf3" }}>
-            {editingId ? "Edit Entry" : "New Entry"}
+          <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>
+            New Entry
           </div>
 
           {/* Entry type selector */}
@@ -1983,15 +2123,14 @@ function JournalTab() {
               return (
                 <button
                   key={key}
-                  onClick={() => { if (!editingId) { resetForm(); setEntryType(key); } }}
+                  onClick={() => { resetForm(); setEntryType(key); }}
                   style={{
                     flex: 1, padding: "7px 0", fontSize: 12, fontFamily: "inherit",
-                    cursor: editingId ? "not-allowed" : "pointer", borderRadius: 4,
+                    cursor: "pointer", borderRadius: 4,
                     fontWeight: active ? 600 : 400,
                     background: active ? activeBg : "transparent",
                     color: active ? activeColor : "#8b949e",
                     border: `1px solid ${active ? activeColor : "#30363d"}`,
-                    opacity: editingId && !active ? 0.4 : 1,
                   }}
                 >
                   {label}
@@ -2003,27 +2142,27 @@ function JournalTab() {
           {/* ── Trade Note fields ── */}
           {entryType === "trade_note" && (
             <>
-              {!editingId && posSelectEl("Link to open position (optional)", true)}
-              {!editingId && (
-                <Field label="Link to closed trade (optional)">
+              {posSelectEl("Link to open position (optional)", true)}
+              {(
+                <JournalField label="Link to closed trade (optional)">
                   <select
-                    style={inputSt}
+                    style={JOURNAL_INPUT_ST}
                     value={tradeSelectIdx >= 0 ? tradeSelectIdx : ""}
                     onChange={e => handleLinkTrade(e.target.value !== "" ? closedTradeOptions[+e.target.value] : null)}
                   >
                     <option value="">— none —</option>
                     {closedTradeOptions.map((o, i) => <option key={i} value={i}>{o.label}</option>)}
                   </select>
-                </Field>
+                </JournalField>
               )}
-              <Field label="Title">
+              <JournalField label="Title">
                 <input
-                  type="text" style={inputSt} value={formTitle}
+                  type="text" style={JOURNAL_INPUT_ST} value={formTitle}
                   onChange={e => setFormTitle(e.target.value)}
                   placeholder="Auto-filled from linked trade, or enter manually"
                 />
-              </Field>
-              <Field label="Source">
+              </JournalField>
+              <JournalField label="Source">
                 <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
                   {["Ryan", "Self"].map(s => (
                     <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#c9d1d9" }}>
@@ -2032,29 +2171,27 @@ function JournalTab() {
                     </label>
                   ))}
                 </div>
-              </Field>
-              <Field label="Tags (comma separated, optional)">
+              </JournalField>
+              <JournalField label="Tags (comma separated, optional)">
                 <input
-                  type="text" style={inputSt} value={formTags}
+                  type="text" style={JOURNAL_INPUT_ST} value={formTags}
                   onChange={e => setFormTags(e.target.value)}
                   placeholder="ryan-signal, lower-bb, vix-elevated"
                 />
-              </Field>
-              <Field label="Notes">
-                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Trade rationale, setup details..." />
-              </Field>
+              </JournalField>
+              <JournalField label="Notes">
+                <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Trade rationale, setup details..." />
+              </JournalField>
             </>
           )}
 
           {/* ── EOD Update fields ── */}
           {entryType === "eod_update" && (
             <>
-              {!editingId && (
-                <Field label="Date">
-                  <input type="date" style={inputSt} value={formDate} onChange={e => setFormDate(e.target.value)} />
-                </Field>
-              )}
-              <Field label="Mood">
+              <JournalField label="Date">
+                <input type="date" style={JOURNAL_INPUT_ST} value={formDate} onChange={e => setFormDate(e.target.value)} />
+              </JournalField>
+              <JournalField label="Mood">
                 <div style={{ display: "flex", gap: 6 }}>
                   {MOODS.map(m => {
                     const active = formMood === m.emoji;
@@ -2076,27 +2213,27 @@ function JournalTab() {
                     );
                   })}
                 </div>
-              </Field>
-              <Field label="Notes">
-                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={200} placeholder="What happened today, macro context, anything worth noting for the monthly review..." />
-              </Field>
+              </JournalField>
+              <JournalField label="Notes">
+                <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={200} placeholder="What happened today, macro context, anything worth noting for the monthly review..." />
+              </JournalField>
             </>
           )}
 
           {/* ── Position Note fields ── */}
           {entryType === "position_note" && (
             <>
-              {!editingId && posSelectEl("Position", false)}
-              <Field label="Title">
+              {posSelectEl("Position", false)}
+              <JournalField label="Title">
                 <input
-                  type="text" style={inputSt} value={formTitle}
+                  type="text" style={JOURNAL_INPUT_ST} value={formTitle}
                   onChange={e => setFormTitle(e.target.value)}
                   placeholder="Auto-filled from position, or enter manually"
                 />
-              </Field>
-              <Field label="Notes">
-                <AutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Ongoing observations, roll considerations, delta watch..." />
-              </Field>
+              </JournalField>
+              <JournalField label="Notes">
+                <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Ongoing observations, roll considerations, delta watch..." />
+              </JournalField>
             </>
           )}
 
@@ -2125,7 +2262,7 @@ function JournalTab() {
                 borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? "Saving..." : editingId ? "Save Changes" : entryType === "eod_update" ? "Save Update" : "Save Note"}
+              {saving ? "Saving..." : entryType === "eod_update" ? "Save Update" : "Save Note"}
             </button>
           </div>
 
