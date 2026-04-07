@@ -64,7 +64,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.16.1";
+const VERSION = "1.16.2";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
