@@ -555,6 +555,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
   const { trades: TRADES, positions, account, deleteTrade } = useData();
   const isMobile = useWindowWidth() < 600;
   const [calMonth, setCalMonth] = useState(3); // default to April
+  const [selectedWeek, setSelectedWeek] = useState(null); // null or week index (0-4)
 
   const monthInfo = MONTHS[calMonth];
 
@@ -683,9 +684,27 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
   const impliedTotal      = mtdCollected + expectedPipeline;
   const gapToBaseline     = pipelineBaseline - impliedTotal;
 
-  // Unified display: selected day, or whole month when nothing selected
-  const displayClosed   = selectedDay ? (dailyData[selectedDay]?.trades || []) : monthClosedTrades;
-  const displayExpiring = selectedDay ? (expiryMap[selectedDay]?.positions || []) : monthExpiringPositions;
+  // Unified display: selected day, selected week, or whole month when nothing selected
+  const displayClosed = selectedDay
+    ? (dailyData[selectedDay]?.trades || [])
+    : selectedWeek != null
+      ? weeks[selectedWeek]
+          .filter(d => d.getMonth() === monthInfo.month)
+          .flatMap(d => {
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            return dailyData[key]?.trades || [];
+          })
+      : monthClosedTrades;
+  const displayExpiring = selectedDay
+    ? (expiryMap[selectedDay]?.positions || [])
+    : selectedWeek != null
+      ? weeks[selectedWeek]
+          .filter(d => d.getMonth() === monthInfo.month)
+          .flatMap(d => {
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            return expiryMap[key]?.positions || [];
+          })
+      : monthExpiringPositions;
   const hasDisplay      = displayClosed.length > 0 || displayExpiring.length > 0;
 
   function getCellBg(premium) {
@@ -785,7 +804,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
           {MONTHS.map((m, i) => (
             <button
               key={m.label}
-              onClick={() => { setCalMonth(i); setSelectedDay(null); }}
+              onClick={() => { setCalMonth(i); setSelectedDay(null); setSelectedWeek(null); }}
               style={{
                 padding: "7px 18px", borderRadius: 4, fontSize: 15, fontFamily: "inherit", cursor: "pointer",
                 fontWeight: calMonth === i ? 600 : 400,
@@ -834,7 +853,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
               return (
                 <div
                   key={di}
-                  onClick={() => { if (isClickable) setSelectedDay(isSelected ? null : key); }}
+                  onClick={() => { if (isClickable) { setSelectedDay(isSelected ? null : key); setSelectedWeek(null); } }}
                   style={{
                     padding: "10px 12px", minHeight: 80,
                     borderBottom: wi < weeks.length - 1 ? "1px solid #21262d" : "none",
@@ -880,28 +899,40 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
               );
             })}
             {/* Weekly total column */}
-            <div style={{
-              padding: "10px 12px", minHeight: 80,
-              borderBottom: wi < weeks.length - 1 ? "1px solid #21262d" : "none",
-              background: "#161b22",
-              display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
-            }}>
-              <div style={{ fontSize: 12, color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
-                Week {wi + 1}
-              </div>
-              {weeklyTotals[wi].count > 0 ? (
-                <>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: weeklyTotals[wi].total >= 0 ? "#3fb950" : "#f85149" }}>
-                    {formatDollarsFull(weeklyTotals[wi].total)}
+            {(() => {
+              const isWeekSelected = selectedWeek === wi;
+              const isWeekClickable = weeklyTotals[wi].count > 0;
+              return (
+                <div
+                  onClick={() => { if (isWeekClickable) { setSelectedWeek(isWeekSelected ? null : wi); setSelectedDay(null); } }}
+                  style={{
+                    padding: "10px 12px", minHeight: 80,
+                    borderBottom: wi < weeks.length - 1 ? "1px solid #21262d" : "none",
+                    border: isWeekSelected ? "1px solid #58a6ff" : "1px solid transparent",
+                    background: isWeekSelected ? "#1c2333" : "#161b22",
+                    display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center",
+                    cursor: isWeekClickable ? "pointer" : "default",
+                    borderRadius: isWeekSelected ? 4 : 0,
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: "#6e7681", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                    Week {wi + 1}
                   </div>
-                  <div style={{ fontSize: 12, color: "#6e7681", marginTop: 2 }}>
-                    {weeklyTotals[wi].count} trades
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: 13, color: "#30363d" }}>—</div>
-              )}
-            </div>
+                  {weeklyTotals[wi].count > 0 ? (
+                    <>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: weeklyTotals[wi].total >= 0 ? "#3fb950" : "#f85149" }}>
+                        {formatDollarsFull(weeklyTotals[wi].total)}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#6e7681", marginTop: 2 }}>
+                        {weeklyTotals[wi].count} trades
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: "#30363d" }}>—</div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -913,13 +944,23 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
             <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
               {selectedDay
                 ? new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
-                : `${MONTHS[calMonth].label} 2026 — All Transactions`}
+                : selectedWeek != null
+                  ? `Week ${selectedWeek + 1} — ${MONTHS[calMonth].label} 2026`
+                  : `${MONTHS[calMonth].label} 2026 — All Transactions`}
             </div>
             {selectedDay && displayClosed.length > 0 && dailyData[selectedDay] && (
               <div style={{ fontSize: 15, fontWeight: 600, color: dailyData[selectedDay].premium >= 0 ? "#3fb950" : "#f85149" }}>
                 {formatDollarsFull(dailyData[selectedDay].premium)} · {displayClosed.length} trade{displayClosed.length !== 1 ? "s" : ""}
               </div>
             )}
+            {selectedWeek != null && displayClosed.length > 0 && (() => {
+              const weekTotal = weeklyTotals[selectedWeek].total;
+              return (
+                <div style={{ fontSize: 15, fontWeight: 600, color: weekTotal >= 0 ? "#3fb950" : "#f85149" }}>
+                  {formatDollarsFull(weekTotal)} · {displayClosed.length} trade{displayClosed.length !== 1 ? "s" : ""}
+                </div>
+              );
+            })()}
           </div>
           {isMobile ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
