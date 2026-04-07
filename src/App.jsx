@@ -64,7 +64,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.16.0";
+const VERSION = "1.16.1";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -223,8 +223,8 @@ const DataContext = createContext(null);
 function useData() { return useContext(DataContext); }
 
 function useWindowWidth() {
-  const [width, setWidth] = React.useState(window.innerWidth);
-  React.useEffect(() => {
+  const [width, setWidth] = useState(window.innerWidth);
+  useEffect(() => {
     const handler = () => setWidth(window.innerWidth);
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
