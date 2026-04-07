@@ -64,7 +64,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.16.1";
+const VERSION = "1.16.2";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -2921,6 +2921,7 @@ export default function TradeDashboard() {
   const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
   const [positions, setPositions] = useState(() => positionsData);
   const [account,   setAccount]   = useState(() => accountData);
+  const [isLoading, setIsLoading] = useState(() => Boolean(import.meta.env.PROD));
 
   // refreshData is called by SyncButton in production after fetching /api/data
   function refreshData(data) {
@@ -2948,7 +2949,8 @@ export default function TradeDashboard() {
     fetch("/api/data")
       .then(r => r.json())
       .then(data => { if (data.ok) refreshData(data); })
-      .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
+      .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message))
+      .finally(() => setIsLoading(false));
   }, []);
 
   const windowWidth = useWindowWidth();
@@ -2970,6 +2972,33 @@ export default function TradeDashboard() {
     transition: "all 0.15s", letterSpacing: "0.3px",
     whiteSpace: "nowrap",
   });
+
+  if (isLoading) {
+    return (
+      <>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        `}</style>
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", minHeight: "100vh",
+          background: "#0d1117", color: "#8b949e",
+          fontFamily: "'SF Mono','Fira Code','Consolas',monospace",
+          animation: "fade-in 0.2s ease",
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%",
+            border: "2px solid #21262d",
+            borderTopColor: "#3fb950",
+            animation: "spin 0.8s linear infinite",
+            marginBottom: 16,
+          }} />
+          <span style={{ fontSize: 13 }}>Loading…</span>
+        </div>
+      </>
+    );
+  }
 
   return (
     <DataContext.Provider value={{ trades, positions, account, refreshData, deleteTrade }}>
