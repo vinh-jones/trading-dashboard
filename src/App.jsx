@@ -64,7 +64,7 @@ const MONTHS = [
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const VERSION = "1.14.0";
+const VERSION = "1.16.0";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -222,10 +222,21 @@ function getCalendarWeeks(year, month) {
 const DataContext = createContext(null);
 function useData() { return useContext(DataContext); }
 
+function useWindowWidth() {
+  const [width, setWidth] = React.useState(window.innerWidth);
+  React.useEffect(() => {
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return width;
+}
+
 // ─── SUMMARY TAB ───────────────────────────────────────────────────────────
 
 function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
+  const isMobile = useWindowWidth() < 600;
   // Scope the entire Summary tab to Q1 2026 (Jan 1 – Mar 31)
   const Q1_START = new Date("2026-01-01T00:00:00");
   const Q1_END   = new Date("2026-03-31T23:59:59");
@@ -462,51 +473,78 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
       )}
 
       {/* Trade table */}
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid #30363d" }}>
-              {["Ticker", "Type", "", "Strike", "Ct", "Open", "Close", "Days", "Premium", "Kept", "Fronted"].map((h) => (
-                <th key={h} style={{ padding: "10px 8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTrades.map((t, i) => {
-              const tc = TYPE_COLORS[t.type] || {};
-              const isLoss = t.premium < 0;
-              return (
-                <tr
-                  key={i}
-                  style={{ borderBottom: "1px solid #161b22" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#161b22")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <td style={{ padding: "8px", fontWeight: 600, color: "#e6edf3" }}>{t.ticker}</td>
-                  <td style={{ padding: "8px" }}>
-                    <span style={{ background: tc.bg, color: tc.text, padding: "3px 8px", borderRadius: 3, fontSize: 13, fontWeight: 500 }}>
-                      {t.type}
-                    </span>
-                  </td>
-                  <td style={{ padding: "8px", color: "#8b949e", fontSize: 13 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype}</td>
-                  <td style={{ padding: "8px", color: "#c9d1d9" }}>{t.strike ? `$${t.strike}` : "—"}</td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{t.open}</td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{t.close}</td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{t.days != null ? `${t.days}d` : "—"}</td>
-                  <td style={{ padding: "8px", fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950" }}>
-                    {formatDollarsFull(t.premium)}
-                  </td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{t.kept}</td>
-                  <td style={{ padding: "8px", color: "#8b949e" }}>{formatDollarsFull(t.fronted)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {isMobile ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filteredTrades.map((t, i) => {
+            const tc = TYPE_COLORS[t.type] || {};
+            const isLoss = t.premium < 0;
+            return (
+              <div key={i} style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: "10px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 700, color: "#e6edf3", fontSize: 14 }}>{t.ticker}</span>
+                    <span style={{ background: tc.bg, color: tc.text, padding: "2px 6px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>{t.type}</span>
+                    <span style={{ color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype}</span>
+                  </div>
+                  <span style={{ fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950", fontSize: 14 }}>{formatDollarsFull(t.premium)}</span>
+                </div>
+                <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8b949e", flexWrap: "wrap" }}>
+                  {t.strike && <span>${t.strike}</span>}
+                  <span>{t.open} → {t.close}</span>
+                  {t.days != null && <span>{t.days}d</span>}
+                  {t.kept && t.kept !== "—" && <span>{t.kept} kept</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #30363d" }}>
+                {["Ticker", "Type", "", "Strike", "Ct", "Open", "Close", "Days", "Premium", "Kept", "Fronted"].map((h) => (
+                  <th key={h} style={{ padding: "10px 8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTrades.map((t, i) => {
+                const tc = TYPE_COLORS[t.type] || {};
+                const isLoss = t.premium < 0;
+                return (
+                  <tr
+                    key={i}
+                    style={{ borderBottom: "1px solid #161b22" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#161b22")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <td style={{ padding: "8px", fontWeight: 600, color: "#e6edf3" }}>{t.ticker}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ background: tc.bg, color: tc.text, padding: "3px 8px", borderRadius: 3, fontSize: 13, fontWeight: 500 }}>
+                        {t.type}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px", color: "#8b949e", fontSize: 13 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype}</td>
+                    <td style={{ padding: "8px", color: "#c9d1d9" }}>{t.strike ? `$${t.strike}` : "—"}</td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{t.open}</td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{t.close}</td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{t.days != null ? `${t.days}d` : "—"}</td>
+                    <td style={{ padding: "8px", fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950" }}>
+                      {formatDollarsFull(t.premium)}
+                    </td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{t.kept}</td>
+                    <td style={{ padding: "8px", color: "#8b949e" }}>{formatDollarsFull(t.fronted)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -515,6 +553,7 @@ function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelect
 
 function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay, captureRate, setCaptureRate }) {
   const { trades: TRADES, positions, account, deleteTrade } = useData();
+  const isMobile = useWindowWidth() < 600;
   const [calMonth, setCalMonth] = useState(3); // default to April
 
   const monthInfo = MONTHS[calMonth];
@@ -692,7 +731,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
       </div>
 
       {/* Pipeline planning panel */}
-      <div style={{ padding: "16px 20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d", marginBottom: 16 }}>
+      <div style={{ padding: isMobile ? "12px 14px" : "16px 20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
             Premium Pipeline
@@ -712,7 +751,7 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
           </div>
         </div>
         {hasPipelinePositions ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(5, 1fr)", gap: 12 }}>
             {[
               { label: "Gross open premium",                value: formatDollarsFull(grossOpenPremium), color: "#e6edf3" },
               { label: `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: "#3fb950" },
@@ -727,8 +766,8 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
               },
             ].map(({ label, value, color }) => (
               <div key={label}>
-                <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color }}>{value}</div>
+                <div style={{ fontSize: isMobile ? 10 : 11, color: "#6e7681", marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: isMobile ? 13 : 14, fontWeight: 600, color }}>{value}</div>
               </div>
             ))}
           </div>
@@ -882,87 +921,136 @@ function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelec
               </div>
             )}
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Type", "Status", "Strike", "Ct", "Open", "Close", "Expiry", "Days", "Premium", "Kept", ""].map((h) => (
-                    <th key={h} style={{ padding: "8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {displayClosed.map((t, i) => {
-                  const tc = TYPE_COLORS[t.type] || {};
-                  const isLoss = t.premium < 0;
-                  return (
-                    <tr key={`closed-${i}`} style={{ borderBottom: "1px solid #161b22" }}>
-                      <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{t.ticker}</td>
-                      <td style={{ padding: "7px 8px" }}>
-                        <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
-                          {t.type}
-                        </span>
-                      </td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</td>
-                      <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{t.strike ? `$${t.strike}` : "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.open}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.close}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.expiry !== "—" ? t.expiry : "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.days != null ? `${t.days}d` : "—"}</td>
-                      <td style={{ padding: "7px 8px", fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950" }}>
-                        {formatDollarsFull(t.premium)}
-                      </td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.kept}</td>
-                      <td style={{ padding: "7px 4px" }}>
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Delete ${t.ticker} ${t.type} closed ${t.close}?`)) deleteTrade(t);
-                          }}
-                          title="Delete trade"
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "#6e7681", fontSize: 14, padding: "2px 4px", lineHeight: 1, borderRadius: 3 }}
-                          onMouseEnter={e => e.currentTarget.style.color = "#f85149"}
-                          onMouseLeave={e => e.currentTarget.style.color = "#6e7681"}
-                        >×</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {displayClosed.length > 0 && displayExpiring.length > 0 && (
-                  <tr>
-                    <td colSpan={12} style={{ padding: "8px", textAlign: "center", fontSize: 12, color: "#6e7681", borderTop: "1px solid #21262d", borderBottom: "1px solid #21262d" }}>
-                      ── Open positions expiring ──
-                    </td>
+          {isMobile ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {displayClosed.map((t, i) => {
+                const tc = TYPE_COLORS[t.type] || {};
+                const isLoss = t.premium < 0;
+                return (
+                  <div key={`closed-${i}`} style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, color: "#e6edf3", fontSize: 14 }}>{t.ticker}</span>
+                        <span style={{ background: tc.bg, color: tc.text, padding: "2px 6px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>{t.type}</span>
+                        <span style={{ color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</span>
+                      </div>
+                      <span style={{ fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950", fontSize: 14 }}>{formatDollarsFull(t.premium)}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8b949e", flexWrap: "wrap" }}>
+                      {t.strike && <span>${t.strike}</span>}
+                      <span>{t.open} → {t.close}</span>
+                      {t.days != null && <span>{t.days}d</span>}
+                      {t.kept && t.kept !== "—" && <span>{t.kept} kept</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {displayClosed.length > 0 && displayExpiring.length > 0 && (
+                <div style={{ textAlign: "center", fontSize: 12, color: "#6e7681", padding: "6px 0" }}>── Open positions expiring ──</div>
+              )}
+              {displayExpiring.map((p, i) => {
+                const tc = TYPE_COLORS[p.type] || {};
+                return (
+                  <div key={`expiry-${i}`} style={{ background: "#1c2333", border: "1px solid #21262d", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, color: "#e6edf3", fontSize: 14 }}>{p.ticker}</span>
+                        <span style={{ background: tc.bg, color: tc.text, padding: "2px 6px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>{p.type}</span>
+                        <span style={{ color: "#58a6ff", fontSize: 12 }}>Expires {formatExpiry(p.expiry_date)}</span>
+                      </div>
+                      <span style={{ fontWeight: 600, color: "#3fb950", fontSize: 14 }}>{formatDollarsFull(p.premium_collected)}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8b949e", flexWrap: "wrap" }}>
+                      {p.strike && <span>${p.strike}</span>}
+                      {p.open_date && <span>opened {p.open_date.slice(5).replace("-", "/")}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #30363d" }}>
+                    {["Ticker", "Type", "Status", "Strike", "Ct", "Open", "Close", "Expiry", "Days", "Premium", "Kept", ""].map((h) => (
+                      <th key={h} style={{ padding: "8px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                )}
-                {displayExpiring.map((p, i) => {
-                  const tc = TYPE_COLORS[p.type] || {};
-                  return (
-                    <tr key={`expiry-${i}`} style={{ borderBottom: "1px solid #161b22", background: "#1c2333" }}>
-                      <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{p.ticker}</td>
-                      <td style={{ padding: "7px 8px" }}>
-                        <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
-                          {p.type}
-                        </span>
+                </thead>
+                <tbody>
+                  {displayClosed.map((t, i) => {
+                    const tc = TYPE_COLORS[t.type] || {};
+                    const isLoss = t.premium < 0;
+                    return (
+                      <tr key={`closed-${i}`} style={{ borderBottom: "1px solid #161b22" }}>
+                        <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{t.ticker}</td>
+                        <td style={{ padding: "7px 8px" }}>
+                          <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
+                            {t.type}
+                          </span>
+                        </td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e", fontSize: 12 }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</td>
+                        <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{t.strike ? `$${t.strike}` : "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.contracts || "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.open}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.close}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.expiry !== "—" ? t.expiry : "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.days != null ? `${t.days}d` : "—"}</td>
+                        <td style={{ padding: "7px 8px", fontWeight: 600, color: isLoss ? "#f85149" : "#3fb950" }}>
+                          {formatDollarsFull(t.premium)}
+                        </td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{t.kept}</td>
+                        <td style={{ padding: "7px 4px" }}>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete ${t.ticker} ${t.type} closed ${t.close}?`)) deleteTrade(t);
+                            }}
+                            title="Delete trade"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#6e7681", fontSize: 14, padding: "2px 4px", lineHeight: 1, borderRadius: 3 }}
+                            onMouseEnter={e => e.currentTarget.style.color = "#f85149"}
+                            onMouseLeave={e => e.currentTarget.style.color = "#6e7681"}
+                          >×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {displayClosed.length > 0 && displayExpiring.length > 0 && (
+                    <tr>
+                      <td colSpan={12} style={{ padding: "8px", textAlign: "center", fontSize: 12, color: "#6e7681", borderTop: "1px solid #21262d", borderBottom: "1px solid #21262d" }}>
+                        ── Open positions expiring ──
                       </td>
-                      <td style={{ padding: "7px 8px", fontSize: 12, color: "#58a6ff" }}>Expires {formatExpiry(p.expiry_date)}</td>
-                      <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{p.strike ? `$${p.strike}` : "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.contracts || "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
-                      <td style={{ padding: "7px 8px", color: "#58a6ff" }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
-                      <td style={{ padding: "7px 8px", fontWeight: 600, color: "#3fb950" }}>{formatDollarsFull(p.premium_collected)}</td>
-                      <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
-                      <td style={{ padding: "7px 8px" }}></td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                  {displayExpiring.map((p, i) => {
+                    const tc = TYPE_COLORS[p.type] || {};
+                    return (
+                      <tr key={`expiry-${i}`} style={{ borderBottom: "1px solid #161b22", background: "#1c2333" }}>
+                        <td style={{ padding: "7px 8px", fontWeight: 600, color: "#e6edf3" }}>{p.ticker}</td>
+                        <td style={{ padding: "7px 8px" }}>
+                          <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: 3, fontSize: 12, fontWeight: 500 }}>
+                            {p.type}
+                          </span>
+                        </td>
+                        <td style={{ padding: "7px 8px", fontSize: 12, color: "#58a6ff" }}>Expires {formatExpiry(p.expiry_date)}</td>
+                        <td style={{ padding: "7px 8px", color: "#c9d1d9" }}>{p.strike ? `$${p.strike}` : "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.contracts || "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
+                        <td style={{ padding: "7px 8px", color: "#58a6ff" }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
+                        <td style={{ padding: "7px 8px", fontWeight: 600, color: "#3fb950" }}>{formatDollarsFull(p.premium_collected)}</td>
+                        <td style={{ padding: "7px 8px", color: "#8b949e" }}>—</td>
+                        <td style={{ padding: "7px 8px" }}></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1067,6 +1155,7 @@ function SixtyCheck() {
 
 function OpenPositionsTab() {
   const { positions, account } = useData();
+  const isMobile = useWindowWidth() < 600;
   const { assigned_shares, open_csps, open_leaps } = positions;
 
   // Collect ALL open LEAPS: standalone ones + those nested inside assigned shares cards
@@ -1162,59 +1251,96 @@ function OpenPositionsTab() {
       {panel(
         <>
           {sectionHeader(`Open Cash-Secured Puts (${open_csps.length})`)}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid #30363d" }}>
-                  {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
-                    <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {open_csps.map((csp, i) => {
-                  const dte = calcDTE(csp.expiry_date);
-                  const roi = csp.capital_fronted ? ((csp.premium_collected / csp.capital_fronted) * 100).toFixed(2) : null;
-
-                  // % DTE remaining = (expiry - today) / (expiry - open_date)
-                  let dtePct = null;
-                  if (csp.open_date && csp.expiry_date && dte != null) {
-                    const totalDays = Math.ceil(
-                      (new Date(csp.expiry_date + "T00:00:00") - new Date(csp.open_date + "T00:00:00")) / 86400000
-                    );
-                    dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
-                  }
-                  // Green ≥ 60% (plenty of time), yellow 20–59% (watch it), red < 20% (near expiry)
-                  const dtePctColor = dtePct == null ? "#8b949e"
-                    : dtePct >= 60 ? "#3fb950"
-                    : dtePct >= 20 ? "#f2d96d"
-                    : "#f85149";
-
-                  return (
-                    <tr key={i} style={{ borderBottom: "1px solid #21262d" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#1a3a5c22")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <td style={{ padding: "9px 10px", fontWeight: 700, color: "#e6edf3" }}>{csp.ticker}</td>
-                      <td style={{ padding: "9px 10px", color: "#e6edf3" }}>${csp.strike}</td>
-                      <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatExpiry(csp.expiry_date)}</td>
-                      <td style={{ padding: "9px 10px", color: dte != null && dte <= 5 ? "#f85149" : "#8b949e", fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
-                        {dte != null ? `${dte}d` : "—"}
-                      </td>
-                      <td style={{ padding: "9px 10px", fontWeight: 600, color: dtePctColor }}>
-                        {dtePct != null ? `${dtePct.toFixed(0)}%` : "—"}
-                      </td>
-                      <td style={{ padding: "9px 10px", color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
-                      <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatDollarsFull(csp.capital_fronted)}</td>
-                      <td style={{ padding: "9px 10px", color: "#58a6ff", fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
-                    </tr>
+          {isMobile ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {open_csps.map((csp, i) => {
+                const dte = calcDTE(csp.expiry_date);
+                let dtePct = null;
+                if (csp.open_date && csp.expiry_date && dte != null) {
+                  const totalDays = Math.ceil(
+                    (new Date(csp.expiry_date + "T00:00:00") - new Date(csp.open_date + "T00:00:00")) / 86400000
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
+                }
+                const dtePctColor = dtePct == null ? "#8b949e"
+                  : dtePct >= 60 ? "#3fb950"
+                  : dtePct >= 20 ? "#f2d96d"
+                  : "#f85149";
+                return (
+                  <div key={i} style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, color: "#e6edf3", fontSize: 14 }}>{csp.ticker}</span>
+                        <span style={{ color: "#e6edf3", fontSize: 13 }}>${csp.strike}</span>
+                        <span style={{ color: "#8b949e", fontSize: 12 }}>{formatExpiry(csp.expiry_date)}</span>
+                      </div>
+                      <span style={{ fontWeight: 600, color: "#3fb950", fontSize: 14 }}>{formatDollarsFull(csp.premium_collected)}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 12, flexWrap: "wrap" }}>
+                      <span style={{ color: dte != null && dte <= 5 ? "#f85149" : "#8b949e", fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
+                        {dte != null ? `${dte}d` : "—"}
+                      </span>
+                      {dtePct != null && <span style={{ color: dtePctColor, fontWeight: 600 }}>{dtePct.toFixed(0)}% DTE left</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #30363d" }}>
+                    {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
+                      <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {open_csps.map((csp, i) => {
+                    const dte = calcDTE(csp.expiry_date);
+                    const roi = csp.capital_fronted ? ((csp.premium_collected / csp.capital_fronted) * 100).toFixed(2) : null;
+
+                    // % DTE remaining = (expiry - today) / (expiry - open_date)
+                    let dtePct = null;
+                    if (csp.open_date && csp.expiry_date && dte != null) {
+                      const totalDays = Math.ceil(
+                        (new Date(csp.expiry_date + "T00:00:00") - new Date(csp.open_date + "T00:00:00")) / 86400000
+                      );
+                      dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
+                    }
+                    // Green ≥ 60% (plenty of time), yellow 20–59% (watch it), red < 20% (near expiry)
+                    const dtePctColor = dtePct == null ? "#8b949e"
+                      : dtePct >= 60 ? "#3fb950"
+                      : dtePct >= 20 ? "#f2d96d"
+                      : "#f85149";
+
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #21262d" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#1a3a5c22")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <td style={{ padding: "9px 10px", fontWeight: 700, color: "#e6edf3" }}>{csp.ticker}</td>
+                        <td style={{ padding: "9px 10px", color: "#e6edf3" }}>${csp.strike}</td>
+                        <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatExpiry(csp.expiry_date)}</td>
+                        <td style={{ padding: "9px 10px", color: dte != null && dte <= 5 ? "#f85149" : "#8b949e", fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
+                          {dte != null ? `${dte}d` : "—"}
+                        </td>
+                        <td style={{ padding: "9px 10px", fontWeight: 600, color: dtePctColor }}>
+                          {dtePct != null ? `${dtePct.toFixed(0)}%` : "—"}
+                        </td>
+                        <td style={{ padding: "9px 10px", color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
+                        <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatDollarsFull(csp.capital_fronted)}</td>
+                        <td style={{ padding: "9px 10px", color: "#58a6ff", fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -1288,12 +1414,12 @@ function OpenPositionsTab() {
           {sectionHeader(`Open LEAPS (${allOpenLeaps.length})`)}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {allOpenLeaps.map((l, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: 6 }}>
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: 6 }}>
                 <div>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginRight: 12 }}>{l.ticker}</span>
                   <span style={{ fontSize: 13, color: "#f0c040" }}>{l.description}</span>
                 </div>
-                <div style={{ fontSize: 14, color: "#8b949e" }}>
+                <div style={{ fontSize: 12, color: "#8b949e" }}>
                   Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
                 </div>
               </div>
@@ -2825,6 +2951,9 @@ export default function TradeDashboard() {
       .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
   }, []);
 
+  const windowWidth = useWindowWidth();
+  const isMobile = windowWidth < 600;
+
   const [activeTab, setActiveTab] = useState("positions");
   const [selectedTicker, setSelectedTicker]     = useState(null);
   const [selectedType, setSelectedType]         = useState(null);
@@ -2833,12 +2962,13 @@ export default function TradeDashboard() {
   const [captureRate, setCaptureRate]           = useState(0.60);
 
   const tabStyle = (tab) => ({
-    padding: "10px 24px", fontSize: 15, fontFamily: "inherit",
+    padding: isMobile ? "10px 14px" : "10px 24px", fontSize: 15, fontFamily: "inherit",
     cursor: "pointer", fontWeight: activeTab === tab ? 600 : 400,
     color: activeTab === tab ? "#e6edf3" : "#8b949e",
     background: "transparent", border: "none",
     borderBottom: activeTab === tab ? "2px solid #58a6ff" : "2px solid transparent",
     transition: "all 0.15s", letterSpacing: "0.3px",
+    whiteSpace: "nowrap",
   });
 
   return (
@@ -2856,7 +2986,7 @@ export default function TradeDashboard() {
         <AccountBar captureRate={captureRate} />
 
         {/* Tab bar */}
-        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #21262d", marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #21262d", marginBottom: 20, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
             Open Positions
           </button>
