@@ -77,6 +77,35 @@ export default async function handler(req, res) {
       return acc;
     }, []);
 
+    // ── Auto-journal: also cover open positions (LEAPS, CSPs, CCs) ──
+    // Positions only exist in the positions table (not trades), so they'd
+    // never get a journal entry without this second pass.
+    const { data: openPositions } = await supabase
+      .from("positions")
+      .select("ticker, type, strike, open_date, source")
+      .gte("open_date", JOURNAL_CUTOFF);
+
+    for (const p of openPositions || []) {
+      const title = buildTitle(p); // close_date absent → "TYPE $XX — Opened"
+      const key = `${p.ticker}|${p.open_date}|${title}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        toInsert.push({
+          entry_type:  "trade_note",
+          trade_id:    null,
+          position_id: null,
+          entry_date:  p.open_date,
+          ticker:      p.ticker,
+          title,
+          body:        "",
+          tags:        [],
+          source:      p.source || null,
+          created_at:  now,
+          updated_at:  now,
+        });
+      }
+    }
+
     if (toInsert.length > 0) {
       await supabase.from("journal_entries").insert(toInsert);
     }

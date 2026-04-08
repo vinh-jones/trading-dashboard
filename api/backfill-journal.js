@@ -85,6 +85,7 @@ export default async function handler(req, res) {
       const title     = buildTitle(t);
       const key       = `${t.ticker}|${entryDate}|${stripPct(title)}`;
       if (existingKeys.has(key)) continue; // already exists
+      existingKeys.add(key);
       toInsert.push({
         entry_type:  "trade_note",
         trade_id:    null,
@@ -95,6 +96,34 @@ export default async function handler(req, res) {
         body:        "",
         tags:        [],
         source:      t.source || null,
+        created_at:  now,
+        updated_at:  now,
+      });
+    }
+
+    // ── Also cover open positions (LEAPS, CSPs, CCs) not in trades table ──
+    const { data: openPositions, error: posErr } = await supabase
+      .from("positions")
+      .select("ticker, type, strike, open_date, source")
+      .gte("open_date", BACKFILL_FROM)
+      .order("open_date", { ascending: true });
+    if (posErr) throw posErr;
+
+    for (const p of openPositions || []) {
+      const title = buildTitle(p); // no close_date → "TYPE $XX — Opened"
+      const key   = `${p.ticker}|${p.open_date}|${title}`;
+      if (existingKeys.has(key)) continue;
+      existingKeys.add(key);
+      toInsert.push({
+        entry_type:  "trade_note",
+        trade_id:    null,
+        position_id: null,
+        entry_date:  p.open_date,
+        ticker:      p.ticker,
+        title,
+        body:        "",
+        tags:        [],
+        source:      p.source || null,
         created_at:  now,
         updated_at:  now,
       });
