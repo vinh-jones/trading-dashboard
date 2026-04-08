@@ -331,21 +331,21 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
         const entryCostStr = linkedTrade.entry_cost != null
           ? `@ $${linkedTrade.entry_cost.toFixed(2)}` : null;
         const exitCostStr = linkedTrade.exit_cost != null
-          ? `→ $${linkedTrade.exit_cost.toFixed(2)}` : null;
+          ? `→ $${Math.abs(linkedTrade.exit_cost).toFixed(2)}` : null;
 
         // % cash allocated (CSP + LEAPS only; CCs don't use free cash)
         const cashPct = !isCC && linkedTrade.fronted != null && account?.account_value
           ? `${(linkedTrade.fronted / account.account_value * 100).toFixed(1)}% cash`
           : null;
 
-        // Delta (open CSP/CC only, display as whole number e.g. 25δ)
+        // Delta (CSP/CC only, display as whole number e.g. 25δ)
         // Delta stored as decimal (e.g. -0.31 for a put). Display as absolute whole number (31δ).
-        const deltaDisplay = isOpen && !isLEAPS && linkedTrade.delta != null
+        const deltaDisplay = !isLEAPS && linkedTrade.delta != null
           ? `${Math.round(Math.abs(linkedTrade.delta) * 100)}δ`
           : null;
 
-        // RoR (open CSP/CC only; value stored as e.g. 1.50 meaning 1.50%)
-        const rorDisplay = isOpen && !isLEAPS && linkedTrade.roi != null
+        // RoR (CSP/CC only; value stored as e.g. 1.50 meaning 1.50%)
+        const rorDisplay = !isLEAPS && linkedTrade.roi != null
           ? `${linkedTrade.roi.toFixed(2)}% RoR`
           : null;
 
