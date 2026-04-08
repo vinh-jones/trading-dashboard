@@ -25,6 +25,8 @@ export function normalizeTrade(t) {
     description: t.description ?? null,
     entry_cost:  t.entry_cost  ?? null,
     exit_cost:   t.exit_cost   ?? null,
+    delta:       t.delta       ?? null,
+    roi:         t.roi         ?? null,
     source: t.source ?? "",
     notes: t.notes ?? "",
   };
