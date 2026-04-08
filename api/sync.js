@@ -48,15 +48,16 @@ export default async function handler(req, res) {
       supabase.from("journal_entries").select("ticker, entry_date, title").eq("entry_type", "trade_note"),
     ]);
 
+    const stripPct = s => s.replace(/\s*\(\d+%\)$/, "");
     const existingKeys = new Set(
-      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${e.title}`)
+      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
     );
     const now = new Date().toISOString();
 
     const toInsert = (trades || []).reduce((acc, t) => {
       const entryDate = t.close_date || t.open_date;
       const title = buildTitle(t);
-      const key = `${t.ticker}|${entryDate}|${title}`;
+      const key = `${t.ticker}|${entryDate}|${stripPct(title)}`;
       if (!existingKeys.has(key)) {
         existingKeys.add(key); // prevent same-sync duplicates from duplicate trade rows
         acc.push({
