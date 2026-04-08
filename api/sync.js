@@ -45,37 +45,58 @@ export default async function handler(req, res) {
     // ── Auto-journal: insert entries for any trades not yet journaled ──
     const [{ data: trades }, { data: existing }] = await Promise.all([
       supabase.from("trades").select("*").gte("open_date", JOURNAL_CUTOFF),
-      supabase.from("journal_entries").select("ticker, entry_date, title").eq("entry_type", "trade_note"),
+      supabase.from("journal_entries")
+        .select("id, ticker, entry_date, title, trade_id, body")
+        .eq("entry_type", "trade_note"),
     ]);
 
+    // Primary dedup: by trade_id (stable across close_date changes).
+    // Fallback: key-based dedup for legacy entries that pre-date this fix (trade_id = null).
+    const existingByTradeId = new Map(
+      (existing || []).filter(e => e.trade_id).map(e => [e.trade_id, e])
+    );
     const stripPct = s => s.replace(/\s*\(\d+%\)$/, "");
     const existingKeys = new Set(
-      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
+      (existing || []).filter(e => !e.trade_id).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
     );
     const now = new Date().toISOString();
 
-    const toInsert = (trades || []).reduce((acc, t) => {
+    const toInsert = [];
+    const toUpdate = []; // entries whose entry_date/title drifted (e.g. early exit filled in later)
+
+    for (const t of trades || []) {
       const entryDate = t.close_date || t.open_date;
       const title = buildTitle(t);
-      const key = `${t.ticker}|${entryDate}|${stripPct(title)}`;
-      if (!existingKeys.has(key)) {
-        existingKeys.add(key); // prevent same-sync duplicates from duplicate trade rows
-        acc.push({
-          entry_type:  "trade_note",
-          trade_id:    null,
-          position_id: null,
-          entry_date:  entryDate,
-          ticker:      t.ticker,
-          title,
-          body:        "",
-          tags:        [],
-          source:      t.source || null,
-          created_at:  now,
-          updated_at:  now,
-        });
+
+      const existingEntry = existingByTradeId.get(t.id);
+      if (existingEntry) {
+        // Trade already has a journal entry. If close_date changed (early exit recorded
+        // after the fact) and the entry hasn't been annotated yet, correct the date + title.
+        if (existingEntry.body === "" &&
+            (existingEntry.entry_date !== entryDate || existingEntry.title !== title)) {
+          toUpdate.push({ id: existingEntry.id, entry_date: entryDate, title });
+        }
+        continue;
       }
-      return acc;
-    }, []);
+
+      // Legacy fallback for entries without a trade_id (created before this fix)
+      const key = `${t.ticker}|${entryDate}|${stripPct(title)}`;
+      if (existingKeys.has(key)) continue;
+      existingKeys.add(key); // prevent same-sync dupes from duplicate trade rows
+      toInsert.push({
+        entry_type:  "trade_note",
+        trade_id:    t.id,
+        position_id: null,
+        entry_date:  entryDate,
+        ticker:      t.ticker,
+        title,
+        body:        "",
+        tags:        [],
+        source:      t.source || null,
+        created_at:  now,
+        updated_at:  now,
+      });
+    }
 
     // ── Auto-journal: also cover open positions (LEAPS, CSPs, CCs) ──
     // Positions only exist in the positions table (not trades), so they'd
@@ -109,8 +130,13 @@ export default async function handler(req, res) {
     if (toInsert.length > 0) {
       await supabase.from("journal_entries").insert(toInsert);
     }
+    for (const upd of toUpdate) {
+      await supabase.from("journal_entries")
+        .update({ entry_date: upd.entry_date, title: upd.title, updated_at: now })
+        .eq("id", upd.id);
+    }
 
-    res.status(200).json({ ok: true, tradesCount, positionsCount, journalCreated: toInsert.length });
+    res.status(200).json({ ok: true, tradesCount, positionsCount, journalCreated: toInsert.length, journalUpdated: toUpdate.length });
   } catch (err) {
     console.error("[api/sync] Error:", err.message);
     res.status(500).json({ ok: false, error: err.message });
