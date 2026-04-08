@@ -30,7 +30,9 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
   const linkedTrade = useMemo(() => {
     if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
     const typeMatch   = entry.title?.match(/^(\w+)/);
-    const strikeMatch = entry.title?.match(/\$(\d+(?:\.\d+)?)/);
+    // Only match a strike if it appears directly after the type word (e.g. "LEAPS $230 —")
+    // This prevents entry costs like "LEAPS — Opened @ $56.20" from being misread as strikes.
+    const strikeMatch = entry.title?.match(/^\w+ \$(\d+(?:\.\d+)?)/);
     const titleType   = typeMatch?.[1];
     const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
     const matches = (t) =>
@@ -347,7 +349,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
           : null;
 
         // Closed-only: days + kept% + P&L
-        const daysDisplay = !isOpen && linkedTrade.days ? `${linkedTrade.days}d` : null;
+        const daysDisplay = !isOpen && linkedTrade.days != null ? `${linkedTrade.days}d` : null;
         const keptDisplay = !isOpen && !isLEAPS && linkedTrade.kept && linkedTrade.kept !== "—"
           ? linkedTrade.kept + " kept" : null;
         const plDisplay = !isOpen && linkedTrade.premium != null
