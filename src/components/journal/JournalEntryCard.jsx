@@ -1,33 +1,50 @@
 import { useState, useMemo } from "react";
 import { useData } from "../../hooks/useData";
+import { normalizeTrade } from "../../lib/trading";
 import { formatDollars } from "../../lib/format";
 import { formatExpiry } from "../../lib/format";
 import { JOURNAL_BADGE } from "./journalConstants";
 import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate } from "./journalHelpers";
 
 export function JournalEntryCard({ entry, onEdit, onDelete }) {
-  const { trades, account } = useData();
+  const { trades, positions, account } = useData();
   const [expanded, setExpanded] = useState(false);
 
-  // Look up the matching trade for emoji computation.
-  // Match on ticker + entry_date (= close_date for backfilled entries) + type + strike parsed from title.
-  // Returns null if no match — emoji is suppressed for unlinked/unmatched notes.
+  // Flatten open positions (CSPs, CCs, standalone LEAPS) into normalized trade objects
+  // so they can be matched against journal entries the same way as closed trades.
+  const openTrades = useMemo(() => {
+    if (!positions) return [];
+    const open = [
+      ...(positions.open_csps  ?? []),
+      ...(positions.open_leaps ?? []),
+      ...(positions.assigned_shares ?? []).flatMap(s => [
+        ...(s.active_cc  ? [s.active_cc]  : []),
+        ...(s.open_leaps ?? []),
+      ]),
+    ];
+    return open.map(normalizeTrade);
+  }, [positions]);
+
+  // Look up the matching trade for emoji + metadata.
+  // Searches closed trades first (matched by close_date), then open positions (matched by open_date).
   const linkedTrade = useMemo(() => {
     if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
     const typeMatch   = entry.title?.match(/^(\w+)/);
     const strikeMatch = entry.title?.match(/\$(\d+(?:\.\d+)?)/);
     const titleType   = typeMatch?.[1];
     const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
-    return trades.find(t =>
+    const matches = (t) =>
       t.ticker === entry.ticker &&
-      (
-        // Closed trade: entry_date was set to close_date
-        t.closeDate?.toISOString().slice(0, 10) === entry.entry_date ||
-        // Open trade: entry_date was set to open_date
-        (!t.closeDate && t.open_date === entry.entry_date)
-      ) &&
       (!titleType   || t.type   === titleType) &&
-      (!titleStrike || t.strike === titleStrike)
+      (!titleStrike || t.strike === titleStrike);
+    // Closed trades: entry_date = close_date
+    const closed = trades.find(t =>
+      matches(t) && t.closeDate?.toISOString().slice(0, 10) === entry.entry_date
+    );
+    if (closed) return closed;
+    // Open positions: entry_date = open_date
+    return openTrades.find(t =>
+      matches(t) && t.open_date === entry.entry_date
     ) ?? null;
   }, [trades, entry.ticker, entry.entry_date, entry.title, entry.entry_type]);
 
