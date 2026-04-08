@@ -293,19 +293,24 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
         </div>
       )}
 
-      {/* Trade metadata row: premium, strike, expiry, days, % kept */}
+      {/* Trade metadata row: premium, strike, expiry, days, % kept (+ contracts/costs for LEAPS/Spread) */}
       {linkedTrade && (() => {
         const strikeSuffix = linkedTrade.type === "CSP" ? "p" : linkedTrade.type === "CC" ? "c" : "";
         const premStr = linkedTrade.premium != null
           ? (linkedTrade.premium >= 0 ? "+" : "") + formatDollars(linkedTrade.premium)
           : "—";
+        const isLeapsLike = linkedTrade.type === "LEAPS" || linkedTrade.type === "Spread";
+        const entryCostStr = linkedTrade.entry_cost != null ? `@ $${linkedTrade.entry_cost.toFixed(2)}` : null;
+        const exitCostStr  = linkedTrade.exit_cost  != null ? `→ $${linkedTrade.exit_cost.toFixed(2)}`  : null;
         return (
           <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <span>{premStr}</span>
             {linkedTrade.strike && <span>· ${linkedTrade.strike}{strikeSuffix}</span>}
             {linkedTrade.expiry && linkedTrade.expiry !== "—" && <span>· exp {linkedTrade.expiry}</span>}
-            {linkedTrade.days && <span>· {linkedTrade.days}d</span>}
-            {linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
+            {linkedTrade.contracts && <span>· {linkedTrade.contracts} ct</span>}
+            {isLeapsLike && entryCostStr && <span>· {entryCostStr}{exitCostStr ? ` ${exitCostStr}` : ""}</span>}
+            {!isLeapsLike && linkedTrade.days && <span>· {linkedTrade.days}d</span>}
+            {!isLeapsLike && linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
           </div>
         );
       })()}

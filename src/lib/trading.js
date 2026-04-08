@@ -23,6 +23,8 @@ export function normalizeTrade(t) {
     expiry_date: t.expiry_date ?? null,
     open_date:   t.open_date   ?? null,
     description: t.description ?? null,
+    entry_cost:  t.entry_cost  ?? null,
+    exit_cost:   t.exit_cost   ?? null,
     source: t.source ?? "",
     notes: t.notes ?? "",
   };
