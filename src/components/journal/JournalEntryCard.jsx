@@ -20,7 +20,12 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
     const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
     return trades.find(t =>
       t.ticker === entry.ticker &&
-      t.closeDate?.toISOString().slice(0, 10) === entry.entry_date &&
+      (
+        // Closed trade: entry_date was set to close_date
+        t.closeDate?.toISOString().slice(0, 10) === entry.entry_date ||
+        // Open trade: entry_date was set to open_date
+        (!t.closeDate && t.open_date === entry.entry_date)
+      ) &&
       (!titleType   || t.type   === titleType) &&
       (!titleStrike || t.strike === titleStrike)
     ) ?? null;
@@ -293,24 +298,58 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
         </div>
       )}
 
-      {/* Trade metadata row: premium, strike, expiry, days, % kept (+ contracts/costs for LEAPS/Spread) */}
+      {/* Trade metadata row */}
       {linkedTrade && (() => {
-        const strikeSuffix = linkedTrade.type === "CSP" ? "p" : linkedTrade.type === "CC" ? "c" : "";
-        const premStr = linkedTrade.premium != null
+        const isOpen   = !linkedTrade.closeDate;
+        const isCSP    = linkedTrade.type === "CSP";
+        const isCC     = linkedTrade.type === "CC";
+        const isLEAPS  = linkedTrade.type === "LEAPS";
+
+        // Strike suffix: puts for CSP, calls for everything else (CC, LEAPS, Spread)
+        const strikeSuffix = isCSP ? "p" : "c";
+
+        // @ entry [→ exit] cost
+        const entryCostStr = linkedTrade.entry_cost != null
+          ? `@ $${linkedTrade.entry_cost.toFixed(2)}` : null;
+        const exitCostStr = linkedTrade.exit_cost != null
+          ? `→ $${linkedTrade.exit_cost.toFixed(2)}` : null;
+
+        // % cash allocated (CSP + LEAPS only; CCs don't use free cash)
+        const cashPct = !isCC && linkedTrade.fronted != null && account?.account_value
+          ? `${(linkedTrade.fronted / account.account_value * 100).toFixed(1)}% cash`
+          : null;
+
+        // Delta (open CSP/CC only, display as whole number e.g. 25δ)
+        const deltaDisplay = isOpen && !isLEAPS && linkedTrade.delta != null
+          ? `${linkedTrade.delta <= 1 ? Math.round(linkedTrade.delta * 100) : Math.round(linkedTrade.delta)}δ`
+          : null;
+
+        // RoR (open CSP/CC only; value stored as e.g. 1.50 meaning 1.50%)
+        const rorDisplay = isOpen && !isLEAPS && linkedTrade.roi != null
+          ? `${linkedTrade.roi.toFixed(2)}% RoR`
+          : null;
+
+        // Closed-only: days + kept% + P&L
+        const daysDisplay = !isOpen && linkedTrade.days ? `${linkedTrade.days}d` : null;
+        const keptDisplay = !isOpen && !isLEAPS && linkedTrade.kept && linkedTrade.kept !== "—"
+          ? linkedTrade.kept + " kept" : null;
+        const plDisplay = !isOpen && linkedTrade.premium != null
           ? (linkedTrade.premium >= 0 ? "+" : "") + formatDollars(linkedTrade.premium)
-          : "—";
-        const isLeapsLike = linkedTrade.type === "LEAPS" || linkedTrade.type === "Spread";
-        const entryCostStr = linkedTrade.entry_cost != null ? `@ $${linkedTrade.entry_cost.toFixed(2)}` : null;
-        const exitCostStr  = linkedTrade.exit_cost  != null ? `→ $${linkedTrade.exit_cost.toFixed(2)}`  : null;
+          : null;
+
+        const dot = <span style={{ color: "#444d56" }}>·</span>;
         return (
-          <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span>{premStr}</span>
-            {linkedTrade.strike && <span>· ${linkedTrade.strike}{strikeSuffix}</span>}
-            {linkedTrade.expiry && linkedTrade.expiry !== "—" && <span>· exp {linkedTrade.expiry}</span>}
-            {linkedTrade.contracts && <span>· {linkedTrade.contracts} ct</span>}
-            {isLeapsLike && entryCostStr && <span>· {entryCostStr}{exitCostStr ? ` ${exitCostStr}` : ""}</span>}
-            {!isLeapsLike && linkedTrade.days && <span>· {linkedTrade.days}d</span>}
-            {!isLeapsLike && linkedTrade.kept && linkedTrade.kept !== "—" && <span>· {linkedTrade.kept} kept</span>}
+          <div style={{ fontSize: 12, color: "#6e7681", marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {linkedTrade.strike && <span>${linkedTrade.strike}{strikeSuffix}</span>}
+            {linkedTrade.expiry && linkedTrade.expiry !== "—" && <>{dot}<span>exp {linkedTrade.expiry}</span></>}
+            {linkedTrade.contracts                               && <>{dot}<span>{linkedTrade.contracts} ct</span></>}
+            {entryCostStr                                        && <>{dot}<span>{entryCostStr}{exitCostStr ? ` ${exitCostStr}` : ""}</span></>}
+            {cashPct                                             && <>{dot}<span>{cashPct}</span></>}
+            {deltaDisplay                                        && <>{dot}<span>{deltaDisplay}</span></>}
+            {rorDisplay                                          && <>{dot}<span>{rorDisplay}</span></>}
+            {daysDisplay                                         && <>{dot}<span>{daysDisplay}</span></>}
+            {keptDisplay                                         && <>{dot}<span>{keptDisplay}</span></>}
+            {plDisplay                                           && <>{dot}<span style={{ color: linkedTrade.premium >= 0 ? "#3fb950" : "#f85149" }}>{plDisplay}</span></>}
           </div>
         );
       })()}
