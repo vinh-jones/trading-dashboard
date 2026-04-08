@@ -67,28 +67,46 @@ export default async function handler(req, res) {
     // ── Fetch existing trade_note entries to dedup ──
     const { data: existing, error: existErr } = await supabase
       .from("journal_entries")
-      .select("ticker, entry_date, title")
+      .select("id, ticker, entry_date, title, trade_id, body")
       .eq("entry_type", "trade_note");
     if (existErr) throw existErr;
 
+    // Primary dedup: by trade_id (stable across close_date changes).
+    // Fallback: key-based dedup for legacy entries with trade_id = null.
+    const existingByTradeId = new Map(
+      (existing || []).filter(e => e.trade_id).map(e => [e.trade_id, e])
+    );
     const stripPct = s => s.replace(/\s*\(\d+%\)$/, "");
     const existingKeys = new Set(
-      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
+      (existing || []).filter(e => !e.trade_id).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
     );
 
     const now = new Date().toISOString();
 
     const toInsert = [];
+    const toUpdate = [];
+
     for (const t of trades) {
       // Use close_date for closed trades, open_date for positions still open
       const entryDate = t.close_date || t.open_date;
       const title     = buildTitle(t);
-      const key       = `${t.ticker}|${entryDate}|${stripPct(title)}`;
-      if (existingKeys.has(key)) continue; // already exists
+
+      const existingEntry = existingByTradeId.get(t.id);
+      if (existingEntry) {
+        // Correct entry_date/title if close_date changed and entry has no notes yet
+        if (existingEntry.body === "" &&
+            (existingEntry.entry_date !== entryDate || existingEntry.title !== title)) {
+          toUpdate.push({ id: existingEntry.id, entry_date: entryDate, title });
+        }
+        continue;
+      }
+
+      const key = `${t.ticker}|${entryDate}|${stripPct(title)}`;
+      if (existingKeys.has(key)) continue;
       existingKeys.add(key);
       toInsert.push({
         entry_type:  "trade_note",
-        trade_id:    null,
+        trade_id:    t.id,
         position_id: null,
         entry_date:  entryDate,
         ticker:      t.ticker,
@@ -129,18 +147,28 @@ export default async function handler(req, res) {
       });
     }
 
-    if (toInsert.length === 0) {
-      res.status(200).json({ ok: true, created: 0, deleted: resync, message: "Nothing new to backfill." });
+    for (const upd of toUpdate) {
+      await supabase.from("journal_entries")
+        .update({ entry_date: upd.entry_date, title: upd.title, updated_at: now })
+        .eq("id", upd.id);
+    }
+
+    if (toInsert.length === 0 && toUpdate.length === 0) {
+      res.status(200).json({ ok: true, created: 0, updated: 0, deleted: resync, message: "Nothing new to backfill." });
       return;
     }
 
-    const { data: inserted, error: insertErr } = await supabase
-      .from("journal_entries")
-      .insert(toInsert)
-      .select();
-    if (insertErr) throw insertErr;
+    let inserted = [];
+    if (toInsert.length > 0) {
+      const { data, error: insertErr } = await supabase
+        .from("journal_entries")
+        .insert(toInsert)
+        .select();
+      if (insertErr) throw insertErr;
+      inserted = data;
+    }
 
-    res.status(200).json({ ok: true, created: inserted.length });
+    res.status(200).json({ ok: true, created: inserted.length, updated: toUpdate.length });
   } catch (err) {
     console.error("[api/backfill-journal] Error:", err.message);
     res.status(500).json({ ok: false, error: err.message });
