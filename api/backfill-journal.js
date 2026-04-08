@@ -71,8 +71,9 @@ export default async function handler(req, res) {
       .eq("entry_type", "trade_note");
     if (existErr) throw existErr;
 
+    const stripPct = s => s.replace(/\s*\(\d+%\)$/, "");
     const existingKeys = new Set(
-      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${e.title}`)
+      (existing || []).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
     );
 
     const now = new Date().toISOString();
@@ -82,7 +83,7 @@ export default async function handler(req, res) {
       // Use close_date for closed trades, open_date for positions still open
       const entryDate = t.close_date || t.open_date;
       const title     = buildTitle(t);
-      const key       = `${t.ticker}|${entryDate}|${title}`;
+      const key       = `${t.ticker}|${entryDate}|${stripPct(title)}`;
       if (existingKeys.has(key)) continue; // already exists
       toInsert.push({
         entry_type:  "trade_note",
