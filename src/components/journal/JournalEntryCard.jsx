@@ -339,8 +339,9 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
           : null;
 
         // Delta (open CSP/CC only, display as whole number e.g. 25δ)
+        // Delta stored as decimal (e.g. -0.31 for a put). Display as absolute whole number (31δ).
         const deltaDisplay = isOpen && !isLEAPS && linkedTrade.delta != null
-          ? `${linkedTrade.delta <= 1 ? Math.round(linkedTrade.delta * 100) : Math.round(linkedTrade.delta)}δ`
+          ? `${Math.round(Math.abs(linkedTrade.delta) * 100)}δ`
           : null;
 
         // RoR (open CSP/CC only; value stored as e.g. 1.50 meaning 1.50%)
