@@ -1,0 +1,347 @@
+import { useState, useEffect, useMemo } from "react";
+import marketContextDev from "../data/market-context.json";
+import { useData } from "../hooks/useData";
+import { useWindowWidth } from "../hooks/useWindowWidth";
+import { theme } from "../lib/theme";
+import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
+import { formatExpiry } from "../lib/format";
+
+// ── Priority config ──────────────────────────────────────────────────────────
+
+const PRIORITY = {
+  P1: { label: "P1", color: theme.red,   bg: "rgba(248,81,73,0.08)",  borderColor: theme.red   },
+  P2: { label: "P2", color: theme.amber, bg: "rgba(227,179,65,0.07)", borderColor: theme.amber },
+  P3: { label: "P3", color: theme.text.subtle, bg: theme.bg.elevated, borderColor: theme.border.strong },
+};
+
+const RULE_LABELS = {
+  cash_below_floor:      "Cash",
+  expiring_soon:         "Expiry",
+  uncovered_shares:      "Coverage",
+  earnings_before_expiry: "Earnings",
+  macro_overlap:         "Macro",
+  expiry_cluster:        "Cluster",
+};
+
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+function FocusItemCard({ item, isMobile }) {
+  const [expanded, setExpanded] = useState(false);
+  const p = PRIORITY[item.priority];
+  return (
+    <div
+      onClick={() => setExpanded(e => !e)}
+      style={{
+        borderLeft:    `3px solid ${p.borderColor}`,
+        background:    p.bg,
+        border:        `1px solid ${theme.border.default}`,
+        borderLeftColor: p.borderColor,
+        borderRadius:  theme.radius.md,
+        padding:       `${theme.space[3]}px ${theme.space[4]}px`,
+        marginBottom:  theme.space[2],
+        cursor:        "pointer",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: theme.space[2] }}>
+        {/* Priority badge */}
+        <span style={{
+          fontSize:    theme.size.xs,
+          fontWeight:  600,
+          color:       p.color,
+          background:  "transparent",
+          border:      `1px solid ${p.borderColor}`,
+          borderRadius: theme.radius.sm,
+          padding:     "1px 5px",
+          flexShrink:  0,
+          marginTop:   1,
+        }}>
+          {item.priority}
+        </span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Title row */}
+          <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
+            <span style={{ fontSize: theme.size.md, fontWeight: 500, color: theme.text.primary }}>
+              {item.title}
+            </span>
+            <span style={{
+              fontSize:     theme.size.xs,
+              color:        theme.text.subtle,
+              background:   theme.bg.elevated,
+              border:       `1px solid ${theme.border.strong}`,
+              borderRadius: theme.radius.sm,
+              padding:      "1px 5px",
+            }}>
+              {RULE_LABELS[item.rule] ?? item.rule}
+            </span>
+          </div>
+
+          {/* Detail (expanded) */}
+          {expanded && (
+            <div style={{
+              marginTop:  theme.space[2],
+              fontSize:   theme.size.sm,
+              color:      theme.text.muted,
+              lineHeight: 1.6,
+            }}>
+              {item.detail}
+            </div>
+          )}
+        </div>
+
+        {/* Expand caret */}
+        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, marginTop: 2 }}>
+          {expanded ? "▲" : "▼"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WatchingRow({ item }) {
+  const [expanded, setExpanded] = useState(false);
+  const p = PRIORITY[item.priority];
+  return (
+    <div
+      onClick={() => setExpanded(e => !e)}
+      style={{
+        display:       "flex",
+        alignItems:    "flex-start",
+        gap:           theme.space[3],
+        padding:       `${theme.space[2]}px ${theme.space[3]}px`,
+        borderLeft:    `2px solid ${p.borderColor}`,
+        marginBottom:  6,
+        cursor:        "pointer",
+      }}
+    >
+      <span style={{ fontSize: theme.size.xs, color: p.color, fontWeight: 600, flexShrink: 0, marginTop: 2 }}>
+        {RULE_LABELS[item.rule] ?? item.rule}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: theme.size.sm, color: theme.text.secondary }}>
+          {item.title}
+        </span>
+        {expanded && (
+          <div style={{ marginTop: 4, fontSize: theme.size.sm, color: theme.text.muted, lineHeight: 1.6 }}>
+            {item.detail}
+          </div>
+        )}
+      </div>
+      <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>
+        {expanded ? "▲" : "▼"}
+      </span>
+    </div>
+  );
+}
+
+function MacroCalendar({ macroEvents }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // Deduplicate — show one row per eventType, soonest upcoming
+  const byType = {};
+  for (const evt of macroEvents) {
+    const d = evt.dateTime.slice(0, 10);
+    if (d < todayStr) continue;
+    if (!byType[evt.eventType] || d < byType[evt.eventType]._date) {
+      byType[evt.eventType] = { ...evt, _date: d };
+    }
+  }
+  const upcoming = Object.values(byType).sort((a, b) => a._date.localeCompare(b._date));
+  if (!upcoming.length) return null;
+
+  const colStyle = { fontSize: theme.size.sm, padding: "5px 8px", textAlign: "left" };
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.sm }}>
+        <thead>
+          <tr style={{ color: theme.text.subtle, borderBottom: `1px solid ${theme.border.default}` }}>
+            <th style={{ ...colStyle, fontWeight: 500 }}>Event</th>
+            <th style={{ ...colStyle, fontWeight: 500 }}>Date</th>
+            <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Previous</th>
+            <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Forecast</th>
+            <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Actual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {upcoming.map((evt, i) => {
+            const label = evt.eventType === "FOMC_RATE_DECISION" ? "FOMC Rate" : evt.eventType;
+            const isPast = evt.actual != null;
+            return (
+              <tr
+                key={i}
+                style={{
+                  borderBottom:    `1px solid ${theme.border.default}`,
+                  color: isPast ? theme.text.subtle : theme.text.secondary,
+                }}
+              >
+                <td style={colStyle}>{label}</td>
+                <td style={{ ...colStyle, color: theme.text.muted }}>{formatExpiry(evt._date)}</td>
+                <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>
+                  {evt.previous != null ? evt.previous : "—"}
+                </td>
+                <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>
+                  {evt.forecast != null ? evt.forecast : "—"}
+                </td>
+                <td style={{ ...colStyle, textAlign: "right", color: isPast ? theme.green : theme.text.subtle }}>
+                  {evt.actual != null ? evt.actual : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export function FocusTab() {
+  const { positions, account } = useData();
+  const isMobile = useWindowWidth() < 600;
+
+  const [marketContext, setMarketContext] = useState(null);
+  const [mcLoading, setMcLoading] = useState(true);
+  const [infoExpanded, setInfoExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD) {
+      setMarketContext(marketContextDev);
+      setMcLoading(false);
+      return;
+    }
+    fetch("/api/focus-context")
+      .then(r => r.json())
+      .then(data => { if (data.ok && data.marketContext) setMarketContext(data.marketContext); })
+      .catch(err => console.warn("[FocusTab] market context fetch failed:", err.message))
+      .finally(() => setMcLoading(false));
+  }, []);
+
+  const allItems = useMemo(
+    () => generateFocusItems(positions, account, marketContext),
+    [positions, account, marketContext]
+  );
+  const { focus, watching, info } = useMemo(() => categorizeFocusItems(allItems), [allItems]);
+
+  const panelStyle = {
+    background:   theme.bg.surface,
+    border:       `1px solid ${theme.border.default}`,
+    borderRadius: theme.radius.md,
+    padding:      isMobile ? theme.space[3] : theme.space[4],
+    marginBottom: theme.space[4],
+  };
+
+  const sectionHeader = (label, count) => (
+    <div style={{
+      display:        "flex",
+      alignItems:     "center",
+      gap:            theme.space[2],
+      marginBottom:   theme.space[3],
+      fontSize:       theme.size.sm,
+      fontWeight:     500,
+      color:          theme.text.muted,
+      textTransform:  "uppercase",
+      letterSpacing:  "0.5px",
+    }}>
+      {label}
+      {count > 0 && (
+        <span style={{
+          fontSize:     theme.size.xs,
+          color:        theme.text.subtle,
+          background:   theme.bg.elevated,
+          border:       `1px solid ${theme.border.strong}`,
+          borderRadius: theme.radius.pill,
+          padding:      "0 6px",
+          fontWeight:   400,
+          textTransform: "none",
+          letterSpacing: 0,
+        }}>
+          {count}
+        </span>
+      )}
+    </div>
+  );
+
+  // Macro events for calendar panel
+  const macroEvents = marketContext?.macroEvents ?? [];
+
+  const asOfLabel = marketContext?.asOf
+    ? (() => {
+        const d = new Date(marketContext.asOf);
+        return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+      })()
+    : null;
+
+  return (
+    <div>
+      {/* ── Today's Focus (P1) ─────────────────────────────────────────── */}
+      <div style={panelStyle}>
+        {sectionHeader("Today's Focus", focus.length)}
+        {focus.length === 0 ? (
+          <div style={{
+            padding:      `${theme.space[3]}px ${theme.space[4]}px`,
+            background:   "rgba(63,185,80,0.06)",
+            border:       `1px solid ${theme.green}`,
+            borderRadius: theme.radius.md,
+            fontSize:     theme.size.md,
+            color:        theme.green,
+          }}>
+            Nothing urgent today.
+          </div>
+        ) : (
+          focus.map(item => (
+            <FocusItemCard key={item.id} item={item} isMobile={isMobile} />
+          ))
+        )}
+      </div>
+
+      {/* ── Watching (P2) ──────────────────────────────────────────────── */}
+      {watching.length > 0 && (
+        <div style={panelStyle}>
+          {sectionHeader("Watching", watching.length)}
+          {watching.map(item => (
+            <WatchingRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Informational (P3) ─────────────────────────────────────────── */}
+      {info.length > 0 && (
+        <div style={panelStyle}>
+          <div
+            onClick={() => setInfoExpanded(e => !e)}
+            style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+          >
+            {sectionHeader("Informational", info.length)}
+            <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[3] }}>
+              {infoExpanded ? "▲ hide" : "▼ show"}
+            </span>
+          </div>
+          {infoExpanded && info.map(item => (
+            <WatchingRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Macro Calendar ─────────────────────────────────────────────── */}
+      <div style={panelStyle}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: theme.space[3] }}>
+          {sectionHeader("Macro Calendar", 0)}
+          {asOfLabel && (
+            <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[3] }}>
+              as of {asOfLabel}
+            </span>
+          )}
+        </div>
+        {mcLoading ? (
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Loading…</div>
+        ) : macroEvents.length > 0 ? (
+          <MacroCalendar macroEvents={macroEvents} />
+        ) : (
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
+            Market context unavailable — run OpenClaw ETL to populate.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

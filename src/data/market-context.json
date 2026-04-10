@@ -1,0 +1,182 @@
+{
+  "asOf": "2026-04-10T06:22:26.318698-07:00",
+  "source": {
+    "positions": { "type": "csv" },
+    "earnings":  { "type": "finnhub" },
+    "macro":     { "type": "tradingview-economic-calendar" }
+  },
+  "positions": [
+    {
+      "ticker": "APP",
+      "hasExposure": true,
+      "exposureTypes": ["shares", "leaps"],
+      "exposure": { "csp": 0, "shares": 53000, "leaps": 19800, "cash": 0 },
+      "nextEarnings": { "date": "2026-08-04", "time": "amc", "epsEstimate": 3.6443, "revenueEstimate": 1896942559, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "CDE",
+      "hasExposure": true,
+      "exposureTypes": ["shares"],
+      "exposure": { "csp": 0, "shares": 22000, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-08-04", "time": "", "epsEstimate": 0.5555, "revenueEstimate": 1218060000, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "CLS",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 29000, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-27", "time": "", "epsEstimate": 2.1442, "revenueEstimate": 4207214337, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "CRDO",
+      "hasExposure": true,
+      "exposureTypes": ["shares"],
+      "exposure": { "csp": 0, "shares": 81000, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-06-01", "time": "amc", "epsEstimate": 1.0488, "revenueEstimate": 439545621, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "GLW",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 15500, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-27", "time": "bmo", "epsEstimate": 0.7531, "revenueEstimate": 4698920263, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "HOOD",
+      "hasExposure": true,
+      "exposureTypes": ["shares", "leaps"],
+      "exposure": { "csp": 0, "shares": 88300, "leaps": 19938, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-28", "time": "amc", "epsEstimate": 0.5598, "revenueEstimate": 1358031672, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "IREN",
+      "hasExposure": true,
+      "exposureTypes": ["shares", "leaps"],
+      "exposure": { "csp": 0, "shares": 52000, "leaps": 16602, "cash": 0 },
+      "nextEarnings": { "date": "2026-05-12", "time": "amc", "epsEstimate": -0.1748, "revenueEstimate": 227860707, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "KTOS",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 29400, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-08-05", "time": "", "epsEstimate": 0.1833, "revenueEstimate": 414887284, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "NVDA",
+      "hasExposure": true,
+      "exposureTypes": ["shares"],
+      "exposure": { "csp": 0, "shares": 18000, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-05-20", "time": "amc", "epsEstimate": 1.7911, "revenueEstimate": 80043474685, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "PLTR",
+      "hasExposure": true,
+      "exposureTypes": ["csp", "shares", "leaps"],
+      "exposure": { "csp": 12500, "shares": 107500, "leaps": 24060, "cash": 0 },
+      "nextEarnings": { "date": "2026-08-03", "time": "", "epsEstimate": 0.3078, "revenueEstimate": 1712415922, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "SHOP",
+      "hasExposure": true,
+      "exposureTypes": ["shares", "leaps"],
+      "exposure": { "csp": 0, "shares": 29000, "leaps": 19280, "cash": 0 },
+      "nextEarnings": { "date": "2026-08-04", "time": "bmo", "epsEstimate": 0.3994, "revenueEstimate": 3461222671, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "SOFI",
+      "hasExposure": true,
+      "exposureTypes": ["shares"],
+      "exposure": { "csp": 0, "shares": 85800, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-27", "time": "bmo", "epsEstimate": 0.1429, "revenueEstimate": 1154461979, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "TSM",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 31500, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-17", "time": "bmo", "epsEstimate": 2.45, "revenueEstimate": 26500000000, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "CCJ",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 21000, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-30", "time": "bmo", "epsEstimate": 0.18, "revenueEstimate": 620000000, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    },
+    {
+      "ticker": "WDC",
+      "hasExposure": true,
+      "exposureTypes": ["csp"],
+      "exposure": { "csp": 30000, "shares": 0, "leaps": 0, "cash": 0 },
+      "nextEarnings": { "date": "2026-07-28", "time": "amc", "epsEstimate": 2.671, "revenueEstimate": 3447585287, "source": "finnhub", "confidence": "high", "lastCheckedAt": "2026-04-10T06:22:26.318698-07:00" }
+    }
+  ],
+  "macroEvents": [
+    {
+      "eventType": "CPI",
+      "title": "CPI",
+      "indicator": "Consumer Price Index CPI",
+      "dateTime": "2026-04-10T12:30:00.000Z",
+      "country": "US",
+      "importance": 0,
+      "period": "Mar",
+      "actual": 330.21,
+      "forecast": 330.41,
+      "previous": 326.79,
+      "source": "tradingview-economic-calendar"
+    },
+    {
+      "eventType": "PPI",
+      "title": "PPI MoM",
+      "indicator": "Producer Price Inflation MoM",
+      "dateTime": "2026-04-14T12:30:00.000Z",
+      "country": "US",
+      "importance": 1,
+      "period": "Mar",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.7,
+      "source": "tradingview-economic-calendar"
+    },
+    {
+      "eventType": "PPI",
+      "title": "Core PPI MoM",
+      "indicator": "Core Producer Prices MoM",
+      "dateTime": "2026-04-14T12:30:00.000Z",
+      "country": "US",
+      "importance": 0,
+      "period": "Mar",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.5,
+      "source": "tradingview-economic-calendar"
+    },
+    {
+      "eventType": "FOMC_RATE_DECISION",
+      "title": "Fed Interest Rate Decision",
+      "indicator": "Interest Rate",
+      "dateTime": "2026-04-29T18:00:00.000Z",
+      "country": "US",
+      "importance": 1,
+      "period": "",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.75,
+      "source": "tradingview-economic-calendar"
+    },
+    {
+      "eventType": "NFP",
+      "title": "Non Farm Payrolls",
+      "indicator": "Non Farm Payrolls",
+      "dateTime": "2026-05-01T12:30:00.000Z",
+      "country": "US",
+      "importance": 1,
+      "period": "Apr",
+      "actual": null,
+      "forecast": null,
+      "previous": 178,
+      "source": "tradingview-economic-calendar"
+    }
+  ]
+}
