@@ -2,17 +2,18 @@ import { JOURNAL_BADGE, MOODS, JOURNAL_INPUT_ST } from "./journalConstants";
 import { fmtEntryDate } from "./journalHelpers";
 import { JournalField } from "./JournalField";
 import { JournalAutoTextarea } from "./JournalAutoTextarea";
+import { theme } from "../../lib/theme";
 
 export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, onSave, onCancel, saving, error }) {
   const isEOD = entry.entry_type === "eod_update";
-  const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: "#8b949e" };
+  const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: theme.text.muted };
   return (
-    <div style={{ background: "#161b22", border: "2px solid #e3b341", borderRadius: 6, padding: 16, marginBottom: 12 }}>
+    <div style={{ background: theme.bg.surface, border: `2px solid ${theme.amber}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: theme.space[3] }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#e3b341", textTransform: "uppercase", letterSpacing: "0.8px" }}>
+        <span style={{ fontSize: theme.size.sm, fontWeight: 700, color: theme.amber, textTransform: "uppercase", letterSpacing: "0.8px" }}>
           Editing — <span style={{ color: badge.color }}>{badge.label}</span>
         </span>
-        <span style={{ color: "#8b949e", fontSize: 12 }}>{fmtEntryDate(entry.entry_date)}</span>
+        <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{fmtEntryDate(entry.entry_date)}</span>
       </div>
 
       {/* Title (not for EOD — title is auto-generated) */}
@@ -30,13 +31,13 @@ export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBod
               const active = mood === m.emoji;
               return (
                 <button key={m.emoji} onClick={() => onMoodChange(m.emoji)} style={{
-                  flex: 1, padding: "8px 2px", borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
-                  border: `2px solid ${active ? m.activeBorder : "#30363d"}`,
+                  flex: 1, padding: "8px 2px", borderRadius: theme.radius.sm, cursor: "pointer", fontFamily: "inherit",
+                  border: `2px solid ${active ? m.activeBorder : theme.border.strong}`,
                   background: active ? m.activeBg : "transparent",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 }}>
                   <span style={{ fontSize: 20, lineHeight: 1 }}>{m.emoji}</span>
-                  <span style={{ fontSize: 10, color: active ? m.activeBorder : "#6e7681" }}>{m.label}</span>
+                  <span style={{ fontSize: theme.size.xs, color: active ? m.activeBorder : theme.text.subtle }}>{m.label}</span>
                 </button>
               );
             })}
@@ -52,10 +53,10 @@ export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBod
       {/* Source (trade / position notes) */}
       {!isEOD && (
         <JournalField label="Source">
-          <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+          <div style={{ display: "flex", gap: 16, fontSize: theme.size.md }}>
             {["Ryan", "Self"].map(s => (
-              <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#c9d1d9" }}>
-                <input type="radio" name="inline-source" value={s} checked={source === s} onChange={() => onSourceChange(s)} style={{ accentColor: "#58a6ff" }} />
+              <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: theme.text.secondary }}>
+                <input type="radio" name="inline-source" value={s} checked={source === s} onChange={() => onSourceChange(s)} style={{ accentColor: theme.blue }} />
                 {s}
               </label>
             ))}
@@ -71,16 +72,16 @@ export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBod
       )}
 
       {error && (
-        <div style={{ color: "#f85149", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: "#1a1a1a", borderRadius: 4 }}>
+        <div style={{ color: theme.red, fontSize: theme.size.sm, marginBottom: 10, padding: "8px 10px", background: theme.bg.base, borderRadius: theme.radius.sm }}>
           {error}
         </div>
       )}
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button onClick={onCancel} style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}>
+        <button onClick={onCancel} style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 12px" }}>
           Cancel
         </button>
-        <button onClick={onSave} disabled={saving} style={{ background: "#238636", border: "none", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 16px", borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1 }}>
+        <button onClick={onSave} disabled={saving} style={{ background: theme.green, border: "none", color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 16px", borderRadius: theme.radius.sm, fontWeight: 500, opacity: saving ? 0.7 : 1 }}>
           {saving ? "Saving..." : "Save"}
         </button>
       </div>

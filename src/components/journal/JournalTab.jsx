@@ -12,6 +12,7 @@ import { JournalEntryCard } from "./JournalEntryCard";
 import { JournalInlineEditForm } from "./JournalInlineEditForm";
 import { JournalField } from "./JournalField";
 import { JournalAutoTextarea } from "./JournalAutoTextarea";
+import { theme } from "../../lib/theme";
 
 export function JournalTab() {
   const { trades, positions, account } = useData();
@@ -404,8 +405,8 @@ export function JournalTab() {
   );
 
   const filterSelectSt = {
-    background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
-    borderRadius: 4, padding: "4px 8px", fontFamily: "inherit", fontSize: 12,
+    background: theme.bg.base, border: `1px solid ${theme.border.default}`, color: theme.text.secondary,
+    borderRadius: theme.radius.sm, padding: "4px 8px", fontFamily: "inherit", fontSize: theme.size.sm,
   };
 
   return (
@@ -417,10 +418,10 @@ export function JournalTab() {
         {/* Filter bar */}
         <div style={{
           display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
-          padding: "10px 12px", background: "#161b22", borderRadius: 6,
-          border: "1px solid #21262d", marginBottom: 16,
+          padding: "10px 12px", background: theme.bg.surface, borderRadius: theme.radius.md,
+          border: `1px solid ${theme.border.default}`, marginBottom: 16,
         }}>
-          <span style={{ color: "#6e7681", fontSize: 12, marginRight: 4 }}>Filter:</span>
+          <span style={{ color: theme.text.subtle, fontSize: 12, marginRight: 4 }}>Filter:</span>
           <select style={filterSelectSt} value={filterType} onChange={e => setFilterType(e.target.value)}>
             <option value="all">All types</option>
             <option value="trade_note">Trade Notes</option>
@@ -445,8 +446,8 @@ export function JournalTab() {
             onClick={() => handleBackfill(false)}
             disabled={backfilling}
             style={{
-              background: "transparent", border: "1px solid #30363d", color: "#8b949e",
-              borderRadius: 4, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
+              background: "transparent", border: `1px solid ${theme.border.strong}`, color: theme.text.muted,
+              borderRadius: theme.radius.sm, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
               cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
             }}
           >
@@ -456,15 +457,15 @@ export function JournalTab() {
             onClick={() => handleBackfill(true)}
             disabled={backfilling}
             style={{
-              background: "transparent", border: "1px solid #30363d", color: "#8b949e",
-              borderRadius: 4, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
+              background: "transparent", border: `1px solid ${theme.border.strong}`, color: theme.text.muted,
+              borderRadius: theme.radius.sm, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
               cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
             }}
           >
             {backfilling ? "Working..." : "Re-sync backfill"}
           </button>
           {backfillMsg && (
-            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Failed") ? "#f85149" : "#3fb950" }}>
+            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Failed") ? theme.red : theme.green }}>
               {backfillMsg}
             </span>
           )}
@@ -472,15 +473,15 @@ export function JournalTab() {
 
         {/* Feed content */}
         {loading && (
-          <div style={{ color: "#8b949e", fontSize: 13, padding: "20px 0" }}>Loading...</div>
+          <div style={{ color: theme.text.muted, fontSize: 13, padding: "20px 0" }}>Loading...</div>
         )}
         {feedError && (
-          <div style={{ color: "#f85149", fontSize: 13, padding: "10px 12px", background: "#1a1a1a", borderRadius: 4, marginBottom: 12 }}>
+          <div style={{ color: theme.red, fontSize: 13, padding: "10px 12px", background: theme.bg.base, borderRadius: theme.radius.sm, marginBottom: 12 }}>
             Error loading feed: {feedError}
           </div>
         )}
         {!loading && !feedError && entries.length === 0 && (
-          <div style={{ color: "#8b949e", fontSize: 13, padding: "40px 0", textAlign: "center", lineHeight: 1.9 }}>
+          <div style={{ color: theme.text.muted, fontSize: 13, padding: "40px 0", textAlign: "center", lineHeight: 1.9 }}>
             No journal entries yet.<br />
             Use the form to add your first trade note or EOD update.
           </div>
@@ -506,10 +507,10 @@ export function JournalTab() {
 
       {/* ── RIGHT: New Entry Form ────────────────────────────────────────── */}
       <div style={{ flex: "0 0 340px", minWidth: 300 }}>
-        <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: 16 }}>
+        <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: 16 }}>
 
           {/* Form header */}
-          <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 600, color: "#e6edf3" }}>
+          <div style={{ marginBottom: 14, fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary }}>
             New Entry
           </div>
 
@@ -526,8 +527,8 @@ export function JournalTab() {
                     cursor: "pointer", borderRadius: 4,
                     fontWeight: active ? 600 : 400,
                     background: active ? activeBg : "transparent",
-                    color: active ? activeColor : "#8b949e",
-                    border: `1px solid ${active ? activeColor : "#30363d"}`,
+                    color: active ? activeColor : theme.text.muted,
+                    border: `1px solid ${active ? activeColor : theme.border.strong}`,
                   }}
                 >
                   {label}
@@ -562,8 +563,8 @@ export function JournalTab() {
               <JournalField label="Source">
                 <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
                   {["Ryan", "Self"].map(s => (
-                    <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#c9d1d9" }}>
-                      <input type="radio" name="journal-source" value={s} checked={formSource === s} onChange={() => setFormSource(s)} style={{ accentColor: "#58a6ff" }} />
+                    <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: theme.text.secondary }}>
+                      <input type="radio" name="journal-source" value={s} checked={formSource === s} onChange={() => setFormSource(s)} style={{ accentColor: theme.blue }} />
                       {s}
                     </label>
                   ))}
@@ -621,24 +622,24 @@ export function JournalTab() {
                 ].map(({ label, value }) => (
                   <div key={label}>
                     <label style={JOURNAL_LABEL_ST}>{label}</label>
-                    <div style={{ ...JOURNAL_INPUT_ST, color: "#e6edf3", fontWeight: 500 }}>{value}</div>
+                    <div style={{ ...JOURNAL_INPUT_ST, color: theme.text.primary, fontWeight: 500 }}>{value}</div>
                   </div>
                 ))}</div>
 
               {/* Auto-populated preview panel */}
-              <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
-                <div style={{ color: "#6e7681", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8, fontSize: 11 }}>
+              <div style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
+                <div style={{ color: theme.text.subtle, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8, fontSize: theme.size.xs }}>
                   Preview (auto-populated)
                 </div>
 
                 {/* Deployment status */}
                 {eodDeploymentPreview ? (
                   <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: "#8b949e" }}>Deployment: </span>
+                    <span style={{ color: theme.text.muted }}>Deployment: </span>
                     <span style={{
-                      color: eodDeploymentPreview.status === "above" ? "#e3b341"
-                           : eodDeploymentPreview.status === "below" ? "#f85149"
-                           : "#3fb950",
+                      color: eodDeploymentPreview.status === "above" ? theme.amber
+                           : eodDeploymentPreview.status === "below" ? theme.red
+                           : theme.green,
                     }}>
                       {eodDeploymentPreview.status === "above"
                         ? `↑ ${(eodDeploymentPreview.delta * 100).toFixed(1)}% above ceiling`
@@ -646,16 +647,16 @@ export function JournalTab() {
                         ? `↓ ${(eodDeploymentPreview.delta * 100).toFixed(1)}% below floor`
                         : "✓ in band"}
                     </span>
-                    <span style={{ color: "#6e7681" }}> · Floor: {eodDeploymentPreview.band.floorPct * 100}–{eodDeploymentPreview.band.ceilingPct * 100}%</span>
+                    <span style={{ color: theme.text.subtle }}> · Floor: {eodDeploymentPreview.band.floorPct * 100}–{eodDeploymentPreview.band.ceilingPct * 100}%</span>
                   </div>
                 ) : (
-                  <div style={{ color: "#6e7681", marginBottom: 6 }}>Deployment: — (enter VIX + Free Cash)</div>
+                  <div style={{ color: theme.text.subtle, marginBottom: 6 }}>Deployment: — (enter VIX + Free Cash)</div>
                 )}
 
                 {/* MTD Realized */}
                 <div style={{ marginBottom: 6 }}>
-                  <span style={{ color: "#8b949e" }}>MTD Realized: </span>
-                  <span style={{ color: "#c9d1d9" }}>
+                  <span style={{ color: theme.text.muted }}>MTD Realized: </span>
+                  <span style={{ color: theme.text.secondary }}>
                     {account?.month_to_date_premium != null
                       ? `$${account.month_to_date_premium.toLocaleString()}`
                       : "—"}
@@ -665,35 +666,35 @@ export function JournalTab() {
                 {/* Pipeline Est (60%) */}
                 {eodAutoPipeline > 0 && (
                   <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: "#8b949e" }}>Pipeline Est. (60%): </span>
-                    <span style={{ color: "#c9d1d9" }}>${Math.round(eodAutoPipeline * 0.60).toLocaleString()}</span>
+                    <span style={{ color: theme.text.muted }}>Pipeline Est. (60%): </span>
+                    <span style={{ color: theme.text.secondary }}>${Math.round(eodAutoPipeline * 0.60).toLocaleString()}</span>
                   </div>
                 )}
 
                 {/* Today's activity */}
                 <div style={{ marginBottom: 4 }}>
-                  <span style={{ color: "#8b949e" }}>Today's activity: </span>
+                  <span style={{ color: theme.text.muted }}>Today's activity: </span>
                   {eodClosedToday.length === 0 && eodOpenedToday.length === 0
-                    ? <span style={{ color: "#6e7681" }}>No trades on {formDate}</span>
+                    ? <span style={{ color: theme.text.subtle }}>No trades on {formDate}</span>
                     : null}
                 </div>
                 {eodClosedToday.map((t, i) => (
-                  <div key={i} style={{ color: "#6e7681", paddingLeft: 8, marginBottom: 2 }}>
+                  <div key={i} style={{ color: theme.text.subtle, paddingLeft: 8, marginBottom: 2 }}>
                     Closed {t.ticker} {t.type} ${t.strike}
                     {t.pct_kept != null && <span> · {t.pct_kept}%</span>}
                     {t.dte_remaining != null && <span> · {t.dte_remaining}d DTE rem.</span>}
                   </div>
                 ))}
                 {eodOpenedToday.map((p, i) => (
-                  <div key={i} style={{ color: "#6e7681", paddingLeft: 8, marginBottom: 2 }}>
+                  <div key={i} style={{ color: theme.text.subtle, paddingLeft: 8, marginBottom: 2 }}>
                     Opened {p.ticker} {p.type} ${p.strike} · exp {formatExpiry(p.expiry)}
                     {p.premium && <span> · ${p.premium.toLocaleString()}</span>}
                   </div>
                 ))}
 
                 {/* Open CSPs count */}
-                <div style={{ marginTop: 4, color: "#8b949e" }}>
-                  Open CSPs: <span style={{ color: "#c9d1d9" }}>{eodOpenCsps.length} position{eodOpenCsps.length !== 1 ? "s" : ""}</span>
+                <div style={{ marginTop: 4, color: theme.text.muted }}>
+                  Open CSPs: <span style={{ color: theme.text.secondary }}>{eodOpenCsps.length} position{eodOpenCsps.length !== 1 ? "s" : ""}</span>
                 </div>
               </div>
 
@@ -722,7 +723,7 @@ export function JournalTab() {
 
           {/* Save error */}
           {saveError && (
-            <div style={{ color: "#f85149", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: "#1a1a1a", borderRadius: 4 }}>
+            <div style={{ color: theme.red, fontSize: 12, marginBottom: 10, padding: "8px 10px", background: theme.bg.base, borderRadius: theme.radius.sm }}>
               {saveError}
             </div>
           )}
@@ -731,7 +732,7 @@ export function JournalTab() {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               onClick={resetForm}
-              style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}
+              style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}
             >
               Cancel
             </button>
@@ -739,7 +740,7 @@ export function JournalTab() {
               onClick={handleSave}
               disabled={saving}
               style={{
-                background: "#238636", border: "none", color: "#fff",
+                background: theme.green, border: "none", color: "#fff",
                 cursor: saving ? "not-allowed" : "pointer",
                 fontSize: 13, fontFamily: "inherit", padding: "6px 16px",
                 borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1,
