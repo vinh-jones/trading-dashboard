@@ -43,4 +43,7 @@ export const theme = {
 
   // ── Font size scale ───────────────────────────────────────────────────────
   size: { xs: 10, sm: 12, md: 14, lg: 16, xl: 18 },
+
+  // ── Chart-specific colors ─────────────────────────────────────────────────
+  chart: { shares: "#2eb88a", leaps: "#f0c040" },
 };

@@ -4,6 +4,7 @@ import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
 import { calcDTE, allocColor } from "../lib/trading";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { SixtyCheck } from "./SixtyCheck";
+import { theme } from "../lib/theme";
 
 export function OpenPositionsTab() {
   const { positions, account } = useData();
@@ -46,13 +47,13 @@ export function OpenPositionsTab() {
   const SCALE = Math.max(allocRows[0]?.totalPct ?? 0.20, 0.20); // scale to largest bar, min 20%
 
   const sectionHeader = (title) => (
-    <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
+    <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
       {title}
     </div>
   );
 
   const panel = (children, style = {}) => (
-    <div style={{ padding: "20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d", marginBottom: 16, ...style }}>
+    <div style={{ padding: "20px", background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: 16, ...style }}>
       {children}
     </div>
   );
@@ -70,30 +71,30 @@ export function OpenPositionsTab() {
               const cspW    = (row.cspPct    / SCALE) * 100;
               return (
                 <div key={row.ticker} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
-                  <div style={{ width: 52, fontSize: 12, fontWeight: 700, color: "#e6edf3", textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ width: 52, fontSize: theme.size.sm, fontWeight: 700, color: theme.text.primary, textAlign: "right", flexShrink: 0 }}>
                     {row.ticker}
                   </div>
-                  <div style={{ flex: 1, height: 16, background: "#21262d", borderRadius: 2, position: "relative" }}>
-                    {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: "#2eb88a", borderRadius: "2px 0 0 2px" }} />}
-                    {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: "#f0c040" }} />}
-                    {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: "#58a6ff", borderRadius: "0 2px 2px 0" }} />}
+                  <div style={{ flex: 1, height: 16, background: theme.border.default, borderRadius: 2, position: "relative" }}>
+                    {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: theme.chart.shares, borderRadius: "2px 0 0 2px" }} />}
+                    {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: theme.chart.leaps }} />}
+                    {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: theme.blue, borderRadius: "0 2px 2px 0" }} />}
                     {/* Threshold reference lines */}
-                    <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#8b949e", opacity: 0.8, zIndex: 2 }} />
-                    <div style={{ position: "absolute", left: `${(0.15 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: "#f85149", opacity: 0.8, zIndex: 2 }} />
+                    <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: theme.text.muted, opacity: 0.8, zIndex: 2 }} />
+                    <div style={{ position: "absolute", left: `${(0.15 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: theme.red, opacity: 0.8, zIndex: 2 }} />
                   </div>
-                  <div style={{ width: 42, fontSize: 12, fontWeight: 600, color: allocColor(row.totalPct), textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ width: 42, fontSize: theme.size.sm, fontWeight: 600, color: allocColor(row.totalPct), textAlign: "right", flexShrink: 0 }}>
                     {(row.totalPct * 100).toFixed(1)}%
                   </div>
                 </div>
               );
             })}
             {/* Legend */}
-            <div style={{ display: "flex", gap: 16, marginTop: 14, paddingLeft: 62, fontSize: 11, color: "#6e7681" }}>
-              <span><span style={{ color: "#2eb88a" }}>■</span> Shares</span>
-              <span><span style={{ color: "#f0c040" }}>■</span> LEAPS</span>
-              <span><span style={{ color: "#58a6ff" }}>■</span> CSP</span>
-              <span style={{ marginLeft: 8 }}><span style={{ color: "#8b949e" }}>│</span> 10%</span>
-              <span><span style={{ color: "#f85149" }}>│</span> 15%</span>
+            <div style={{ display: "flex", gap: 16, marginTop: 14, paddingLeft: 62, fontSize: theme.size.xs, color: theme.text.subtle }}>
+              <span><span style={{ color: theme.chart.shares }}>■</span> Shares</span>
+              <span><span style={{ color: theme.chart.leaps }}>■</span> LEAPS</span>
+              <span><span style={{ color: theme.blue }}>■</span> CSP</span>
+              <span style={{ marginLeft: 8 }}><span style={{ color: theme.text.muted }}>│</span> 10%</span>
+              <span><span style={{ color: theme.red }}>│</span> 15%</span>
             </div>
           </div>
         </>
@@ -114,22 +115,22 @@ export function OpenPositionsTab() {
                   );
                   dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
                 }
-                const dtePctColor = dtePct == null ? "#8b949e"
-                  : dtePct >= 60 ? "#3fb950"
-                  : dtePct >= 20 ? "#f2d96d"
-                  : "#f85149";
+                const dtePctColor = dtePct == null ? theme.text.muted
+                  : dtePct >= 60 ? theme.green
+                  : dtePct >= 20 ? theme.amber
+                  : theme.red;
                 return (
-                  <div key={i} style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 6, padding: "10px 12px" }}>
+                  <div key={i} style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm, padding: "10px 12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontWeight: 700, color: "#e6edf3", fontSize: 14 }}>{csp.ticker}</span>
-                        <span style={{ color: "#e6edf3", fontSize: 13 }}>${csp.strike}</span>
-                        <span style={{ color: "#8b949e", fontSize: 12 }}>{formatExpiry(csp.expiry_date)}</span>
+                        <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{csp.ticker}</span>
+                        <span style={{ color: theme.text.primary, fontSize: theme.size.md }}>${csp.strike}</span>
+                        <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{formatExpiry(csp.expiry_date)}</span>
                       </div>
-                      <span style={{ fontWeight: 600, color: "#3fb950", fontSize: 14 }}>{formatDollarsFull(csp.premium_collected)}</span>
+                      <span style={{ fontWeight: 600, color: theme.green, fontSize: theme.size.md }}>{formatDollarsFull(csp.premium_collected)}</span>
                     </div>
-                    <div style={{ display: "flex", gap: 12, fontSize: 12, flexWrap: "wrap" }}>
-                      <span style={{ color: dte != null && dte <= 5 ? "#f85149" : "#8b949e", fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
+                    <div style={{ display: "flex", gap: 12, fontSize: theme.size.sm, flexWrap: "wrap" }}>
+                      <span style={{ color: dte != null && dte <= 5 ? theme.red : theme.text.muted, fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
                         {dte != null ? `${dte}d` : "—"}
                       </span>
                       {dtePct != null && <span style={{ color: dtePctColor, fontWeight: 600 }}>{dtePct.toFixed(0)}% DTE left</span>}
@@ -140,11 +141,11 @@ export function OpenPositionsTab() {
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #30363d" }}>
+                  <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
                     {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
-                      <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: "#8b949e", fontWeight: 500, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: theme.text.muted, fontWeight: 500, fontSize: theme.size.sm, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                         {h}
                       </th>
                     ))}
@@ -164,28 +165,28 @@ export function OpenPositionsTab() {
                       dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
                     }
                     // Green ≥ 60% (plenty of time), yellow 20–59% (watch it), red < 20% (near expiry)
-                    const dtePctColor = dtePct == null ? "#8b949e"
-                      : dtePct >= 60 ? "#3fb950"
-                      : dtePct >= 20 ? "#f2d96d"
-                      : "#f85149";
+                    const dtePctColor = dtePct == null ? theme.text.muted
+                      : dtePct >= 60 ? theme.green
+                      : dtePct >= 20 ? theme.amber
+                      : theme.red;
 
                     return (
-                      <tr key={i} style={{ borderBottom: "1px solid #21262d" }}
+                      <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "#1a3a5c22")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
-                        <td style={{ padding: "9px 10px", fontWeight: 700, color: "#e6edf3" }}>{csp.ticker}</td>
-                        <td style={{ padding: "9px 10px", color: "#e6edf3" }}>${csp.strike}</td>
-                        <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatExpiry(csp.expiry_date)}</td>
-                        <td style={{ padding: "9px 10px", color: dte != null && dte <= 5 ? "#f85149" : "#8b949e", fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
+                        <td style={{ padding: "9px 10px", fontWeight: 700, color: theme.text.primary }}>{csp.ticker}</td>
+                        <td style={{ padding: "9px 10px", color: theme.text.primary }}>${csp.strike}</td>
+                        <td style={{ padding: "9px 10px", color: theme.text.muted }}>{formatExpiry(csp.expiry_date)}</td>
+                        <td style={{ padding: "9px 10px", color: dte != null && dte <= 5 ? theme.red : theme.text.muted, fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
                           {dte != null ? `${dte}d` : "—"}
                         </td>
                         <td style={{ padding: "9px 10px", fontWeight: 600, color: dtePctColor }}>
                           {dtePct != null ? `${dtePct.toFixed(0)}%` : "—"}
                         </td>
-                        <td style={{ padding: "9px 10px", color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
-                        <td style={{ padding: "9px 10px", color: "#8b949e" }}>{formatDollarsFull(csp.capital_fronted)}</td>
-                        <td style={{ padding: "9px 10px", color: "#58a6ff", fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
+                        <td style={{ padding: "9px 10px", color: theme.green, fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
+                        <td style={{ padding: "9px 10px", color: theme.text.muted }}>{formatDollarsFull(csp.capital_fronted)}</td>
+                        <td style={{ padding: "9px 10px", color: theme.blue, fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
                       </tr>
                     );
                   })}
@@ -206,19 +207,19 @@ export function OpenPositionsTab() {
               const dte = cc ? calcDTE(cc.expiry_date) : null;
 
               return (
-                <div key={pos.ticker} style={{ background: "#0d1117", borderRadius: 6, border: "1px solid #21262d", padding: "16px" }}>
+                <div key={pos.ticker} style={{ background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}`, padding: "16px" }}>
                   {/* Header */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                    <span style={{ fontSize: 16, fontWeight: 700, color: "#e6edf3" }}>{pos.ticker}</span>
-                    <span style={{ fontSize: 13, color: "#8b949e" }}>
-                      Cost basis: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
+                    <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary }}>{pos.ticker}</span>
+                    <span style={{ fontSize: theme.size.md, color: theme.text.muted }}>
+                      Cost basis: <span style={{ color: theme.text.primary, fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
                     </span>
                   </div>
 
                   {/* Lots */}
                   <div style={{ marginBottom: 10 }}>
                     {pos.positions.map((p, i) => (
-                      <div key={i} style={{ fontSize: 12, color: "#6e7681", marginBottom: 2 }}>
+                      <div key={i} style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: 2 }}>
                         {p.description} — {formatDollarsFull(p.fronted)}
                       </div>
                     ))}
@@ -226,30 +227,30 @@ export function OpenPositionsTab() {
 
                   {/* Active CC */}
                   {cc ? (
-                    <div style={{ padding: "10px 12px", background: "#1a4a3a", border: "1px solid #2a6a5a", borderRadius: 5 }}>
+                    <div style={{ padding: "10px 12px", background: "#1a4a3a", border: "1px solid #2a6a5a", borderRadius: theme.radius.sm }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, color: "#6dd9a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Active CC</span>
-                        <span style={{ fontSize: 12, color: dte != null && dte <= 3 ? "#f85149" : "#8b949e" }}>
+                        <span style={{ fontSize: theme.size.sm, color: "#6dd9a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Active CC</span>
+                        <span style={{ fontSize: theme.size.sm, color: dte != null && dte <= 3 ? theme.red : theme.text.muted }}>
                           {dte != null ? `${dte}d DTE` : "—"} · exp {formatExpiry(cc.expiry_date)}
                         </span>
                       </div>
                       <div style={{ display: "flex", gap: 16 }}>
                         <div>
-                          <span style={{ fontSize: 11, color: "#6e7681" }}>Strike </span>
-                          <span style={{ fontSize: 14, color: "#e6edf3", fontWeight: 600 }}>${cc.strike}</span>
+                          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Strike </span>
+                          <span style={{ fontSize: theme.size.md, color: theme.text.primary, fontWeight: 600 }}>${cc.strike}</span>
                         </div>
                         <div>
-                          <span style={{ fontSize: 11, color: "#6e7681" }}>Contracts </span>
-                          <span style={{ fontSize: 14, color: "#e6edf3", fontWeight: 600 }}>{cc.contracts}</span>
+                          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Contracts </span>
+                          <span style={{ fontSize: theme.size.md, color: theme.text.primary, fontWeight: 600 }}>{cc.contracts}</span>
                         </div>
                         <div>
-                          <span style={{ fontSize: 11, color: "#6e7681" }}>Premium </span>
-                          <span style={{ fontSize: 14, color: "#3fb950", fontWeight: 600 }}>{formatDollarsFull(cc.premium_collected)}</span>
+                          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Premium </span>
+                          <span style={{ fontSize: theme.size.md, color: theme.green, fontWeight: 600 }}>{formatDollarsFull(cc.premium_collected)}</span>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div style={{ padding: "8px 12px", background: "#3a1a1a", border: "1px solid #7c2a2a", borderRadius: 5, fontSize: 13, color: "#f85149", fontWeight: 500 }}>
+                    <div style={{ padding: "8px 12px", background: "#3a1a1a", border: "1px solid #7c2a2a", borderRadius: theme.radius.sm, fontSize: theme.size.md, color: theme.red, fontWeight: 500 }}>
                       NO ACTIVE CC
                     </div>
                   )}
@@ -266,13 +267,13 @@ export function OpenPositionsTab() {
           {sectionHeader(`Open LEAPS (${allOpenLeaps.length})`)}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {allOpenLeaps.map((l, i) => (
-              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: 6 }}>
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: theme.radius.sm }}>
                 <div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "#e6edf3", marginRight: 12 }}>{l.ticker}</span>
-                  <span style={{ fontSize: 13, color: "#f0c040" }}>{l.description}</span>
+                  <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary, marginRight: 12 }}>{l.ticker}</span>
+                  <span style={{ fontSize: theme.size.md, color: theme.chart.leaps }}>{l.description}</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#8b949e" }}>
-                  Capital: <span style={{ color: "#e6edf3", fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
+                <div style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
+                  Capital: <span style={{ color: theme.text.primary, fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
                 </div>
               </div>
             ))}

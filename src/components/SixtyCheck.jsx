@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { theme } from "../lib/theme";
 
 export function SixtyCheck() {
   const [premiumOpen, setPremiumOpen] = useState("");
@@ -17,27 +18,27 @@ export function SixtyCheck() {
     const dtePct    = dR / dO;
 
     if (dR < 5) {
-      return { profitPct, dtePct, status: "near-expiry", label: "Near expiry — evaluate independently", color: "#8b949e" };
+      return { profitPct, dtePct, status: "near-expiry", label: "Near expiry — evaluate independently", color: theme.text.muted };
     }
     if (profitPct >= 0.60 && dtePct >= 0.60) {
-      return { profitPct, dtePct, triggered: true, status: "close", label: "Close now", color: "#3fb950" };
+      return { profitPct, dtePct, triggered: true, status: "close", label: "Close now", color: theme.green };
     }
     if (dtePct < 0.60) {
-      return { profitPct, dtePct, triggered: false, status: "past-dte", label: "Past 60% DTE threshold — use judgment", color: "#f2d96d" };
+      return { profitPct, dtePct, triggered: false, status: "past-dte", label: "Past 60% DTE threshold — use judgment", color: theme.amber };
     }
-    return { profitPct, dtePct, triggered: false, status: "not-yet", label: "Not yet", color: "#8b949e" };
+    return { profitPct, dtePct, triggered: false, status: "not-yet", label: "Not yet", color: theme.text.muted };
   }, [premiumOpen, premiumMark, dteOpen, dteRemaining]);
 
   const inputStyle = {
-    background: "#0d1117", border: "1px solid #30363d", color: "#e6edf3",
-    borderRadius: 4, padding: "8px 10px", fontSize: 14, fontFamily: "inherit",
+    background: theme.bg.base, border: `1px solid ${theme.border.strong}`, color: theme.text.primary,
+    borderRadius: theme.radius.sm, padding: "8px 10px", fontSize: theme.size.md, fontFamily: "inherit",
     width: "100%", outline: "none",
   };
-  const labelStyle = { fontSize: 12, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6, display: "block" };
+  const labelStyle = { fontSize: theme.size.sm, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6, display: "block" };
 
   return (
-    <div style={{ padding: "20px", background: "#161b22", borderRadius: 8, border: "1px solid #21262d" }}>
-      <div style={{ fontSize: 13, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 16, fontWeight: 500 }}>
+    <div style={{ padding: "20px", background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
+      <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 16, fontWeight: 500 }}>
         60/60 Quick-Check
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
@@ -60,31 +61,31 @@ export function SixtyCheck() {
       </div>
 
       {result ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 24, padding: "14px 16px", background: "#0d1117", borderRadius: 6, border: `1px solid ${result.color}40` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, padding: "14px 16px", background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${result.color}40` }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: result.color }}>{result.label}</div>
           <div style={{ display: "flex", gap: 20, marginLeft: "auto" }}>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Profit captured</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: result.profitPct >= 0.60 ? "#3fb950" : "#e6edf3" }}>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Profit captured</div>
+              <div style={{ fontSize: theme.size.xl, fontWeight: 600, color: result.profitPct >= 0.60 ? theme.green : theme.text.primary }}>
                 {(result.profitPct * 100).toFixed(1)}%
               </div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>DTE remaining</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: result.dtePct >= 0.60 ? "#3fb950" : "#f85149" }}>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>DTE remaining</div>
+              <div style={{ fontSize: theme.size.xl, fontWeight: 600, color: result.dtePct >= 0.60 ? theme.green : theme.red }}>
                 {(result.dtePct * 100).toFixed(1)}%
               </div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>60/60 triggered</div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: result.triggered ? "#3fb950" : "#8b949e" }}>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>60/60 triggered</div>
+              <div style={{ fontSize: theme.size.xl, fontWeight: 600, color: result.triggered ? theme.green : theme.text.muted }}>
                 {result.status === "near-expiry" ? "N/A" : result.triggered ? "YES" : "NO"}
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div style={{ padding: "14px 16px", background: "#0d1117", borderRadius: 6, border: "1px solid #21262d", fontSize: 14, color: "#6e7681" }}>
+        <div style={{ padding: "14px 16px", background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}`, fontSize: theme.size.md, color: theme.text.subtle }}>
           Enter all four values to evaluate the 60/60 rule.
         </div>
       )}
