@@ -21,7 +21,8 @@ import { createClient } from "@supabase/supabase-js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Use service role key to bypass RLS — this endpoint is already auth-gated by X-Ingest-Secret
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
 }
