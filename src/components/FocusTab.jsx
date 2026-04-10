@@ -26,7 +26,7 @@ const RULE_LABELS = {
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function FocusItemCard({ item, isMobile }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const p = PRIORITY[item.priority];
   return (
     <div
@@ -99,7 +99,7 @@ function FocusItemCard({ item, isMobile }) {
 }
 
 function WatchingRow({ item }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const p = PRIORITY[item.priority];
   return (
     <div
@@ -201,7 +201,7 @@ export function FocusTab() {
 
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading] = useState(true);
-  const [infoExpanded, setInfoExpanded] = useState(false);
+  const [infoExpanded, setInfoExpanded] = useState(true);
 
   useEffect(() => {
     if (!import.meta.env.PROD) {
