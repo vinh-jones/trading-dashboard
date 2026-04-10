@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import marketContextDev from "../data/market-context.json";
 import { useData } from "../hooks/useData";
 import { useWindowWidth } from "../hooks/useWindowWidth";
+import { useLiveVix } from "../hooks/useLiveVix";
 import { theme } from "../lib/theme";
 import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
 import { formatExpiry } from "../lib/format";
@@ -198,6 +199,7 @@ function MacroCalendar({ macroEvents }) {
 export function FocusTab() {
   const { positions, account } = useData();
   const isMobile = useWindowWidth() < 600;
+  const { vix: liveVix } = useLiveVix(account?.vix_current);
 
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading] = useState(true);
@@ -218,8 +220,8 @@ export function FocusTab() {
   }, []);
 
   const allItems = useMemo(
-    () => generateFocusItems(positions, account, marketContext),
-    [positions, account, marketContext]
+    () => generateFocusItems(positions, account, marketContext, liveVix),
+    [positions, account, marketContext, liveVix]
   );
   const { focus, watching, info } = useMemo(() => categorizeFocusItems(allItems), [allItems]);
 

@@ -246,11 +246,16 @@ function ruleExpiryCluster(positions) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, marketContext) {
+export function generateFocusItems(positions, account, marketContext, liveVix) {
   if (!positions) return [];
 
+  // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
+  const accountWithVix = liveVix != null
+    ? { ...account, vix_current: liveVix }
+    : account;
+
   const items = [
-    ...ruleCashBelowFloor(account),
+    ...ruleCashBelowFloor(accountWithVix),
     ...ruleExpiringSoon(positions),
     ...ruleUncoveredShares(positions),
     ...ruleEarningsBeforeExpiry(positions, marketContext),
