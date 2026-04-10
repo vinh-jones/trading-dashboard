@@ -4,6 +4,7 @@ import positionsData from "./data/positions.json";
 import accountData from "./data/account.json";
 import { normalizeTrade } from "./lib/trading";
 import { TYPE_COLORS, VERSION } from "./lib/constants";
+import { theme } from "./lib/theme";
 import { DataContext } from "./hooks/useData";
 import { useWindowWidth } from "./hooks/useWindowWidth";
 import { AccountBar } from "./components/AccountBar";
@@ -59,31 +60,31 @@ export default function TradeDashboard() {
   const [captureRate, setCaptureRate]           = useState(0.60);
 
   const tabStyle = (tab) => ({
-    padding: isMobile ? "10px 14px" : "10px 24px", fontSize: 15, fontFamily: "inherit",
+    padding: isMobile ? "10px 14px" : "10px 24px", fontSize: theme.size.md, fontFamily: "inherit",
     cursor: "pointer", fontWeight: activeTab === tab ? 600 : 400,
-    color: activeTab === tab ? "#e6edf3" : "#8b949e",
+    color: activeTab === tab ? theme.text.primary : theme.text.muted,
     background: "transparent", border: "none",
-    borderBottom: activeTab === tab ? "2px solid #58a6ff" : "2px solid transparent",
+    borderBottom: activeTab === tab ? `2px solid ${theme.blue}` : "2px solid transparent",
     transition: "all 0.15s", letterSpacing: "0.3px",
     whiteSpace: "nowrap",
   });
 
   return (
     <DataContext.Provider value={{ trades, positions, account, refreshData, deleteTrade }}>
-    <div style={{ fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace", background: "#0d1117", color: "#c9d1d9", minHeight: "100vh", padding: "20px" }}>
+    <div style={{ fontFamily: theme.font.mono, background: theme.bg.base, color: theme.text.secondary, minHeight: "100vh", padding: theme.space[5] }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: "#e6edf3", marginBottom: 4, letterSpacing: "0.5px" }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, color: theme.text.primary, marginBottom: 4, letterSpacing: "0.5px" }}>
           TRADE DASHBOARD
         </h1>
-        <div style={{ fontSize: 13, color: "#6e7681", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: theme.space[4], display: "flex", alignItems: "center", gap: theme.space[3] }}>
           <span>as of {account.last_updated}</span>
-          <span style={{ fontSize: 11, color: "#30363d" }}>v{VERSION}</span>
+          <span style={{ fontSize: theme.size.xs, color: theme.border.strong }}>v{VERSION}</span>
         </div>
 
         <AccountBar captureRate={captureRate} />
 
         {/* Tab bar */}
-        <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #21262d", marginBottom: 20, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border.default}`, marginBottom: theme.space[5], overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
             Open Positions
           </button>
@@ -100,29 +101,29 @@ export default function TradeDashboard() {
 
         {/* Active filter chips — shown on Summary and Calendar */}
         {activeTab !== "positions" && activeTab !== "journal" && (selectedTicker || selectedType) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontSize: 14, color: "#8b949e", padding: "8px 12px", background: "#161b22", borderRadius: 6, border: "1px solid #21262d" }}>
-            <span style={{ color: "#6e7681" }}>Filters:</span>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], marginBottom: theme.space[4], fontSize: theme.size.md, color: theme.text.muted, padding: `${theme.space[2]}px ${theme.space[3]}px`, background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
+            <span style={{ color: theme.text.subtle }}>Filters:</span>
             {selectedTicker && (
-              <span style={{ background: "#1c2333", border: "1px solid #30363d", padding: "3px 10px", borderRadius: 4, color: "#58a6ff", fontWeight: 500 }}>
+              <span style={{ background: theme.bg.elevated, border: `1px solid ${theme.border.strong}`, padding: "3px 10px", borderRadius: theme.radius.sm, color: theme.blue, fontWeight: 500 }}>
                 {selectedTicker}
-                <span onClick={() => setSelectedTicker(null)} style={{ marginLeft: 6, cursor: "pointer", color: "#6e7681" }}>×</span>
+                <span onClick={() => setSelectedTicker(null)} style={{ marginLeft: 6, cursor: "pointer", color: theme.text.subtle }}>×</span>
               </span>
             )}
             {selectedType && (
-              <span style={{ background: TYPE_COLORS[selectedType]?.bg || "#1c2333", border: `1px solid ${TYPE_COLORS[selectedType]?.border || "#30363d"}`, padding: "3px 10px", borderRadius: 4, color: TYPE_COLORS[selectedType]?.text || "#e6edf3", fontWeight: 500 }}>
+              <span style={{ background: TYPE_COLORS[selectedType]?.bg || theme.bg.elevated, border: `1px solid ${TYPE_COLORS[selectedType]?.border || theme.border.strong}`, padding: "3px 10px", borderRadius: theme.radius.sm, color: TYPE_COLORS[selectedType]?.text || theme.text.primary, fontWeight: 500 }}>
                 {selectedType}
-                <span onClick={() => setSelectedType(null)} style={{ marginLeft: 6, cursor: "pointer", color: "#6e7681" }}>×</span>
+                <span onClick={() => setSelectedType(null)} style={{ marginLeft: 6, cursor: "pointer", color: theme.text.subtle }}>×</span>
               </span>
             )}
             {selectedDuration != null && activeTab === "summary" && (
-              <span style={{ background: "#1c2333", border: "1px solid #30363d", padding: "3px 10px", borderRadius: 4, color: "#58a6ff", fontWeight: 500 }}>
+              <span style={{ background: theme.bg.elevated, border: `1px solid ${theme.border.strong}`, padding: "3px 10px", borderRadius: theme.radius.sm, color: theme.blue, fontWeight: 500 }}>
                 {["0-1d", "2-3d", "4-7d", "8-14d", "15-30d", "30d+"][selectedDuration]}
-                <span onClick={() => setSelectedDuration(null)} style={{ marginLeft: 6, cursor: "pointer", color: "#6e7681" }}>×</span>
+                <span onClick={() => setSelectedDuration(null)} style={{ marginLeft: 6, cursor: "pointer", color: theme.text.subtle }}>×</span>
               </span>
             )}
             <button
               onClick={() => { setSelectedTicker(null); setSelectedType(null); setSelectedDuration(null); setSelectedDay(null); }}
-              style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer", fontSize: 13, fontFamily: "inherit", marginLeft: "auto", textDecoration: "underline" }}
+              style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", marginLeft: "auto", textDecoration: "underline" }}
             >
               Clear all
             </button>
