@@ -1,7 +1,9 @@
+import { theme } from "../../lib/theme";
+
 export const JOURNAL_BADGE = {
-  trade_note:    { label: "TRADE NOTE",    color: "#58a6ff" },
-  eod_update:    { label: "EOD UPDATE",    color: "#3fb950" },
-  position_note: { label: "POSITION NOTE", color: "#e3b341" },
+  trade_note:    { label: "TRADE NOTE",    color: theme.blue },
+  eod_update:    { label: "EOD UPDATE",    color: theme.green },
+  position_note: { label: "POSITION NOTE", color: theme.amber },
 };
 
 export const MOODS = [
@@ -20,12 +22,12 @@ export const JOURNAL_ENTRY_TYPES = [
 
 // Shared journal form styles — module-level so React never remounts form elements
 export const JOURNAL_INPUT_ST = {
-  background: "#0d1117", border: "1px solid #21262d", color: "#c9d1d9",
-  borderRadius: 4, padding: "8px 10px", fontFamily: "inherit", fontSize: 13,
+  background: theme.bg.base, border: `1px solid ${theme.border.default}`, color: theme.text.secondary,
+  borderRadius: theme.radius.sm, padding: "8px 10px", fontFamily: "inherit", fontSize: theme.size.md,
   width: "100%", boxSizing: "border-box",
 };
 
 export const JOURNAL_LABEL_ST = {
-  display: "block", color: "#8b949e", fontSize: 11, textTransform: "uppercase",
+  display: "block", color: theme.text.muted, fontSize: theme.size.xs, textTransform: "uppercase",
   letterSpacing: "0.8px", marginBottom: 6, fontWeight: 500,
 };
