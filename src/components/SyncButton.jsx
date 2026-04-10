@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useData } from "../hooks/useData";
+import { theme } from "../lib/theme";
 
 export function SyncButton() {
   const { refreshData } = useData();
@@ -53,7 +54,7 @@ export function SyncButton() {
   }
 
   const label  = { idle: "⟳ Sync Sheet", syncing: "Syncing…", done: "✓ Synced", error: "✗ Error" }[status];
-  const color  = { idle: "#8b949e", syncing: "#58a6ff", done: "#3fb950", error: "#f85149" }[status];
+  const color  = { idle: theme.text.muted, syncing: theme.blue, done: theme.green, error: theme.red }[status];
   const spin   = status === "syncing";
 
   return (
@@ -65,9 +66,9 @@ export function SyncButton() {
           background: "transparent",
           border: `1px solid ${color}`,
           color,
-          borderRadius: 5,
+          borderRadius: theme.radius.sm,
           padding: "6px 14px",
-          fontSize: 13,
+          fontSize: theme.size.md,
           fontFamily: "inherit",
           fontWeight: 500,
           cursor: spin ? "default" : "pointer",
@@ -79,7 +80,7 @@ export function SyncButton() {
         {label}
       </button>
       {detail && (
-        <div style={{ fontSize: 11, color: status === "error" ? "#f85149" : "#6e7681", maxWidth: 260, textAlign: "right" }}>
+        <div style={{ fontSize: theme.size.xs, color: status === "error" ? theme.red : theme.text.subtle, maxWidth: 260, textAlign: "right" }}>
           {detail}
         </div>
       )}
