@@ -202,6 +202,7 @@ export function FocusTab() {
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading] = useState(true);
   const [infoExpanded, setInfoExpanded] = useState(true);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   useEffect(() => {
     if (!import.meta.env.PROD) {
@@ -271,8 +272,70 @@ export function FocusTab() {
       })()
     : null;
 
+  const RULES = [
+    { priority: "P1", rule: "Cash below floor",   trigger: "Free cash % is below the VIX band floor",             source: "Account" },
+    { priority: "P1", rule: "Expiring soon",       trigger: "CC or CSP with DTE ≤ 2",                              source: "Positions" },
+    { priority: "P1", rule: "Uncovered shares",    trigger: "Assigned shares with no active covered call",          source: "Positions" },
+    { priority: "P2", rule: "Expiring soon",       trigger: "CC or CSP with DTE 3–5",                              source: "Positions" },
+    { priority: "P2", rule: "Earnings before expiry", trigger: "Earnings date falls on or before an option expiry", source: "Market context" },
+    { priority: "P2", rule: "Macro overlap",       trigger: "CPI/FOMC/NFP within 2 days of any option expiry",     source: "Market context" },
+    { priority: "P3", rule: "Expiry cluster",      trigger: "3+ options (CC or CSP) expire on the same date",      source: "Positions" },
+  ];
+
+  const priorityColors = { P1: theme.red, P2: theme.amber, P3: theme.text.subtle };
+
   return (
     <div>
+      {/* ── Rules reference toggle ─────────────────────────────────────── */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: theme.space[3] }}>
+        <button
+          onClick={() => setRulesOpen(o => !o)}
+          style={{
+            background:   "transparent",
+            border:       `1px solid ${theme.border.strong}`,
+            borderRadius: theme.radius.sm,
+            color:        rulesOpen ? theme.text.secondary : theme.text.subtle,
+            fontSize:     theme.size.sm,
+            fontFamily:   "inherit",
+            cursor:       "pointer",
+            padding:      "3px 10px",
+          }}
+        >
+          {rulesOpen ? "▲ rules" : "? rules"}
+        </button>
+      </div>
+
+      {/* ── Rules reference panel ──────────────────────────────────────── */}
+      {rulesOpen && (
+        <div style={{ ...panelStyle, marginBottom: theme.space[4] }}>
+          {sectionHeader("Focus Rules", 0)}
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.sm }}>
+            <thead>
+              <tr style={{ color: theme.text.subtle, borderBottom: `1px solid ${theme.border.default}` }}>
+                <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Priority</th>
+                <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Rule</th>
+                <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Trigger</th>
+                <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 500 }}>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {RULES.map((r, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
+                  <td style={{ padding: "5px 8px" }}>
+                    <span style={{ color: priorityColors[r.priority], fontWeight: 600, fontSize: theme.size.xs }}>
+                      {r.priority}
+                    </span>
+                  </td>
+                  <td style={{ padding: "5px 8px", color: theme.text.secondary, whiteSpace: "nowrap" }}>{r.rule}</td>
+                  <td style={{ padding: "5px 8px", color: theme.text.muted }}>{r.trigger}</td>
+                  <td style={{ padding: "5px 8px", color: theme.text.subtle, whiteSpace: "nowrap" }}>{r.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* ── Today's Focus (P1) ─────────────────────────────────────────── */}
       <div style={panelStyle}>
         {sectionHeader("Today's Focus", focus.length)}
