@@ -12,8 +12,35 @@ Increment from that number. Never use the local file's version as the baseline.
 
 - Minor bump (`x.Y.0`) for new features
 - Patch bump (`x.y.Z`) for fixes
-- Bump `package.json` AND `const VERSION` in `src/App.jsx` in the same commit
+- Bump `package.json` AND `const VERSION` in `src/lib/constants.js` in the same commit
 
 ## PR workflow
 
 After creating a PR, merge it immediately (no need to ask).
+
+## Design tokens
+
+All styles use inline `style={{}}` objects — no CSS files, no Tailwind. **Never hardcode hex color values.** Always import and use `theme` from `src/lib/theme.js`:
+
+```js
+import { theme } from "../lib/theme";
+// or from a subdirectory:
+import { theme } from "../../lib/theme";
+```
+
+Key token categories:
+- `theme.bg.base/surface/elevated/weekend` — backgrounds
+- `theme.text.primary/secondary/muted/subtle/faint` — text hierarchy
+- `theme.border.default/strong` — borders
+- `theme.green/red/blue/amber` — semantic status colors
+- `theme.size.xs/sm/md/lg/xl` (10/12/14/16/18px) — font sizes, no in-betweens
+- `theme.space[1..6]` (4/8/12/16/20/24px) — spacing, 4-point grid
+- `theme.radius.sm/md/pill` (4/8/20px) — border radius
+- `theme.font.mono` — monospace font stack
+- `theme.chart.shares/leaps` — chart-specific colors
+
+**Intentional exceptions** (hardcoded hex is correct, do not replace):
+- `TYPE_COLORS` in `src/lib/constants.js` — CSP/CC/LEAPS/Spread/Shares badge colors
+- `MOODS` in `journalConstants.js` — mood-specific activeBg/activeBorder per mood
+- `JOURNAL_ENTRY_TYPES` in `journalConstants.js` — type-specific activeColor/activeBg per entry type
+- Monthly target progress bar colors in `JournalEntryCard.jsx` — semantic data values tied to target labels
