@@ -3,6 +3,7 @@ import { useLiveVix } from "../hooks/useLiveVix";
 import { formatDollars, formatDollarsFull } from "../lib/format";
 import { calcPipeline, allocColor } from "../lib/trading";
 import { getVixBand } from "../lib/vixBand";
+import { theme } from "../lib/theme";
 import { SyncButton } from "./SyncButton";
 
 export function AccountBar({ captureRate }) {
@@ -28,68 +29,68 @@ export function AccountBar({ captureRate }) {
     if (status === "under") return (freeCashPctEst  - band.ceilingPct) * accountData.account_value;
     return null;
   })() : null;
-  const statusColor = { ok: "#3fb950", over: "#f85149", under: "#e3b341", unknown: "#6e7681" }[status];
+  const statusColor = { ok: theme.green, over: theme.red, under: theme.amber, unknown: theme.text.subtle }[status];
 
   const { grossOpenPremium, expectedPipeline, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
 
   return (
-    <div style={{ display: "flex", gap: 24, padding: "12px 20px", background: "#161b22", border: "1px solid #21262d", borderRadius: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+    <div style={{ display: "flex", gap: theme.space[6], padding: `${theme.space[3]}px ${theme.space[5]}px`, background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, marginBottom: theme.space[5], flexWrap: "wrap", alignItems: "flex-start" }}>
       <div>
-        <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Free Cash</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Free Cash</div>
+        <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
           {freeCashEst != null
-            ? <>{formatDollarsFull(freeCashEst)}{" "}<span style={{ fontSize: 12, color: "#8b949e" }}>({(freeCashPctEst * 100).toFixed(1)}%)</span></>
-            : <span style={{ fontSize: 13, color: "#6e7681" }}>—</span>
+            ? <>{formatDollarsFull(freeCashEst)}{" "}<span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>({(freeCashPctEst * 100).toFixed(1)}%)</span></>
+            : <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>—</span>
           }
         </div>
         {band && (
-          <div style={{ fontSize: 11, color: "#6e7681", marginTop: 1 }}>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 1 }}>
             Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
           </div>
         )}
         {status !== "unknown" && (
-          <div style={{ fontSize: 11, fontWeight: 500, color: statusColor, marginTop: 1 }}>
+          <div style={{ fontSize: theme.size.xs, fontWeight: 500, color: statusColor, marginTop: 1 }}>
             {status === "ok"    && "✓ Within band"}
             {status === "over"  && `⚠ ${((band.floorPct - freeCashPctEst) * 100).toFixed(1)}% below floor · ~${formatDollars(deltaAmt)} to free up`}
             {status === "under" && `↓ ${((freeCashPctEst - band.ceilingPct) * 100).toFixed(1)}% above ceiling · ~${formatDollars(deltaAmt)} to deploy`}
           </div>
         )}
         {status === "unknown" && (
-          <div style={{ fontSize: 11, color: "#4e5a65", marginTop: 1 }}>Set VIX in account.json</div>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 1 }}>Set VIX in account.json</div>
         )}
       </div>
       <div>
-        <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>MTD Premium</div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: mtd >= baseline ? "#3fb950" : "#e6edf3" }}>{formatDollarsFull(mtd)}</div>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>MTD Premium</div>
+        <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: mtd >= baseline ? theme.green : theme.text.primary }}>{formatDollarsFull(mtd)}</div>
       </div>
       <div>
-        <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Pipeline</div>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>Pipeline</div>
         {hasPipeline ? (
           <>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{formatDollarsFull(grossOpenPremium)}</div>
-            <div style={{ fontSize: 11, color: "#8b949e", marginTop: 1 }}>
+            <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>{formatDollarsFull(grossOpenPremium)}</div>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: 1 }}>
               {formatDollarsFull(expectedPipeline)} est.
             </div>
           </>
         ) : (
-          <div style={{ fontSize: 15, color: "#6e7681" }}>—</div>
+          <div style={{ fontSize: theme.size.lg, color: theme.text.subtle }}>—</div>
         )}
       </div>
       <div style={{ flex: 1, minWidth: 160 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: theme.size.xs, color: theme.text.muted, marginBottom: theme.space[1] }}>
           <span>Monthly target</span>
           <span>{formatDollars(baseline)} baseline · {formatDollars(stretch)} stretch</span>
         </div>
-        <div style={{ height: 6, background: "#21262d", borderRadius: 3, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? "#3fb950" : "#1f6feb", borderRadius: 3, transition: "width 0.3s" }} />
+        <div style={{ height: 6, background: theme.border.default, borderRadius: theme.radius.sm, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? theme.green : "#1f6feb", borderRadius: theme.radius.sm, transition: "width 0.3s" }} />
         </div>
       </div>
       {liveVix != null && (
         <div>
-          <div style={{ fontSize: 11, color: "#8b949e", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>VIX</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3" }}>{liveVix.toFixed(2)}</div>
-          <div style={{ fontSize: 10, color: vixSource === "live" ? "#3fb950" : "#4e5a65", marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
-            {vixSource === "live" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#3fb950", display: "inline-block" }} />}
+          <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>VIX</div>
+          <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>{liveVix.toFixed(2)}</div>
+          <div style={{ fontSize: theme.size.xs, color: vixSource === "live" ? theme.green : theme.text.faint, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
+            {vixSource === "live" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.green, display: "inline-block" }} />}
             {vixSource === "live" ? "live" : vixSource === "manual" ? "manual" : "closed"}
           </div>
         </div>
