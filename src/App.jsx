@@ -12,6 +12,7 @@ import { SummaryTab } from "./components/SummaryTab";
 import { CalendarTab } from "./components/CalendarTab";
 import { OpenPositionsTab } from "./components/OpenPositionsTab";
 import { JournalTab } from "./components/journal/JournalTab";
+import { FocusTab } from "./components/FocusTab";
 
 export default function TradeDashboard() {
   // ── Data state — initialized from static JSON imports ──
@@ -85,6 +86,9 @@ export default function TradeDashboard() {
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border.default}`, marginBottom: theme.space[5], overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <button style={tabStyle("focus")} onClick={() => setActiveTab("focus")}>
+            Focus
+          </button>
           <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
             Open Positions
           </button>
@@ -145,6 +149,7 @@ export default function TradeDashboard() {
             captureRate={captureRate}       setCaptureRate={setCaptureRate}
           />
         )}
+        {activeTab === "focus" && <FocusTab />}
         {activeTab === "positions" && <OpenPositionsTab />}
         {activeTab === "journal" && <JournalTab />}
       </div>
