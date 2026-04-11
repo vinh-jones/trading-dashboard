@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 // Static JSON data files were removed for security — app loads live data from /api/data in production.
 // Empty fallbacks prevent build errors; useEffect below replaces them with real data on mount.
 const tradesData = { trades: [] };
-const positionsData = [];
+const positionsData = { open_csps: [], assigned_shares: [], open_spreads: [] };
 const accountData = {};
 import { normalizeTrade } from "./lib/trading";
 import { TYPE_COLORS, VERSION } from "./lib/constants";
