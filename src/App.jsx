@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
-import tradesData from "./data/trades.json";
-import positionsData from "./data/positions.json";
-import accountData from "./data/account.json";
+// Static JSON data files were removed for security — app loads live data from /api/data in production.
+// Empty fallbacks prevent build errors; useEffect below replaces them with real data on mount.
+const tradesData = { trades: [] };
+const positionsData = [];
+const accountData = {};
 import { normalizeTrade } from "./lib/trading";
 import { TYPE_COLORS, VERSION } from "./lib/constants";
 import { theme } from "./lib/theme";
