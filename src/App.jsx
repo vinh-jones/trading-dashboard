@@ -99,7 +99,7 @@ export default function TradeDashboard() {
             Monthly Calendar
           </button>
           <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
-            Q1 Summary
+            YTD Summary
           </button>
         </div>
 
