@@ -2,3 +2,8 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# Local data files — contain real financial data, not for public repos
+src/data/trades.json
+src/data/positions.json
+src/data/account.json
