@@ -220,7 +220,14 @@ export default async function handler(req, res) {
 
     const lastRefresh  = latest?.refreshed_at ? new Date(latest.refreshed_at) : null;
     const ageMs        = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
-    const needsRefresh = ageMs > STALE_MS && isMarketOpen();
+
+    // ?force=1 bypasses market hours + staleness checks (requires X-Ingest-Secret)
+    const forceRequested = req.query.force === "1";
+    const forceSecret    = process.env.MARKET_CONTEXT_INGEST_SECRET;
+    const forceAuthed    = forceSecret && req.headers["x-ingest-secret"] === forceSecret;
+    const forced         = forceRequested && forceAuthed;
+
+    const needsRefresh = forced || (ageMs > STALE_MS && isMarketOpen());
 
     if (needsRefresh) {
       await refreshQuotes(supabase);
@@ -239,6 +246,7 @@ export default async function handler(req, res) {
       quotes:      quotes || [],
       refreshedAt: lastRefresh?.toISOString() ?? null,
       refreshed:   needsRefresh,
+      forced:      forced,
     });
   } catch (err) {
     console.error("[api/quotes]", err);
