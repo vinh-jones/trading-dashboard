@@ -13,7 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const PUBLIC_COM_BASE = "https://api.public.com";
-const ACCOUNT_ID      = process.env.PUBLIC_COM_ACCOUNT_ID || "5OS81367";
+const ACCOUNT_ID      = process.env.PUBLIC_COM_ACCOUNT_ID;
 const STALE_MS        = 30 * 60 * 1000; // 30 minutes
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
@@ -93,6 +93,7 @@ async function getPublicAccessToken(supabase) {
 // ── Fetch quotes from Public.com ──────────────────────────────────────────────
 
 async function fetchPublicQuotes(token, instruments) {
+  if (!ACCOUNT_ID) throw new Error("PUBLIC_COM_ACCOUNT_ID env var not set");
   const res = await fetch(
     `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/quotes`,
     {
