@@ -8,10 +8,10 @@ import { theme } from "../lib/theme";
 export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
   const isMobile = useWindowWidth() < 600;
-  // Scope the entire Summary tab to Q1 2026 (Jan 1 – Mar 31)
-  const Q1_START = new Date("2026-01-01T00:00:00");
-  const Q1_END   = new Date("2026-03-31T23:59:59");
-  const TRADES = TRADES_ALL.filter(t => t.closeDate && t.closeDate >= Q1_START && t.closeDate <= Q1_END);
+  // Scope the entire Summary tab to YTD (Jan 1 – today)
+  const YTD_START = new Date("2026-01-01T00:00:00");
+  const YTD_END   = new Date();
+  const TRADES = TRADES_ALL.filter(t => t.closeDate && t.closeDate >= YTD_START && t.closeDate <= YTD_END);
 
   const DURATION_BUCKETS = [
     { label: "0-1d",   min: 0,  max: 1    },
@@ -135,7 +135,7 @@ export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, se
                 const source = selectedType
                   ? TRADES.filter((t) => t.type === selectedType && t.ticker === ts.ticker)
                   : TRADES.filter((t) => t.ticker === ts.ticker);
-                // Show Jan/Feb/Mar 2026 bars (matching original Q1 scope)
+                // Show YTD monthly bars
                 const monthData = MONTHS.map(({ month, label }) => {
                   const mTrades = source.filter(
                     (t) => t.closeDate && t.closeDate.getFullYear() === 2026 && t.closeDate.getMonth() === month
