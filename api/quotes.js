@@ -46,16 +46,31 @@ function buildOccSymbol(ticker, expiryIso, isCall, strike) {
   return `${ticker}${expiry}${side}${strikePadded}`;
 }
 
-// ── Public.com auth ───────────────────────────────────────────────────────────
+// ── Public.com auth (token cached in Supabase, valid 24h) ────────────────────
 
-async function getPublicAccessToken() {
+const TOKEN_VALIDITY_MINUTES = 1440; // 24 hours
+const TOKEN_BUFFER_MS        = 5 * 60 * 1000; // refresh 5min before expiry
+
+async function getPublicAccessToken(supabase) {
+  // Check for a cached, still-valid token
+  const { data: cached } = await supabase
+    .from("app_cache")
+    .select("value, expires_at")
+    .eq("key", "public_com_token")
+    .single();
+
+  if (cached?.value && new Date(cached.expires_at).getTime() - TOKEN_BUFFER_MS > Date.now()) {
+    return cached.value;
+  }
+
+  // Fetch a new token from Public.com
   const secret = process.env.PUBLIC_COM_SECRET;
   if (!secret) throw new Error("PUBLIC_COM_SECRET not set");
 
   const res = await fetch(`${PUBLIC_COM_BASE}/userapiauthservice/personal/access-tokens`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ secret, validityInMinutes: 15 }),
+    body:    JSON.stringify({ secret, validityInMinutes: TOKEN_VALIDITY_MINUTES }),
   });
 
   if (!res.ok) {
@@ -65,6 +80,13 @@ async function getPublicAccessToken() {
 
   const data = await res.json();
   if (!data.accessToken) throw new Error("Public.com auth: no accessToken in response");
+
+  // Cache it
+  const expiresAt = new Date(Date.now() + TOKEN_VALIDITY_MINUTES * 60 * 1000).toISOString();
+  await supabase
+    .from("app_cache")
+    .upsert({ key: "public_com_token", value: data.accessToken, expires_at: expiresAt });
+
   return data.accessToken;
 }
 
@@ -135,8 +157,8 @@ async function refreshQuotes(supabase) {
 
   const { equityInstruments, optionInstruments } = buildInstruments(rows);
 
-  // 2. Authenticate
-  const token = await getPublicAccessToken();
+  // 2. Authenticate (uses cached 24h token, fetches new one only if expired)
+  const token = await getPublicAccessToken(supabase);
 
   // 3. Fetch in two batches (equities + options have different instrument types)
   const [equityQuotes, optionQuotes] = await Promise.all([
