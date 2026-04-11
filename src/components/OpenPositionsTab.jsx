@@ -1,4 +1,5 @@
 import { useData } from "../hooks/useData";
+import { useQuotes } from "../hooks/useQuotes";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
 import { calcDTE, allocColor } from "../lib/trading";
@@ -6,8 +7,17 @@ import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { SixtyCheck } from "./SixtyCheck";
 import { theme } from "../lib/theme";
 
+function buildOccSymbol(ticker, expiryIso, isCall, strike) {
+  const [y, m, d] = expiryIso.split("-");
+  const expiry = y.slice(2) + m + d;
+  const side   = isCall ? "C" : "P";
+  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
+  return `${ticker}${expiry}${side}${strikePadded}`;
+}
+
 export function OpenPositionsTab() {
   const { positions, account } = useData();
+  const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
   const { assigned_shares, open_csps, open_leaps } = positions;
 
@@ -144,7 +154,7 @@ export function OpenPositionsTab() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
-                    {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "Capital", "ROI"].map((h) => (
+                    {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "G/L $", "G/L %"].map((h) => (
                       <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: theme.text.muted, fontWeight: 500, fontSize: theme.size.sm, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                         {h}
                       </th>
@@ -154,7 +164,6 @@ export function OpenPositionsTab() {
                 <tbody>
                   {open_csps.map((csp, i) => {
                     const dte = calcDTE(csp.expiry_date);
-                    const roi = csp.capital_fronted ? ((csp.premium_collected / csp.capital_fronted) * 100).toFixed(2) : null;
 
                     // % DTE remaining = (expiry - today) / (expiry - open_date)
                     let dtePct = null;
@@ -164,11 +173,24 @@ export function OpenPositionsTab() {
                       );
                       dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
                     }
-                    // Green ≥ 60% (plenty of time), yellow 20–59% (watch it), red < 20% (near expiry)
                     const dtePctColor = dtePct == null ? theme.text.muted
                       : dtePct >= 60 ? theme.green
                       : dtePct >= 20 ? theme.amber
                       : theme.red;
+
+                    // G/L using live mid price
+                    let glDollars = null;
+                    let glPct     = null;
+                    if (csp.expiry_date && csp.strike && csp.contracts) {
+                      const sym  = buildOccSymbol(csp.ticker, csp.expiry_date, false, csp.strike);
+                      const mid  = quoteMap.get(sym)?.mid;
+                      if (mid != null && csp.premium_collected) {
+                        const currentCost = mid * csp.contracts * 100;
+                        glDollars = csp.premium_collected - currentCost;
+                        glPct     = (glDollars / csp.premium_collected) * 100;
+                      }
+                    }
+                    const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
 
                     return (
                       <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}
@@ -185,8 +207,12 @@ export function OpenPositionsTab() {
                           {dtePct != null ? `${dtePct.toFixed(0)}%` : "—"}
                         </td>
                         <td style={{ padding: "9px 10px", color: theme.green, fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
-                        <td style={{ padding: "9px 10px", color: theme.text.muted }}>{formatDollarsFull(csp.capital_fronted)}</td>
-                        <td style={{ padding: "9px 10px", color: theme.blue, fontWeight: 500 }}>{roi ? `${roi}%` : "—"}</td>
+                        <td style={{ padding: "9px 10px", color: glColor, fontWeight: 600 }}>
+                          {glDollars != null ? formatDollarsFull(glDollars) : "—"}
+                        </td>
+                        <td style={{ padding: "9px 10px", color: glColor, fontWeight: 500 }}>
+                          {glPct != null ? `${glPct.toFixed(1)}%` : "—"}
+                        </td>
                       </tr>
                     );
                   })}
