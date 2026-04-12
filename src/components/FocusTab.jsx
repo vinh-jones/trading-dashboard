@@ -281,13 +281,17 @@ export function FocusTab() {
     : null;
 
   const RULES = [
-    { priority: "P1", rule: "Cash below floor",   trigger: "Free cash % is below the VIX band floor",             source: "Account" },
-    { priority: "P1", rule: "Expiring soon",       trigger: "CC or CSP with DTE ≤ 2",                              source: "Positions" },
-    { priority: "P1", rule: "Uncovered shares",    trigger: "Assigned shares with no active covered call",          source: "Positions" },
-    { priority: "P2", rule: "Expiring soon",       trigger: "CC or CSP with DTE 3–5",                              source: "Positions" },
-    { priority: "P2", rule: "Earnings before expiry", trigger: "Earnings date falls on or before an option expiry", source: "Market context" },
-    { priority: "P2", rule: "Macro overlap",       trigger: "CPI/FOMC/NFP within 2 days of any option expiry",     source: "Market context" },
-    { priority: "P3", rule: "Expiry cluster",      trigger: "3+ options (CC or CSP) expire on the same date",      source: "Positions" },
+    { priority: "P1", rule: "Cash below floor",    trigger: "Free cash % is below the VIX band floor",                                    source: "Account" },
+    { priority: "P1", rule: "Expiring soon",        trigger: "CC or CSP with DTE ≤ 2",                                                     source: "Positions" },
+    { priority: "P1", rule: "Uncovered shares",     trigger: "Assigned shares with no active covered call",                                 source: "Positions" },
+    { priority: "P1", rule: "CC deeply ITM",        trigger: "Stock > strike by 2–7% (threshold scales with entry delta). P2 if DTE > 7",  source: "Positions + Quotes" },
+    { priority: "P1", rule: "CSP ITM urgency",      trigger: "ITM% × DTE-elapsed% score ≥ 0.05 (min 3% ITM to fire). P2 if score < 0.10", source: "Positions + Quotes" },
+    { priority: "P2", rule: "Expiring soon",        trigger: "CC or CSP with DTE 3–5",                                                     source: "Positions" },
+    { priority: "P2", rule: "Earnings before expiry", trigger: "Earnings date falls on or before an option expiry",                        source: "Market context" },
+    { priority: "P2", rule: "Macro overlap",        trigger: "CPI/FOMC/NFP within 2 days of any option expiry",                            source: "Market context" },
+    { priority: "P2", rule: "Near worthless",       trigger: "Option mid < $0.10 and < 5% of original premium collected",                  source: "Positions + Quotes" },
+    { priority: "P2", rule: "60/60 rule",           trigger: "≥60% premium captured with ≥60% DTE remaining (suppressed below 5 DTE)",     source: "Positions + Quotes" },
+    { priority: "P3", rule: "Expiry cluster",       trigger: "3+ options (CC or CSP) expire on the same date",                             source: "Positions" },
   ];
 
   const priorityColors = { P1: theme.red, P2: theme.amber, P3: theme.text.subtle };
