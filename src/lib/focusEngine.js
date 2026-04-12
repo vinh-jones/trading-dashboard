@@ -125,8 +125,10 @@ function ruleUncoveredShares(positions, quoteMap) {
         else if (ivRank >= 25) ivGuidance = "moderate";
         else                   ivGuidance = "unfavorable";
       } else if (iv != null) {
-        ivDisplay  = `IV ${(iv * 100).toFixed(0)}%`;
-        ivGuidance = "unknown";
+        ivDisplay = `IV ${(iv * 100).toFixed(0)}%`;
+        if (iv >= 0.45)      ivGuidance = "favorable";
+        else if (iv >= 0.25) ivGuidance = "moderate";
+        else                 ivGuidance = "unfavorable";
       } else {
         ivDisplay  = null;
         ivGuidance = "unknown";
