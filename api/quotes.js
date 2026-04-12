@@ -12,9 +12,10 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const PUBLIC_COM_BASE = "https://api.public.com";
-const ACCOUNT_ID      = process.env.PUBLIC_COM_ACCOUNT_ID;
-const STALE_MS        = 30 * 60 * 1000; // 30 minutes
+const PUBLIC_COM_BASE  = "https://api.public.com";
+const TASTYTRADE_BASE  = "https://api.tastytrade.com";
+const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
+const STALE_MS         = 30 * 60 * 1000; // 30 minutes
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
@@ -145,47 +146,49 @@ function buildInstruments(rows) {
   return { equityInstruments, optionInstruments };
 }
 
-// ── IV helpers ────────────────────────────────────────────────────────────────
+// ── Tastytrade auth (session token cached in Supabase, valid 24h) ────────────
 
-// Find the expiry closest to 30 DTE within the 25–35 day window.
-// Falls back to nearest expiry with ≥14 DTE if nothing is in window.
-function findTargetExpiry(expirations, todayMs) {
-  let best = null, bestDist = Infinity;
-  let fallback = null, fallbackDist = Infinity;
+async function getTastytradeToken(supabase) {
+  const { data: cached } = await supabase
+    .from("app_cache")
+    .select("value, expires_at")
+    .eq("key", "tastytrade_token")
+    .single();
 
-  for (const expStr of expirations) {
-    const dte = Math.round((new Date(expStr + "T00:00:00") - todayMs) / 86_400_000);
-    if (dte >= 25 && dte <= 35) {
-      const d = Math.abs(dte - 30);
-      if (d < bestDist) { bestDist = d; best = expStr; }
-    } else if (dte >= 14) {
-      const d = Math.abs(dte - 30);
-      if (d < fallbackDist) { fallbackDist = d; fallback = expStr; }
-    }
+  if (cached?.value && new Date(cached.expires_at).getTime() - TOKEN_BUFFER_MS > Date.now()) {
+    return cached.value;
   }
-  return best ?? fallback;
+
+  const login    = process.env.TASTYTRADE_USERNAME;
+  const password = process.env.TASTYTRADE_PASSWORD;
+  if (!login || !password) throw new Error("TASTYTRADE_USERNAME / TASTYTRADE_PASSWORD not set");
+
+  const res = await fetch(`${TASTYTRADE_BASE}/sessions`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ login, password }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Tastytrade auth failed (${res.status}): ${text}`);
+  }
+
+  const data  = await res.json();
+  const token = data?.data?.["session-token"];
+  if (!token) throw new Error("Tastytrade auth: no session-token in response");
+
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  await supabase
+    .from("app_cache")
+    .upsert({ key: "tastytrade_token", value: token, expires_at: expiresAt });
+
+  return token;
 }
 
-// Extract ATM symbol (call or put) from a chain leg whose strike is closest to stockPrice.
-// OCC strike is the last 8 chars of the symbol, in thousandths (e.g. 00130000 = $130).
-function findATMSymbol(options, stockPrice) {
-  if (!options?.length) return null;
-  let best = null, bestDist = Infinity;
-  for (const opt of options) {
-    const sym = opt.instrument?.symbol;
-    if (!sym || opt.outcome !== "SUCCESS") continue;
-    const m = sym.match(/[CP](\d{8})$/);
-    if (!m) continue;
-    const strike = parseInt(m[1], 10) / 1000;
-    const dist   = Math.abs(strike - stockPrice);
-    if (dist < bestDist) { bestDist = dist; best = sym; }
-  }
-  return best;
-}
+// ── IV refresh via Tastytrade market-metrics (uncovered tickers only) ─────────
 
-// ── IV refresh (uncovered tickers only) ──────────────────────────────────────
-
-async function refreshIV(supabase, token, equityQuoteRows) {
+async function refreshIV(supabase) {
   // 1. Which tickers have uncovered shares?
   const { data: uncoveredRows } = await supabase
     .from("positions")
@@ -197,97 +200,53 @@ async function refreshIV(supabase, token, equityQuoteRows) {
 
   const tickers = [...new Set(uncoveredRows.map(r => r.ticker))];
 
-  // 2. Build stock price map from already-fetched equity quotes
-  const priceMap = {};
-  for (const q of equityQuoteRows) {
-    if (q.instrument?.type !== "EQUITY" || q.outcome !== "SUCCESS") continue;
-    const bid = q.bid != null ? parseFloat(q.bid) : null;
-    const ask = q.ask != null ? parseFloat(q.ask) : null;
-    priceMap[q.instrument.symbol] =
-      bid != null && ask != null ? (bid + ask) / 2 : parseFloat(q.last ?? 0);
+  // 2. Get Tastytrade session token
+  const token = await getTastytradeToken(supabase);
+
+  // 3. Single market-metrics call for all uncovered tickers
+  const qs  = tickers.map(t => `symbols[]=${encodeURIComponent(t)}`).join("&");
+  const res = await fetch(`${TASTYTRADE_BASE}/market-metrics?${qs}`, {
+    headers: { Authorization: token },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Tastytrade market-metrics failed (${res.status}): ${text}`);
   }
 
-  const todayMs  = Date.now();
-  const authHdr  = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const data  = await res.json();
+  const items = data?.data?.items ?? [];
+  if (!items.length) return;
 
-  // 3. Expirations for all uncovered tickers in parallel
-  const expiryResults = await Promise.all(
-    tickers.map(async ticker => {
-      try {
-        const res = await fetch(
-          `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/option-expirations`,
-          { method: "POST", headers: authHdr,
-            body: JSON.stringify({ instrument: { symbol: ticker, type: "EQUITY" } }) }
-        );
-        if (!res.ok) return { ticker, expiry: null };
-        const data = await res.json();
-        return { ticker, expiry: findTargetExpiry(data.expirations ?? [], todayMs) };
-      } catch { return { ticker, expiry: null }; }
-    })
-  );
+  // Log raw values on first fetch so we can verify the scale of implied-volatility-rank
+  console.log("[api/quotes] Tastytrade market-metrics raw:", JSON.stringify(
+    items.map(i => ({
+      symbol:   i.symbol,
+      iv:       i["implied-volatility-index"],
+      iv_rank:  i["implied-volatility-rank"],
+    }))
+  ));
 
-  // 4. Option chains for tickers with a valid expiry, in parallel
-  const atmSymbols = await Promise.all(
-    expiryResults
-      .filter(r => r.expiry && priceMap[r.ticker] != null)
-      .map(async ({ ticker, expiry }) => {
-        try {
-          const res = await fetch(
-            `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/option-chain`,
-            { method: "POST", headers: authHdr,
-              body: JSON.stringify({
-                instrument:     { symbol: ticker, type: "EQUITY" },
-                expirationDate: expiry,
-              }) }
-          );
-          if (!res.ok) return null;
-          const data  = await res.json();
-          const price = priceMap[ticker];
-          return {
-            ticker,
-            call: findATMSymbol(data.calls, price),
-            put:  findATMSymbol(data.puts,  price),
-          };
-        } catch { return null; }
-      })
-  );
-
-  // 5. One batched greeks GET for all ATM symbols
-  const validATM   = atmSymbols.filter(Boolean);
-  const osiSymbols = validATM.flatMap(r => [r.call, r.put].filter(Boolean));
-  if (!osiSymbols.length) return;
-
-  let greeksMap = {};
-  try {
-    const qs  = osiSymbols.map(s => `osiSymbols=${encodeURIComponent(s)}`).join("&");
-    const res = await fetch(
-      `${PUBLIC_COM_BASE}/userapigateway/option-details/${ACCOUNT_ID}/greeks?${qs}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      for (const g of data.greeks ?? []) {
-        if (g.greeks?.impliedVolatility != null)
-          greeksMap[g.symbol] = parseFloat(g.greeks.impliedVolatility);
-      }
-    }
-  } catch { /* greeks fetch failed — skip silently */ }
-
-  if (!Object.keys(greeksMap).length) return;
-
-  // 6. Average call + put IV per ticker → UPDATE equity quote row
+  // 4. Write iv + iv_rank per ticker
+  // Tastytrade returns implied-volatility-index as decimal (e.g. 0.625 = 62.5%)
+  // and implied-volatility-rank as decimal 0–1 (e.g. 0.3949 = rank 39.49).
+  // We store iv as decimal and iv_rank as 0–100 to match focusEngine thresholds.
   const now = new Date().toISOString();
   await Promise.all(
-    validATM.map(({ ticker, call, put }) => {
-      const callIV = call ? greeksMap[call] : null;
-      const putIV  = put  ? greeksMap[put]  : null;
-      const iv     = callIV != null && putIV != null
-        ? Math.round(((callIV + putIV) / 2) * 10000) / 10000
-        : callIV ?? putIV;
-      if (iv == null) return Promise.resolve();
+    items.map(item => {
+      const ticker = item.symbol;
+      const iv     = item["implied-volatility-index"]  != null
+        ? parseFloat(item["implied-volatility-index"])
+        : null;
+      const ivRank = item["implied-volatility-rank"] != null
+        ? Math.round(parseFloat(item["implied-volatility-rank"]) * 100 * 100) / 100
+        : null;
+
+      if (iv == null && ivRank == null) return Promise.resolve();
+
       return supabase
         .from("quotes")
-        .update({ iv, refreshed_at: now })
+        .update({ iv, iv_rank: ivRank, refreshed_at: now })
         .eq("symbol", ticker);
     })
   );
@@ -346,10 +305,10 @@ async function refreshQuotes(supabase) {
     if (upsertError) throw new Error(`Supabase upsert failed: ${upsertError.message}`);
   }
 
-  // 5. IV for uncovered tickers (runs after upsert so equity rows exist)
+  // 5. IV for uncovered tickers via Tastytrade market-metrics (runs after upsert so equity rows exist)
   // Errors are non-fatal — IV is best-effort; Rule 5 degrades gracefully without it.
   try {
-    await refreshIV(supabase, token, [...equityQuotes, ...optionQuotes]);
+    await refreshIV(supabase);
   } catch (err) {
     console.warn("[api/quotes] IV refresh failed (non-fatal):", err.message);
   }
