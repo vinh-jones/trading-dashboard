@@ -13,7 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
-const TASTYTRADE_BASE  = "https://api.tastyworks.com";
+const TASTYTRADE_BASE  = "https://api.tastytrade.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
 const STALE_MS         = 30 * 60 * 1000; // 30 minutes
 
