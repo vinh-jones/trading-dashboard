@@ -3,6 +3,7 @@ import marketContextDev from "../data/market-context.json";
 import { useData } from "../hooks/useData";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { useLiveVix } from "../hooks/useLiveVix";
+import { useQuotes } from "../hooks/useQuotes";
 import { theme } from "../lib/theme";
 import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
 import { formatExpiry } from "../lib/format";
@@ -16,12 +17,16 @@ const PRIORITY = {
 };
 
 const RULE_LABELS = {
-  cash_below_floor:      "Cash",
-  expiring_soon:         "Expiry",
-  uncovered_shares:      "Coverage",
+  cash_below_floor:       "Cash",
+  expiring_soon:          "Expiry",
+  uncovered_shares:       "Coverage",
+  cc_deeply_itm:          "Assignment Risk",
+  csp_itm_urgency:        "Assignment Risk",
   earnings_before_expiry: "Earnings",
-  macro_overlap:         "Macro",
-  expiry_cluster:        "Cluster",
+  macro_overlap:          "Macro",
+  near_worthless:         "Efficiency",
+  rule_60_60:             "Close Candidate",
+  expiry_cluster:         "Cluster",
 };
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -200,6 +205,7 @@ export function FocusTab() {
   const { positions, account } = useData();
   const isMobile = useWindowWidth() < 600;
   const { vix: liveVix } = useLiveVix(account?.vix_current);
+  const { quoteMap } = useQuotes();
 
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading] = useState(true);
@@ -220,8 +226,8 @@ export function FocusTab() {
   }, []);
 
   const allItems = useMemo(
-    () => generateFocusItems(positions, account, marketContext, liveVix),
-    [positions, account, marketContext, liveVix]
+    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap),
+    [positions, account, marketContext, liveVix, quoteMap]
   );
   const { focus, watching, info } = useMemo(() => categorizeFocusItems(allItems), [allItems]);
 

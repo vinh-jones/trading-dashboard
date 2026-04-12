@@ -10,6 +10,16 @@ function daysBetween(isoA, isoB) {
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
 
+// Builds the OCC symbol used as the key in quoteMap for option lookups.
+// Mirrors the same function in api/quotes.js — kept in sync manually.
+function buildOccSymbol(ticker, expiryIso, isCall, strike) {
+  const [y, m, d] = expiryIso.split("-");
+  const expiry = y.slice(2) + m + d;
+  const side = isCall ? "C" : "P";
+  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
+  return `${ticker}${expiry}${side}${strikePadded}`;
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -95,7 +105,7 @@ function ruleExpiringSoon(positions) {
   return items;
 }
 
-function ruleUncoveredShares(positions) {
+function ruleUncoveredShares(positions, quoteMap) {
   const items = [];
   for (const s of positions.assigned_shares ?? []) {
     if (!s.active_cc) {
@@ -103,6 +113,39 @@ function ruleUncoveredShares(positions) {
         const m = lot.description?.match(/\((\d[\d,]*)[,\s]/);
         return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
       }, 0) ?? 0;
+
+      const quote = quoteMap.get(s.ticker);
+      const ivRank = quote?.iv_rank ?? null;
+      const iv     = quote?.iv     ?? null;
+
+      let ivGuidance, ivDisplay;
+      if (ivRank != null) {
+        ivDisplay = `IV rank ${ivRank.toFixed(0)}`;
+        if (ivRank >= 50)      ivGuidance = "favorable";
+        else if (ivRank >= 25) ivGuidance = "moderate";
+        else                   ivGuidance = "unfavorable";
+      } else if (iv != null) {
+        ivDisplay  = `IV ${(iv * 100).toFixed(0)}%`;
+        ivGuidance = "unknown";
+      } else {
+        ivDisplay  = null;
+        ivGuidance = "unknown";
+      }
+
+      const guidanceText = {
+        favorable:   "IV elevated — good window to write CC.",
+        moderate:    "IV moderate — acceptable conditions for CC.",
+        unfavorable: "IV low — consider waiting for better premium.",
+        unknown:     null,
+      }[ivGuidance];
+
+      const costBasis  = s.cost_basis_total ?? 0;
+      const ivSuffix   = ivDisplay && guidanceText
+        ? ` ${ivDisplay}. ${guidanceText}`
+        : ivDisplay
+        ? ` ${ivDisplay}.`
+        : "";
+
       items.push({
         id:       `uncovered-${s.ticker}`,
         priority: "P1",
@@ -111,9 +154,189 @@ function ruleUncoveredShares(positions) {
         dte:      null,
         urgency:  5,
         title:    `${s.ticker} — shares uncovered${totalShares ? ` (${totalShares})` : ""}`,
-        detail:   `No active covered call on ${s.ticker}. Cost basis: $${(s.cost_basis_total ?? 0).toLocaleString()}. Opportunity to write a CC if IV conditions are favorable.`,
+        detail:   `No active covered call on ${s.ticker}. Cost basis: $${costBasis.toLocaleString()}.${ivSuffix}`,
       });
     }
+  }
+  return items;
+}
+
+function ruleCCDeeplyITM(positions, quoteMap) {
+  const items = [];
+  for (const s of positions.assigned_shares ?? []) {
+    const cc = s.active_cc;
+    if (!cc || cc.delta == null) continue;
+
+    const stockPrice = quoteMap.get(s.ticker)?.mid;
+    if (!stockPrice) continue;
+
+    if (stockPrice <= cc.strike) continue;
+
+    const entryDelta = Math.abs(cc.delta);
+    let threshold;
+    if (entryDelta < 0.15)       threshold = 0.02;
+    else if (entryDelta <= 0.25) threshold = 0.04;
+    else                         threshold = 0.07;
+
+    const itmPct = (stockPrice - cc.strike) / cc.strike;
+    if (itmPct < threshold) continue;
+
+    const daysToExpiry = calcDTE(cc.expiry_date) ?? 0;
+    const priority     = daysToExpiry <= 7 ? "P1" : "P2";
+    const itmPctDisplay   = (itmPct * 100).toFixed(1);
+    const thresholdDisplay = (threshold * 100).toFixed(0);
+
+    items.push({
+      id:       `cc-itm-${s.ticker}`,
+      priority,
+      rule:     "cc_deeply_itm",
+      ticker:   s.ticker,
+      dte:      daysToExpiry,
+      urgency:  daysToExpiry,
+      title:    `${s.ticker} CC $${cc.strike} — stock ${itmPctDisplay}% ITM`,
+      detail:   `Stock at $${stockPrice.toFixed(2)} vs strike $${cc.strike}. `
+        + `Opened at ${(entryDelta * 100).toFixed(0)}δ (threshold: ${thresholdDisplay}%). `
+        + `${daysToExpiry}d to expiry. Review roll or assignment plan.`,
+    });
+  }
+  return items;
+}
+
+function ruleCSPITMUrgency(positions, quoteMap) {
+  const items = [];
+  for (const pos of positions.open_csps ?? []) {
+    const stockPrice = quoteMap.get(pos.ticker)?.mid;
+    if (!stockPrice) continue;
+
+    if (stockPrice >= pos.strike) continue;
+
+    const itmPct = (pos.strike - stockPrice) / pos.strike;
+    if (itmPct < 0.03) continue;
+
+    const openDate   = new Date(pos.open_date   + "T00:00:00");
+    const expiryDate = new Date(pos.expiry_date  + "T00:00:00");
+    const todayDate  = new Date();
+    const originalDTE  = Math.ceil((expiryDate - openDate)   / (1000 * 60 * 60 * 24));
+    const remainingDTE = Math.ceil((expiryDate - todayDate)  / (1000 * 60 * 60 * 24));
+    const dteElapsedPct = originalDTE > 0 ? 1 - (remainingDTE / originalDTE) : 0;
+
+    const urgencyScore = itmPct * dteElapsedPct;
+    if (urgencyScore < 0.05) continue;
+
+    const priority = urgencyScore >= 0.10 ? "P1" : "P2";
+    const itmPctDisplay     = (itmPct * 100).toFixed(1);
+    const dteElapsedDisplay = (dteElapsedPct * 100).toFixed(0);
+    const urgencyDisplay    = (urgencyScore * 100).toFixed(1);
+
+    items.push({
+      id:       `csp-itm-${pos.ticker}-${pos.expiry_date}`,
+      priority,
+      rule:     "csp_itm_urgency",
+      ticker:   pos.ticker,
+      dte:      remainingDTE,
+      urgency:  urgencyScore * 100,
+      title:    `${pos.ticker} CSP $${pos.strike} — ${itmPctDisplay}% ITM`,
+      detail:   `Stock at $${stockPrice.toFixed(2)} vs strike $${pos.strike}. `
+        + `${dteElapsedDisplay}% of DTE elapsed. `
+        + `Urgency score: ${urgencyDisplay} (${urgencyScore >= 0.10 ? "high" : "moderate"}). `
+        + `${remainingDTE}d remaining.`,
+    });
+  }
+  return items;
+}
+
+function ruleNearWorthlessOption(positions, quoteMap) {
+  const items = [];
+  const candidates = [];
+
+  for (const pos of positions.open_csps ?? []) {
+    candidates.push({ ...pos, isCall: false });
+  }
+  for (const s of positions.assigned_shares ?? []) {
+    if (s.active_cc) candidates.push({ ...s.active_cc, isCall: true });
+  }
+
+  for (const pos of candidates) {
+    if (!pos.contracts || !pos.premium_collected) continue;
+    const occSym     = buildOccSymbol(pos.ticker, pos.expiry_date, pos.isCall, pos.strike);
+    const currentMid = quoteMap.get(occSym)?.mid;
+    if (currentMid == null) continue;
+
+    if (currentMid >= 0.10) continue;
+
+    const premiumPerShare = pos.premium_collected / (pos.contracts * 100);
+    if (premiumPerShare <= 0) continue;
+    const pctOfOriginal = currentMid / premiumPerShare;
+    if (pctOfOriginal >= 0.05) continue;
+
+    const capturedPct  = ((1 - pctOfOriginal) * 100).toFixed(0);
+    const daysToExpiry = calcDTE(pos.expiry_date) ?? 0;
+    const typeLabel    = pos.isCall ? "CC" : "CSP";
+
+    items.push({
+      id:       `near-worthless-${pos.ticker}-${pos.expiry_date}`,
+      priority: "P2",
+      rule:     "near_worthless",
+      ticker:   pos.ticker,
+      dte:      daysToExpiry,
+      urgency:  daysToExpiry,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — worth $${currentMid.toFixed(2)}`,
+      detail:   `${capturedPct}% of premium already captured. `
+        + `Current mid $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
+        + `${daysToExpiry}d remaining. Consider closing to free collateral.`,
+    });
+  }
+  return items;
+}
+
+function rule6060(positions, quoteMap) {
+  const items = [];
+  const candidates = [];
+
+  for (const pos of positions.open_csps ?? []) {
+    candidates.push({ ...pos, isCall: false });
+  }
+  for (const s of positions.assigned_shares ?? []) {
+    if (s.active_cc) candidates.push({ ...s.active_cc, isCall: true });
+  }
+
+  for (const pos of candidates) {
+    if (!pos.contracts || !pos.premium_collected || !pos.open_date) continue;
+    const occSym     = buildOccSymbol(pos.ticker, pos.expiry_date, pos.isCall, pos.strike);
+    const currentMid = quoteMap.get(occSym)?.mid;
+    if (currentMid == null) continue;
+
+    const premiumPerShare = pos.premium_collected / (pos.contracts * 100);
+    if (premiumPerShare <= 0) continue;
+    const profitPct = 1 - (currentMid / premiumPerShare);
+    if (profitPct < 0.60) continue;
+
+    const openDate   = new Date(pos.open_date   + "T00:00:00");
+    const expiryDate = new Date(pos.expiry_date  + "T00:00:00");
+    const todayDate  = new Date();
+    const originalDTE  = Math.ceil((expiryDate - openDate)  / (1000 * 60 * 60 * 24));
+    const remainingDTE = Math.ceil((expiryDate - todayDate) / (1000 * 60 * 60 * 24));
+    if (remainingDTE < 5) continue;
+
+    const dteRemainingPct = originalDTE > 0 ? remainingDTE / originalDTE : 0;
+    if (dteRemainingPct < 0.60) continue;
+
+    const profitDisplay = (profitPct * 100).toFixed(0);
+    const dteDisplay    = (dteRemainingPct * 100).toFixed(0);
+    const typeLabel     = pos.isCall ? "CC" : "CSP";
+
+    items.push({
+      id:       `60-60-${pos.ticker}-${pos.expiry_date}`,
+      priority: "P2",
+      rule:     "rule_60_60",
+      ticker:   pos.ticker,
+      dte:      remainingDTE,
+      urgency:  remainingDTE,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 threshold met`,
+      detail:   `${profitDisplay}% of premium captured with ${dteDisplay}% DTE remaining. `
+        + `Current mark $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
+        + `${remainingDTE}d remaining. Consider closing and redeploying capital.`,
+    });
   }
   return items;
 }
@@ -246,7 +469,7 @@ function ruleExpiryCluster(positions) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, marketContext, liveVix) {
+export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map()) {
   if (!positions) return [];
 
   // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
@@ -257,9 +480,13 @@ export function generateFocusItems(positions, account, marketContext, liveVix) {
   const items = [
     ...ruleCashBelowFloor(accountWithVix),
     ...ruleExpiringSoon(positions),
-    ...ruleUncoveredShares(positions),
+    ...ruleUncoveredShares(positions, quoteMap),
+    ...ruleCCDeeplyITM(positions, quoteMap),
+    ...ruleCSPITMUrgency(positions, quoteMap),
     ...ruleEarningsBeforeExpiry(positions, marketContext),
     ...ruleMacroOverlap(positions, marketContext),
+    ...ruleNearWorthlessOption(positions, quoteMap),
+    ...rule6060(positions, quoteMap),
     ...ruleExpiryCluster(positions),
   ];
 

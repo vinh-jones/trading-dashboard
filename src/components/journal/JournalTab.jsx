@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useData } from "../../hooks/useData";
 import { useLiveVix } from "../../hooks/useLiveVix";
+import { useQuotes } from "../../hooks/useQuotes";
+import { generateFocusItems } from "../../lib/focusEngine";
 import { formatDollars, formatExpiry } from "../../lib/format";
 import { calcDTE, computeEodMetadata } from "../../lib/trading";
 import { getVixBand } from "../../lib/vixBand";
@@ -103,6 +105,7 @@ export function JournalTab() {
 
   // VIX — live from /api/vix (same source as AccountBar), falls back to last-synced snapshot value
   const { vix: eodAutoVix } = useLiveVix(account?.vix_current ?? null);
+  const { quoteMap } = useQuotes();
 
   // Gross open pipeline = sum of premium from all open CSPs + active CCs
   const eodAutoPipeline = useMemo(() => {
@@ -345,20 +348,25 @@ export function JournalTab() {
         cspSnapshot:   eodOpenCsps,
       }) : null;
 
+      const focusSnapshot = isEOD
+        ? generateFocusItems(positions, account, null, eodAutoVix, quoteMap)
+        : null;
+
       const payload = {
-        entry_type:  entryType,
-        trade_id:    null,
-        position_id: linkedPosition?.id ?? null,
-        entry_date:  formDate,
+        entry_type:      entryType,
+        trade_id:        null,
+        position_id:     linkedPosition?.id ?? null,
+        entry_date:      formDate,
         ticker,
-        title:       titleToSave,
-        body:        formBody.trim(),
+        title:           titleToSave,
+        body:            formBody.trim(),
         tags,
-        source:      src,
+        source:          src,
         mood,
         metadata,
-        created_at:  now,
-        updated_at:  now,
+        focus_snapshot:  focusSnapshot,
+        created_at:      now,
+        updated_at:      now,
       };
       const { data, error } = await supabase
         .from("journal_entries")
