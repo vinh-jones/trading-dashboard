@@ -165,16 +165,20 @@ async function getTastytradeToken(supabase) {
   const refreshToken   = process.env.TASTYTRADE_REFRESH_TOKEN?.trim();
   if (!clientSecret || !refreshToken) throw new Error("TASTYTRADE_CLIENT_SECRET / TASTYTRADE_REFRESH_TOKEN not set");
 
-  const body = new URLSearchParams({
-    grant_type:    "refresh_token",
-    refresh_token: refreshToken,
-    client_secret: clientSecret,
-  });
+  // Build body manually with encodeURIComponent to ensure correct encoding
+  const bodyStr = [
+    `grant_type=refresh_token`,
+    `refresh_token=${encodeURIComponent(refreshToken)}`,
+    `client_secret=${encodeURIComponent(clientSecret)}`,
+  ].join("&");
 
   const res = await fetch(`${TASTYTRADE_BASE}/oauth/token`, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:    body.toString(),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept":        "application/json",
+    },
+    body: bodyStr,
   });
 
   if (!res.ok) {
