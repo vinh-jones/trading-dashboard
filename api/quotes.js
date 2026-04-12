@@ -13,7 +13,6 @@
 import { createClient } from "@supabase/supabase-js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
-const TASTYTRADE_BASE  = "https://api.tastytrade.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
 const STALE_MS         = 30 * 60 * 1000; // 30 minutes
 
@@ -146,115 +145,11 @@ function buildInstruments(rows) {
   return { equityInstruments, optionInstruments };
 }
 
-// ── Tastytrade auth (OAuth access token, 15min, cached in Supabase) ──────────
-
-const TT_ACCESS_TOKEN_TTL_MS = 14 * 60 * 1000; // cache for 14min (tokens last 15min)
-
-async function getTastytradeToken(supabase) {
-  const { data: cached } = await supabase
-    .from("app_cache")
-    .select("value, expires_at")
-    .eq("key", "tastytrade_token")
-    .single();
-
-  if (cached?.value && new Date(cached.expires_at).getTime() > Date.now()) {
-    return cached.value;
-  }
-
-  const clientSecret   = process.env.TASTYTRADE_CLIENT_SECRET?.trim();
-  const refreshToken   = process.env.TASTYTRADE_REFRESH_TOKEN?.trim();
-  if (!clientSecret || !refreshToken) throw new Error("TASTYTRADE_CLIENT_SECRET / TASTYTRADE_REFRESH_TOKEN not set");
-
-  // Build body manually with encodeURIComponent to ensure correct encoding
-  const bodyStr = [
-    `grant_type=refresh_token`,
-    `refresh_token=${encodeURIComponent(refreshToken)}`,
-    `client_secret=${encodeURIComponent(clientSecret)}`,
-  ].join("&");
-
-  const res = await fetch(`${TASTYTRADE_BASE}/oauth/token`, {
-    method:  "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept":        "application/json",
-    },
-    body: bodyStr,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Tastytrade OAuth token failed (${res.status}): ${text}`);
-  }
-
-  const data  = await res.json();
-  const token = data?.access_token;
-  if (!token) throw new Error("Tastytrade OAuth: no access_token in response");
-
-  const expiresAt = new Date(Date.now() + TT_ACCESS_TOKEN_TTL_MS).toISOString();
-  await supabase
-    .from("app_cache")
-    .upsert({ key: "tastytrade_token", value: token, expires_at: expiresAt });
-
-  return token;
-}
-
-// ── IV refresh via Tastytrade market-metrics (uncovered tickers only) ─────────
-
-async function refreshIV(supabase) {
-  // 1. Which tickers have uncovered shares?
-  const { data: uncoveredRows } = await supabase
-    .from("positions")
-    .select("ticker")
-    .eq("position_type", "assigned_shares")
-    .eq("has_active_cc", false);
-
-  if (!uncoveredRows?.length) return; // all covered — nothing to do
-
-  const tickers = [...new Set(uncoveredRows.map(r => r.ticker))];
-
-  // 2. Get Tastytrade session token
-  const token = await getTastytradeToken(supabase);
-
-  // 3. Single market-metrics call for all uncovered tickers
-  // Correct format: symbols=PLTR&symbols=NVDA (no brackets)
-  const qs  = tickers.map(t => `symbols=${encodeURIComponent(t)}`).join("&");
-  const res = await fetch(`${TASTYTRADE_BASE}/market-metrics?${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Tastytrade market-metrics failed (${res.status}): ${text}`);
-  }
-
-  const data  = await res.json();
-  const items = data?.data?.items ?? [];
-  if (!items.length) return;
-
-  // 4. Write iv + iv_rank per ticker
-  // implied-volatility-index = current IV as decimal (e.g. 0.728 = 72.8%)
-  // implied-volatility-index-rank = IV rank as decimal 0–1 (e.g. 0.4675 = rank 46.75)
-  // We store iv as decimal and iv_rank as 0–100 to match focusEngine thresholds.
-  const now = new Date().toISOString();
-  await Promise.all(
-    items.map(item => {
-      const ticker = item.symbol;
-      const iv     = item["implied-volatility-index"] != null
-        ? parseFloat(item["implied-volatility-index"])
-        : null;
-      const ivRank = item["implied-volatility-index-rank"] != null
-        ? Math.round(parseFloat(item["implied-volatility-index-rank"]) * 100 * 100) / 100
-        : null;
-
-      if (iv == null && ivRank == null) return Promise.resolve();
-
-      return supabase
-        .from("quotes")
-        .update({ iv, iv_rank: ivRank, refreshed_at: now })
-        .eq("symbol", ticker);
-    })
-  );
-}
+// ── IV refresh — handled externally via /api/ingest-iv ───────────────────────
+// Tastytrade blocks Vercel/AWS datacenter IPs. IV is ingested by OpenClaw
+// running on a residential Mac, which POSTs to /api/ingest-iv. This function
+// is a no-op kept for structural symmetry.
+async function refreshIV() { /* no-op — see api/ingest-iv.js */ }
 
 // ── Refresh: fetch from Public.com + upsert into Supabase ────────────────────
 
@@ -265,7 +160,7 @@ async function refreshQuotes(supabase) {
     .select("ticker, type, strike, expiry_date, position_type");
 
   if (error) throw new Error(`Supabase positions fetch failed: ${error.message}`);
-  if (!rows?.length) return { upsertRows: [], ivError: null };
+  if (!rows?.length) return [];
 
   const { equityInstruments, optionInstruments } = buildInstruments(rows);
 
@@ -309,17 +204,10 @@ async function refreshQuotes(supabase) {
     if (upsertError) throw new Error(`Supabase upsert failed: ${upsertError.message}`);
   }
 
-  // 5. IV for uncovered tickers via Tastytrade market-metrics (runs after upsert so equity rows exist)
-  // Errors are non-fatal — IV is best-effort; Rule 5 degrades gracefully without it.
-  let ivError = null;
-  try {
-    await refreshIV(supabase);
-  } catch (err) {
-    ivError = err.message;
-    console.warn("[api/quotes] IV refresh failed (non-fatal):", err.message);
-  }
+  // 5. IV is populated externally via /api/ingest-iv (OpenClaw cron on residential IP)
+  await refreshIV();
 
-  return { upsertRows, ivError };
+  return upsertRows;
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -351,9 +239,8 @@ export default async function handler(req, res) {
 
     const needsRefresh = forced || (ageMs > STALE_MS && isMarketOpen());
 
-    let ivError = null;
     if (needsRefresh) {
-      ({ ivError } = await refreshQuotes(supabase) ?? {});
+      await refreshQuotes(supabase);
     }
 
     // Return all cached quotes
@@ -370,7 +257,6 @@ export default async function handler(req, res) {
       refreshedAt: lastRefresh?.toISOString() ?? null,
       refreshed:   needsRefresh,
       forced:      forced,
-      ivError:     ivError ?? undefined,
     });
   } catch (err) {
     console.error("[api/quotes]", err);
