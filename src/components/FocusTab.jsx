@@ -283,7 +283,7 @@ export function FocusTab() {
   const RULES = [
     { priority: "P1", rule: "Cash below floor",    trigger: "Free cash % is below the VIX band floor",                                    source: "Account" },
     { priority: "P1", rule: "Expiring soon",        trigger: "CC or CSP with DTE ≤ 2",                                                     source: "Positions" },
-    { priority: "P1", rule: "Uncovered shares",     trigger: "Assigned shares with no active covered call",                                 source: "Positions" },
+    { priority: "P1", rule: "Uncovered shares",     trigger: "Assigned shares with no active covered call. IV guidance appended when available.", source: "Positions + Quotes" },
     { priority: "P1", rule: "CC deeply ITM",        trigger: "Stock > strike by 2–7% (threshold scales with entry delta). P2 if DTE > 7",  source: "Positions + Quotes" },
     { priority: "P1", rule: "CSP ITM urgency",      trigger: "ITM% × DTE-elapsed% score ≥ 0.05 (min 3% ITM to fire). P2 if score < 0.10", source: "Positions + Quotes" },
     { priority: "P2", rule: "Expiring soon",        trigger: "CC or CSP with DTE 3–5",                                                     source: "Positions" },
