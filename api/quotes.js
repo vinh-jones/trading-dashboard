@@ -161,8 +161,8 @@ async function getTastytradeToken(supabase) {
     return cached.value;
   }
 
-  const clientSecret   = process.env.TASTYTRADE_CLIENT_SECRET;
-  const refreshToken   = process.env.TASTYTRADE_REFRESH_TOKEN;
+  const clientSecret   = process.env.TASTYTRADE_CLIENT_SECRET?.trim();
+  const refreshToken   = process.env.TASTYTRADE_REFRESH_TOKEN?.trim();
   if (!clientSecret || !refreshToken) throw new Error("TASTYTRADE_CLIENT_SECRET / TASTYTRADE_REFRESH_TOKEN not set");
 
   const body = new URLSearchParams({
