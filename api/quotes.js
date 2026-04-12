@@ -261,7 +261,7 @@ async function refreshQuotes(supabase) {
     .select("ticker, type, strike, expiry_date, position_type");
 
   if (error) throw new Error(`Supabase positions fetch failed: ${error.message}`);
-  if (!rows?.length) return [];
+  if (!rows?.length) return { upsertRows: [], ivError: null };
 
   const { equityInstruments, optionInstruments } = buildInstruments(rows);
 
@@ -307,13 +307,15 @@ async function refreshQuotes(supabase) {
 
   // 5. IV for uncovered tickers via Tastytrade market-metrics (runs after upsert so equity rows exist)
   // Errors are non-fatal — IV is best-effort; Rule 5 degrades gracefully without it.
+  let ivError = null;
   try {
     await refreshIV(supabase);
   } catch (err) {
+    ivError = err.message;
     console.warn("[api/quotes] IV refresh failed (non-fatal):", err.message);
   }
 
-  return upsertRows;
+  return { upsertRows, ivError };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -345,8 +347,9 @@ export default async function handler(req, res) {
 
     const needsRefresh = forced || (ageMs > STALE_MS && isMarketOpen());
 
+    let ivError = null;
     if (needsRefresh) {
-      await refreshQuotes(supabase);
+      ({ ivError } = await refreshQuotes(supabase) ?? {});
     }
 
     // Return all cached quotes
@@ -363,6 +366,7 @@ export default async function handler(req, res) {
       refreshedAt: lastRefresh?.toISOString() ?? null,
       refreshed:   needsRefresh,
       forced:      forced,
+      ivError:     ivError ?? undefined,
     });
   } catch (err) {
     console.error("[api/quotes]", err);
