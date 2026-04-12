@@ -13,7 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
-const TASTYTRADE_BASE  = "https://api.tastytrade.com";
+const TASTYTRADE_BASE  = "https://api.tastyworks.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
 const STALE_MS         = 30 * 60 * 1000; // 30 minutes
 
@@ -146,7 +146,9 @@ function buildInstruments(rows) {
   return { equityInstruments, optionInstruments };
 }
 
-// ── Tastytrade auth (session token cached in Supabase, valid 24h) ────────────
+// ── Tastytrade auth (OAuth access token, 15min, cached in Supabase) ──────────
+
+const TT_ACCESS_TOKEN_TTL_MS = 14 * 60 * 1000; // cache for 14min (tokens last 15min)
 
 async function getTastytradeToken(supabase) {
   const { data: cached } = await supabase
@@ -155,30 +157,36 @@ async function getTastytradeToken(supabase) {
     .eq("key", "tastytrade_token")
     .single();
 
-  if (cached?.value && new Date(cached.expires_at).getTime() - TOKEN_BUFFER_MS > Date.now()) {
+  if (cached?.value && new Date(cached.expires_at).getTime() > Date.now()) {
     return cached.value;
   }
 
-  const login    = process.env.TASTYTRADE_USERNAME;
-  const password = process.env.TASTYTRADE_PASSWORD;
-  if (!login || !password) throw new Error("TASTYTRADE_USERNAME / TASTYTRADE_PASSWORD not set");
+  const clientSecret   = process.env.TASTYTRADE_CLIENT_SECRET;
+  const refreshToken   = process.env.TASTYTRADE_REFRESH_TOKEN;
+  if (!clientSecret || !refreshToken) throw new Error("TASTYTRADE_CLIENT_SECRET / TASTYTRADE_REFRESH_TOKEN not set");
 
-  const res = await fetch(`${TASTYTRADE_BASE}/sessions`, {
+  const body = new URLSearchParams({
+    grant_type:    "refresh_token",
+    refresh_token: refreshToken,
+    client_secret: clientSecret,
+  });
+
+  const res = await fetch(`${TASTYTRADE_BASE}/oauth/token`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ login, password }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body:    body.toString(),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Tastytrade auth failed (${res.status}): ${text}`);
+    throw new Error(`Tastytrade OAuth token failed (${res.status}): ${text}`);
   }
 
   const data  = await res.json();
-  const token = data?.data?.["session-token"];
-  if (!token) throw new Error("Tastytrade auth: no session-token in response");
+  const token = data?.access_token;
+  if (!token) throw new Error("Tastytrade OAuth: no access_token in response");
 
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + TT_ACCESS_TOKEN_TTL_MS).toISOString();
   await supabase
     .from("app_cache")
     .upsert({ key: "tastytrade_token", value: token, expires_at: expiresAt });
@@ -204,9 +212,10 @@ async function refreshIV(supabase) {
   const token = await getTastytradeToken(supabase);
 
   // 3. Single market-metrics call for all uncovered tickers
-  const qs  = tickers.map(t => `symbols[]=${encodeURIComponent(t)}`).join("&");
+  // Correct format: symbols=PLTR&symbols=NVDA (no brackets)
+  const qs  = tickers.map(t => `symbols=${encodeURIComponent(t)}`).join("&");
   const res = await fetch(`${TASTYTRADE_BASE}/market-metrics?${qs}`, {
-    headers: { Authorization: token },
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   if (!res.ok) {
@@ -218,28 +227,19 @@ async function refreshIV(supabase) {
   const items = data?.data?.items ?? [];
   if (!items.length) return;
 
-  // Log raw values on first fetch so we can verify the scale of implied-volatility-rank
-  console.log("[api/quotes] Tastytrade market-metrics raw:", JSON.stringify(
-    items.map(i => ({
-      symbol:   i.symbol,
-      iv:       i["implied-volatility-index"],
-      iv_rank:  i["implied-volatility-rank"],
-    }))
-  ));
-
   // 4. Write iv + iv_rank per ticker
-  // Tastytrade returns implied-volatility-index as decimal (e.g. 0.625 = 62.5%)
-  // and implied-volatility-rank as decimal 0–1 (e.g. 0.3949 = rank 39.49).
+  // implied-volatility-index = current IV as decimal (e.g. 0.728 = 72.8%)
+  // implied-volatility-index-rank = IV rank as decimal 0–1 (e.g. 0.4675 = rank 46.75)
   // We store iv as decimal and iv_rank as 0–100 to match focusEngine thresholds.
   const now = new Date().toISOString();
   await Promise.all(
     items.map(item => {
       const ticker = item.symbol;
-      const iv     = item["implied-volatility-index"]  != null
+      const iv     = item["implied-volatility-index"] != null
         ? parseFloat(item["implied-volatility-index"])
         : null;
-      const ivRank = item["implied-volatility-rank"] != null
-        ? Math.round(parseFloat(item["implied-volatility-rank"]) * 100 * 100) / 100
+      const ivRank = item["implied-volatility-index-rank"] != null
+        ? Math.round(parseFloat(item["implied-volatility-index-rank"]) * 100 * 100) / 100
         : null;
 
       if (iv == null && ivRank == null) return Promise.resolve();
