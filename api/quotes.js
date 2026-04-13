@@ -191,7 +191,6 @@ async function refreshQuotes(supabase) {
         ask,
         mid,
         delta:           null,
-        iv:              null,
         refreshed_at:    now,
       };
     });
