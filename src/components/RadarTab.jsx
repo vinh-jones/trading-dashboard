@@ -237,16 +237,6 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
           {ticker}
         </span>
 
-        {/* Sector */}
-        <span style={{
-          fontSize:   theme.size.sm,
-          color:      theme.text.muted,
-          flexShrink: 0,
-          minWidth:   80,
-        }}>
-          {sector ?? "—"}
-        </span>
-
         {/* BB badge */}
         {bucket ? (
           <span style={{
@@ -318,6 +308,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
         <ExpandedPanel
           row={row}
           indicators={indicators}
+          positions={positions}
           marketContext={marketContext}
           bucket={bucket}
           score={score}
@@ -329,8 +320,16 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, indicators, marketContext, bucket, score }) {
-  const { ticker, company, sector, price_category, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20 } = row;
+function ExpandedPanel({ row, indicators, positions, marketContext, bucket, score }) {
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20 } = row;
+
+  // Detailed position data for this ticker
+  const sharePos    = (positions?.assigned_shares || []).find(s => s.ticker === ticker) ?? null;
+  const cspPositions = (positions?.open_csps || []).filter(p => p.ticker === ticker);
+  const leapPositions = (positions?.open_leaps || []).filter(l => l.ticker === ticker);
+  // Also check leaps nested in sharePos
+  const nestedLeaps = sharePos?.open_leaps ?? [];
+  const allLeaps = [...leapPositions, ...nestedLeaps];
 
   const ivComp    = compositeIv(iv, iv_rank);
   const label     = scoreLabel(score);
@@ -376,12 +375,9 @@ function ExpandedPanel({ row, indicators, marketContext, bucket, score }) {
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[3], flexWrap: "wrap" }}>
-        <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary }}>
-          {ticker}
-        </span>
         {company && (
-          <span style={{ fontSize: theme.size.md, color: theme.text.secondary }}>
-            — {company}
+          <span style={{ fontSize: theme.size.md, fontWeight: 700, color: theme.text.primary }}>
+            {company}
           </span>
         )}
         <span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
@@ -389,17 +385,6 @@ function ExpandedPanel({ row, indicators, marketContext, bucket, score }) {
         </span>
         {sector && (
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>{sector}</span>
-        )}
-        {price_category && (
-          <span style={{
-            fontSize:     theme.size.xs,
-            color:        theme.text.subtle,
-            border:       `1px solid ${theme.border.strong}`,
-            borderRadius: theme.radius.sm,
-            padding:      "1px 5px",
-          }}>
-            {price_category}
-          </span>
         )}
       </div>
 
@@ -464,19 +449,55 @@ function ExpandedPanel({ row, indicators, marketContext, bucket, score }) {
       {/* ── Current Positions section ── */}
       <div style={sectionLabelStyle}>Current Positions</div>
       {indicators.length > 0 ? (
-        <div style={{ display: "flex", gap: theme.space[2], flexWrap: "wrap" }}>
-          {indicators.map((ind, i) => (
-            <span key={i} style={{
-              fontSize:     theme.size.sm,
-              color:        theme.text.secondary,
-              background:   theme.bg.surface,
-              border:       `1px solid ${theme.border.strong}`,
-              borderRadius: theme.radius.sm,
-              padding:      "2px 8px",
-            }}>
-              {ind}
-            </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: theme.space[2] }}>
+
+          {/* Shares */}
+          {sharePos && (
+            <div style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, fontWeight: 600 }}>📌 Shares</span>
+              {sharePos.cost_basis_total != null && fieldRow("Collateral", `$${sharePos.cost_basis_total.toLocaleString()}`)}
+            </div>
+          )}
+
+          {/* CC nested in shares */}
+          {sharePos?.active_cc && (() => {
+            const cc = sharePos.active_cc;
+            return (
+              <div style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, fontWeight: 600 }}>🔼 CC</span>
+                {cc.strike != null && fieldRow("Strike", `$${cc.strike}`)}
+                {cc.contracts != null && fieldRow("Contracts", cc.contracts)}
+                {cc.expiry_date && fieldRow("Expiry", cc.expiry_date)}
+                {cc.days_to_expiry != null && fieldRow("DTE", cc.days_to_expiry)}
+                {cc.premium_collected != null && fieldRow("Premium", `$${cc.premium_collected.toLocaleString()}`)}
+              </div>
+            );
+          })()}
+
+          {/* CSPs */}
+          {cspPositions.map((csp, i) => (
+            <div key={i} style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, fontWeight: 600 }}>📋 CSP</span>
+              {csp.strike != null && fieldRow("Strike", `$${csp.strike}`)}
+              {csp.contracts != null && fieldRow("Contracts", csp.contracts)}
+              {csp.expiry_date && fieldRow("Expiry", csp.expiry_date)}
+              {csp.days_to_expiry != null && fieldRow("DTE", csp.days_to_expiry)}
+              {csp.premium_collected != null && fieldRow("Premium", `$${csp.premium_collected.toLocaleString()}`)}
+              {csp.capital_fronted != null && fieldRow("Collateral", `$${csp.capital_fronted.toLocaleString()}`)}
+            </div>
           ))}
+
+          {/* LEAPS */}
+          {allLeaps.map((leap, i) => (
+            <div key={i} style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, fontWeight: 600 }}>🔭 LEAPS</span>
+              {leap.strike != null && fieldRow("Strike", `$${leap.strike}`)}
+              {leap.contracts != null && fieldRow("Contracts", leap.contracts)}
+              {leap.expiry_date && fieldRow("Expiry", leap.expiry_date)}
+              {leap.entry_cost != null && fieldRow("Cost", `$${leap.entry_cost.toLocaleString()}`)}
+            </div>
+          ))}
+
         </div>
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
