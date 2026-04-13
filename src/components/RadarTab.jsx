@@ -199,6 +199,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank);
+  const ivComp   = compositeIv(iv, iv_rank);
   const label    = scoreLabel(score);
   const bucketColors = bucket ? BB_BUCKET_COLORS[bucket] : null;
   const indicators   = getPositionIndicators(ticker, positions);
@@ -270,6 +271,13 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
         {iv_rank != null && (
           <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
             IVR: {iv_rank.toFixed(1)}
+          </span>
+        )}
+
+        {/* Composite IV */}
+        {ivComp != null && (
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+            IVC: {ivComp.toFixed(2)}
           </span>
         )}
 
@@ -669,6 +677,22 @@ export function RadarTab({ positions = null }) {
         if (b.iv_rank == null) return -1;
         return b.iv_rank - a.iv_rank;
       });
+    } else if (sortBy === "iv_raw") {
+      result.sort((a, b) => {
+        if (a.iv == null && b.iv == null) return 0;
+        if (a.iv == null) return 1;
+        if (b.iv == null) return -1;
+        return b.iv - a.iv;
+      });
+    } else if (sortBy === "iv_composite") {
+      result.sort((a, b) => {
+        const ca = compositeIv(a.iv, a.iv_rank);
+        const cb = compositeIv(b.iv, b.iv_rank);
+        if (ca == null && cb == null) return 0;
+        if (ca == null) return 1;
+        if (cb == null) return -1;
+        return cb - ca;
+      });
     }
 
     return result;
@@ -732,9 +756,11 @@ export function RadarTab({ positions = null }) {
         {/* Sort buttons + stats row */}
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], flexWrap: "wrap" }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Sort by:</span>
-          <SortBtn id="score"   label="Scanner Score" sortBy={sortBy} setSortBy={setSortBy} />
-          <SortBtn id="bb"      label="BB Position" sortBy={sortBy} setSortBy={setSortBy} />
-          <SortBtn id="iv_rank" label="IV Rank" sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="score"        label="Scanner Score" sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="bb"           label="BB Position"   sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="iv_rank"      label="IV Rank"       sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="iv_raw"       label="Raw IV"        sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
 
           <div style={{ flex: 1 }} />
 
