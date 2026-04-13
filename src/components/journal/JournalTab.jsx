@@ -52,10 +52,6 @@ export function JournalTab() {
   const [saving,         setSaving]         = useState(false);
   const [formMood,       setFormMood]       = useState("🟡");
 
-  // Backfill state
-  const [backfilling,    setBackfilling]    = useState(false);
-  const [backfillMsg,    setBackfillMsg]    = useState(null);
-
   // Tickers seen in the feed (for filter dropdown)
   const feedTickers = useMemo(
     () => [...new Set(entries.map(e => e.ticker).filter(Boolean))].sort(),
@@ -219,30 +215,6 @@ export function JournalTab() {
       setFeedError(err.message);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleBackfill(resync = false) {
-    const msg = resync
-      ? "Re-sync will delete all unannotated backfilled entries (empty body) and re-insert them with corrected dates.\n\nAny entries you've already added notes to will be preserved.\n\nContinue?"
-      : "Backfill journal with all trades opened on or after Mar 1, 2026?\n\nExisting entries won't be duplicated. Each entry will have an empty body — click Edit to add your notes.";
-    if (!window.confirm(msg)) return;
-    setBackfilling(true);
-    setBackfillMsg(null);
-    try {
-      const url  = resync ? "/api/backfill-journal?resync=1" : "/api/backfill-journal";
-      const res  = await fetch(url, { method: "POST" });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
-      setBackfillMsg(data.created === 0
-        ? "Already up to date — nothing new to backfill."
-        : `Done. Created ${data.created} journal entr${data.created === 1 ? "y" : "ies"}.`
-      );
-      await fetchEntries();
-    } catch (err) {
-      setBackfillMsg(`Failed: ${err.message}`);
-    } finally {
-      setBackfilling(false);
     }
   }
 
@@ -446,37 +418,6 @@ export function JournalTab() {
             <option value="last_90">Last 90 days</option>
             <option value="all">All time</option>
           </select>
-        </div>
-
-        {/* Backfill / re-sync controls */}
-        <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <button
-            onClick={() => handleBackfill(false)}
-            disabled={backfilling}
-            style={{
-              background: "transparent", border: `1px solid ${theme.border.strong}`, color: theme.text.muted,
-              borderRadius: theme.radius.sm, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
-              cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
-            }}
-          >
-            {backfilling ? "Working..." : "Backfill (Mar 1+)"}
-          </button>
-          <button
-            onClick={() => handleBackfill(true)}
-            disabled={backfilling}
-            style={{
-              background: "transparent", border: `1px solid ${theme.border.strong}`, color: theme.text.muted,
-              borderRadius: theme.radius.sm, padding: "5px 12px", fontSize: 12, fontFamily: "inherit",
-              cursor: backfilling ? "not-allowed" : "pointer", opacity: backfilling ? 0.6 : 1,
-            }}
-          >
-            {backfilling ? "Working..." : "Re-sync backfill"}
-          </button>
-          {backfillMsg && (
-            <span style={{ fontSize: 12, color: backfillMsg.startsWith("Failed") ? theme.red : theme.green }}>
-              {backfillMsg}
-            </span>
-          )}
         </div>
 
         {/* Feed content */}
