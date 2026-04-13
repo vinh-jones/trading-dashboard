@@ -61,12 +61,30 @@ const SCORE_ROW_BG = {
 // ── Position indicators ───────────────────────────────────────────────────────
 
 function getPositionIndicators(ticker, positions) {
-  const held = positions.filter(p => p.ticker === ticker);
+  if (!positions || Array.isArray(positions)) return [];
+
   const indicators = [];
-  if (held.some(p => p.position_type === "assigned_shares")) indicators.push("📌 Shares");
-  if (held.some(p => p.type === "CSP"))   indicators.push("📋 CSP");
-  if (held.some(p => p.type === "CC"))    indicators.push("🔼 CC");
-  if (held.some(p => p.type === "LEAPS")) indicators.push("🔭 LEAPS");
+
+  // Shares: in assigned_shares
+  if ((positions.assigned_shares || []).some(s => s.ticker === ticker)) {
+    indicators.push('📌 Shares');
+  }
+
+  // CC: nested as active_cc inside assigned_shares
+  if ((positions.assigned_shares || []).some(s => s.ticker === ticker && s.active_cc != null)) {
+    indicators.push('🔼 CC');
+  }
+
+  // CSP: in open_csps
+  if ((positions.open_csps || []).some(p => p.ticker === ticker)) {
+    indicators.push('📋 CSP');
+  }
+
+  // LEAPS: in open_leaps (top-level)
+  if ((positions.open_leaps || []).some(l => l.ticker === ticker)) {
+    indicators.push('🔭 LEAPS');
+  }
+
   return indicators;
 }
 
@@ -536,34 +554,6 @@ export function RadarTab({ positions = [], marketContext = null }) {
   const [hideHeld, setHideHeld]         = useState(false);
   const [expandedTicker, setExpandedTicker] = useState(null);
 
-  // Flatten positions for cross-reference.
-  // The prop may be a flat array (per spec) or the structured object from useData()
-  // { open_csps, assigned_shares, open_leaps, open_spreads }.
-  const flatPositions = useMemo(() => {
-    if (!positions) return [];
-    if (Array.isArray(positions)) return positions;
-    // Structured object — flatten all sub-arrays
-    const result = [];
-    if (Array.isArray(positions.open_csps)) {
-      result.push(...positions.open_csps.map(p => ({ ...p, type: p.type ?? "CSP" })));
-    }
-    if (Array.isArray(positions.open_leaps)) {
-      result.push(...positions.open_leaps.map(p => ({ ...p, type: p.type ?? "LEAPS" })));
-    }
-    if (Array.isArray(positions.open_spreads)) {
-      result.push(...positions.open_spreads);
-    }
-    if (Array.isArray(positions.assigned_shares)) {
-      // Each assigned_shares entry represents shares held — also pull nested open_leaps
-      for (const s of positions.assigned_shares) {
-        result.push({ ticker: s.ticker, position_type: "assigned_shares", type: "shares" });
-        if (Array.isArray(s.open_leaps)) {
-          result.push(...s.open_leaps.map(p => ({ ...p, type: p.type ?? "LEAPS" })));
-        }
-      }
-    }
-    return result;
-  }, [positions]);
 
   // BB data freshness
   const bbAsOf = useMemo(() => {
@@ -600,7 +590,7 @@ export function RadarTab({ positions = [], marketContext = null }) {
 
     // 2. Hide held
     if (hideHeld) {
-      result = result.filter(r => getPositionIndicators(r.ticker, flatPositions).length === 0);
+      result = result.filter(r => getPositionIndicators(r.ticker, positions).length === 0);
     }
 
     // 3. Sort
@@ -630,7 +620,7 @@ export function RadarTab({ positions = [], marketContext = null }) {
     }
 
     return result;
-  }, [rows, bbFilter, hideHeld, sortBy, flatPositions]);
+  }, [rows, bbFilter, hideHeld, sortBy, positions]);
 
   const strongCount = useMemo(() =>
     processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank)) === "Strong").length,
@@ -751,7 +741,7 @@ export function RadarTab({ positions = [], marketContext = null }) {
             <RadarRow
               key={row.ticker}
               row={row}
-              positions={flatPositions}
+              positions={positions}
               marketContext={marketContext}
               expanded={expandedTicker === row.ticker}
               onToggle={() => handleRowToggle(row.ticker)}
