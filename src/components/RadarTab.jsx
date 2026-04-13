@@ -611,13 +611,37 @@ function FilterBtn({ label, active, onClick }) {
 }
 
 // ── Sort button ───────────────────────────────────────────────────────────────
+// Tri-state: first click → default dir, second click → reversed, third → off.
+
+const SORT_DEFAULT_DIR = {
+  score:        "desc",
+  bb:           "asc",
+  iv_rank:      "desc",
+  iv_raw:       "desc",
+  iv_composite: "desc",
+  pe:           "asc",
+};
 
 function SortBtn({ id, label, sortBy, setSortBy }) {
+  const active = sortBy?.id === id;
+  const dir    = active ? sortBy.dir : null;
+  const arrow  = dir === "asc" ? " ▲" : dir === "desc" ? " ▼" : "";
+
+  function handleClick() {
+    if (!active) {
+      // Inactive → default direction
+      setSortBy({ id, dir: SORT_DEFAULT_DIR[id] ?? "desc" });
+    } else {
+      // Active → flip direction
+      setSortBy({ id, dir: dir === "asc" ? "desc" : "asc" });
+    }
+  }
+
   return (
     <FilterBtn
-      label={sortBy === id ? `${label} ▼` : label}
-      active={sortBy === id}
-      onClick={() => setSortBy(id)}
+      label={`${label}${arrow}`}
+      active={active}
+      onClick={handleClick}
     />
   );
 }
@@ -629,7 +653,7 @@ export function RadarTab({ positions = null }) {
 
   const [marketContext, setMarketContext]       = useState(null);
   const [bbFilter, setBbFilter]                 = useState("all");
-  const [sortBy, setSortBy]                     = useState("score");
+  const [sortBy, setSortBy]                     = useState({ id: "score", dir: "desc" });
   const [expandedTicker, setExpandedTicker]     = useState(null);
   const [advancedFilters, setAdvancedFilters]   = useState(DEFAULT_FILTERS);
   const [filtersExpanded, setFiltersExpanded]   = useState(false);
@@ -736,54 +760,29 @@ export function RadarTab({ positions = null }) {
       return true;
     });
 
-    // 3. Sort
-    if (sortBy === "score") {
-      result.sort((a, b) => {
-        const sa = scannerScore(a.bb_position, a.iv, a.iv_rank);
-        const sb = scannerScore(b.bb_position, b.iv, b.iv_rank);
-        if (sa == null && sb == null) return 0;
-        if (sa == null) return 1;
-        if (sb == null) return -1;
-        return sb - sa;
-      });
-    } else if (sortBy === "bb") {
-      result.sort((a, b) => {
-        if (a.bb_position == null && b.bb_position == null) return 0;
-        if (a.bb_position == null) return 1;
-        if (b.bb_position == null) return -1;
-        return a.bb_position - b.bb_position;
-      });
-    } else if (sortBy === "iv_rank") {
-      result.sort((a, b) => {
-        if (a.iv_rank == null && b.iv_rank == null) return 0;
-        if (a.iv_rank == null) return 1;
-        if (b.iv_rank == null) return -1;
-        return b.iv_rank - a.iv_rank;
-      });
-    } else if (sortBy === "iv_raw") {
-      result.sort((a, b) => {
-        if (a.iv == null && b.iv == null) return 0;
-        if (a.iv == null) return 1;
-        if (b.iv == null) return -1;
-        return b.iv - a.iv;
-      });
-    } else if (sortBy === "iv_composite") {
-      result.sort((a, b) => {
-        const ca = compositeIv(a.iv, a.iv_rank);
-        const cb = compositeIv(b.iv, b.iv_rank);
-        if (ca == null && cb == null) return 0;
-        if (ca == null) return 1;
-        if (cb == null) return -1;
-        return cb - ca;
-      });
-    } else if (sortBy === "pe") {
-      // Ascending — lower P/E first; nulls pushed to end
-      result.sort((a, b) => {
-        if (a.pe_ttm == null && b.pe_ttm == null) return 0;
-        if (a.pe_ttm == null) return 1;
-        if (b.pe_ttm == null) return -1;
-        return a.pe_ttm - b.pe_ttm;
-      });
+    // 3. Sort — sortBy is { id, dir } where dir is "asc" | "desc"
+    if (sortBy) {
+      const d = sortBy.dir === "asc" ? 1 : -1;  // multiplier: asc=1, desc=-1
+
+      const getVal = {
+        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank),
+        bb:           r => r.bb_position,
+        iv_rank:      r => r.iv_rank,
+        iv_raw:       r => r.iv,
+        iv_composite: r => compositeIv(r.iv, r.iv_rank),
+        pe:           r => r.pe_ttm,
+      }[sortBy.id];
+
+      if (getVal) {
+        result.sort((a, b) => {
+          const va = getVal(a);
+          const vb = getVal(b);
+          if (va == null && vb == null) return 0;
+          if (va == null) return 1;   // nulls always last
+          if (vb == null) return -1;
+          return (va - vb) * d;
+        });
+      }
     }
 
     return result;
