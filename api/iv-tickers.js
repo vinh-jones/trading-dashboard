@@ -3,7 +3,7 @@
  *
  * GET /api/iv-tickers
  *
- * Returns the list of equity tickers that have assigned_shares positions.
+ * Returns the list of approved tickers from the wheel universe.
  * Used by OpenClaw to know which symbols to fetch from Tastytrade market-metrics
  * before POSTing to /api/ingest-iv.
  *
@@ -32,9 +32,9 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase
-      .from("positions")
+      .from("wheel_universe")
       .select("ticker")
-      .eq("position_type", "assigned_shares");
+      .eq("list_type", "approved");
 
     if (error) throw new Error(error.message);
 
