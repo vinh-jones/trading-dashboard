@@ -92,14 +92,14 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   }
 
   // State 4-6: have data — render roll windows
-  const { current_cc_mid, assignment_strike, roll_14dte_expiry, roll_14dte_dte,
-          roll_14dte_mid, roll_14dte_net, roll_14dte_viable,
-          roll_28dte_expiry, roll_28dte_dte, roll_28dte_mid, roll_28dte_net, roll_28dte_viable,
+  const { current_cc_mid, assignment_strike,
+          roll_14dte_expiry, roll_14dte_dte, roll_14dte_strike, roll_14dte_mid, roll_14dte_net, roll_14dte_viable,
+          roll_28dte_expiry, roll_28dte_dte, roll_28dte_strike, roll_28dte_mid, roll_28dte_net, roll_28dte_viable,
           any_viable, data_sufficient, notes } = rollData;
 
   const sectionBorderColor = any_viable ? theme.green : theme.border.default;
 
-  function RollRow({ expiry, dte, mid, net, viable, label }) {
+  function RollRow({ expiry, dte, strike, mid, net, viable, label }) {
     if (!expiry) {
       return (
         <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: 3 }}>
@@ -128,8 +128,8 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
 
     return (
       <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: 3 }}>
-        <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, width: 80, flexShrink: 0 }}>
-          {dte}d ({formatExpiry(expiry)})
+        <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, flexShrink: 0 }}>
+          {dte}d ({formatExpiry(expiry)}){strike != null ? ` $${strike}` : ""}
         </span>
         <span style={{ fontSize: theme.size.sm, color: theme.text.primary }}>
           ${mid.toFixed(2)} avail
@@ -171,21 +171,20 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
 
       <RollRow
         label="14 DTE"
-        expiry={roll_14dte_expiry} dte={roll_14dte_dte}
+        expiry={roll_14dte_expiry} dte={roll_14dte_dte} strike={roll_14dte_strike}
         mid={roll_14dte_mid} net={roll_14dte_net} viable={roll_14dte_viable}
       />
       <RollRow
         label="28 DTE"
-        expiry={roll_28dte_expiry} dte={roll_28dte_dte}
+        expiry={roll_28dte_expiry} dte={roll_28dte_dte} strike={roll_28dte_strike}
         mid={roll_28dte_mid} net={roll_28dte_net} viable={roll_28dte_viable}
       />
 
       {any_viable && (
         <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: theme.green, fontWeight: 600 }}>
-          Roll to ${assignment_strike} available for net
-          {roll_14dte_viable && ` +$${roll_14dte_net?.toFixed(2)} credit (14 DTE)`}
+          {roll_14dte_viable && `Roll to $${roll_14dte_strike ?? assignment_strike} for net +$${roll_14dte_net?.toFixed(2)} credit (14 DTE)`}
           {roll_14dte_viable && roll_28dte_viable && " or"}
-          {roll_28dte_viable && ` +$${roll_28dte_net?.toFixed(2)} credit (28 DTE)`}.
+          {roll_28dte_viable && `${roll_14dte_viable ? " r" : "R"}oll to $${roll_28dte_strike ?? assignment_strike} for net +$${roll_28dte_net?.toFixed(2)} credit (28 DTE)`}.
         </div>
       )}
 

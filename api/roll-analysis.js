@@ -126,10 +126,11 @@ function findNearestExpiry(fridays, targetDTE) {
 // ── Strike rounding ───────────────────────────────────────────────────────────
 
 function candidateStrikes(costBasis) {
-  const rounded_1   = Math.round(costBasis);
-  const rounded_250 = Math.round(costBasis / 2.5) * 2.5;
-  const rounded_500 = Math.round(costBasis / 5) * 5;
-  return [...new Set([rounded_1, rounded_250, rounded_500])];
+  const r1   = Math.round(parseFloat(costBasis));
+  const r500 = Math.round(parseFloat(costBasis) / 5) * 5;
+  // Include adjacent $1 strikes so we still find a real contract when the
+  // exact rounded strike doesn't exist in the option chain (e.g. IREN: no $52, only $51/$55)
+  return [...new Set([r1 - 1, r1, r1 + 1, r500])].filter(s => s > 0);
 }
 
 // ── Cost basis helpers ────────────────────────────────────────────────────────
@@ -312,8 +313,10 @@ export default async function handler(req, res) {
         const best14 = bestCandidate(candidates14);
         const best28 = bestCandidate(candidates28);
 
-        const roll14Mid    = best14?.mid ?? null;
-        const roll28Mid    = best28?.mid ?? null;
+        const roll14Mid    = best14?.mid    ?? null;
+        const roll14Strike = best14?.strike ?? null;
+        const roll28Mid    = best28?.mid    ?? null;
+        const roll28Strike = best28?.strike ?? null;
         const roll14Net    = roll14Mid != null && currentCCMid != null ? Math.round((roll14Mid - currentCCMid) * 100) / 100 : null;
         const roll28Net    = roll28Mid != null && currentCCMid != null ? Math.round((roll28Mid - currentCCMid) * 100) / 100 : null;
         const roll14Viable = roll14Net != null ? roll14Net >= 0 : null;
@@ -340,11 +343,13 @@ export default async function handler(req, res) {
           current_cc_mid:       currentCCMid,
           roll_14dte_expiry:    target14?.expiry ?? null,
           roll_14dte_dte:       target14?.dte    ?? null,
+          roll_14dte_strike:    roll14Strike,
           roll_14dte_mid:       roll14Mid,
           roll_14dte_net:       roll14Net,
           roll_14dte_viable:    roll14Viable,
           roll_28dte_expiry:    target28?.expiry ?? null,
           roll_28dte_dte:       target28?.dte    ?? null,
+          roll_28dte_strike:    roll28Strike,
           roll_28dte_mid:       roll28Mid,
           roll_28dte_net:       roll28Net,
           roll_28dte_viable:    roll28Viable,
