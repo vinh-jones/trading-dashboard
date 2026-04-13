@@ -471,9 +471,48 @@ function ruleExpiryCluster(positions) {
   return items;
 }
 
+function ruleRollOpportunity(positions, rollAnalysisMap) {
+  const items = [];
+  if (!rollAnalysisMap || !Object.keys(rollAnalysisMap).length) return items;
+
+  for (const s of positions.assigned_shares ?? []) {
+    const rollData = rollAnalysisMap[s.ticker];
+    if (!rollData?.any_viable) continue;
+
+    const { assignment_strike, current_cc_strike, current_cc_mid,
+            roll_14dte_expiry, roll_14dte_net, roll_14dte_viable,
+            roll_28dte_expiry, roll_28dte_net, roll_28dte_viable } = rollData;
+
+    const windows = [
+      roll_14dte_viable && roll_14dte_expiry
+        ? `14 DTE (${formatExpiry(roll_14dte_expiry)}): +$${roll_14dte_net?.toFixed(2)} credit`
+        : null,
+      roll_28dte_viable && roll_28dte_expiry
+        ? `28 DTE (${formatExpiry(roll_28dte_expiry)}): +$${roll_28dte_net?.toFixed(2)} credit`
+        : null,
+    ].filter(Boolean).join(" · ");
+
+    const ccMidStr = current_cc_mid != null ? ` @ $${current_cc_mid.toFixed(2)} mid` : "";
+
+    items.push({
+      id:       `roll-opportunity-${s.ticker}`,
+      priority: "P2",
+      rule:     "roll_opportunity",
+      ticker:   s.ticker,
+      dte:      null,
+      urgency:  50,
+      title:    `${s.ticker} — roll to $${assignment_strike} available`,
+      detail:   `Net-neutral or better roll from $${current_cc_strike}${ccMidStr} up to assignment price $${assignment_strike}. `
+        + windows
+        + ". Review and decide.",
+    });
+  }
+  return items;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map()) {
+export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map(), rollAnalysisMap = {}) {
   if (!positions) return [];
 
   // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
@@ -492,6 +531,7 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ...ruleNearWorthlessOption(positions, quoteMap),
     ...rule6060(positions, quoteMap),
     ...ruleExpiryCluster(positions),
+    ...ruleRollOpportunity(positions, rollAnalysisMap),
   ];
 
   const priorityOrder = { P1: 0, P2: 1, P3: 2 };

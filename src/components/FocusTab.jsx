@@ -4,6 +4,7 @@ import { useData } from "../hooks/useData";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { useLiveVix } from "../hooks/useLiveVix";
 import { useQuotes } from "../hooks/useQuotes";
+import { useRollAnalysis } from "../hooks/useRollAnalysis";
 import { theme } from "../lib/theme";
 import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
 import { formatExpiry } from "../lib/format";
@@ -85,6 +86,7 @@ const RULE_LABELS = {
   near_worthless:         "Efficiency",
   rule_60_60:             "Close Candidate",
   expiry_cluster:         "Cluster",
+  roll_opportunity:       "Roll",
 };
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -265,6 +267,8 @@ export function FocusTab() {
   const { vix: liveVix } = useLiveVix(account?.vix_current);
   const { quoteMap, refreshedAt: quotesRefreshedAt } = useQuotes();
 
+  const { rollMap } = useRollAnalysis();
+
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading] = useState(true);
   const [infoExpanded, setInfoExpanded] = useState(true);
@@ -284,8 +288,8 @@ export function FocusTab() {
   }, []);
 
   const allItems = useMemo(
-    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap),
-    [positions, account, marketContext, liveVix, quoteMap]
+    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap, rollMap),
+    [positions, account, marketContext, liveVix, quoteMap, rollMap]
   );
   const { focus, watching, info } = useMemo(() => categorizeFocusItems(allItems), [allItems]);
 
@@ -350,6 +354,7 @@ export function FocusTab() {
     { priority: "P2", rule: "Near worthless",       trigger: "Option mid < $0.10 and < 5% of original premium collected",                  source: "Positions + Quotes" },
     { priority: "P2", rule: "60/60 rule",           trigger: "≥60% premium captured with ≥60% DTE remaining (suppressed below 5 DTE)",     source: "Positions + Quotes" },
     { priority: "P3", rule: "Expiry cluster",       trigger: "3+ options (CC or CSP) expire on the same date",                             source: "Positions" },
+    { priority: "P2", rule: "Roll opportunity",     trigger: "Net-neutral or better roll to assignment price available for a below-cost CC. Only fires after Check Rolls is run.", source: "Roll analysis" },
   ];
 
   const priorityColors = { P1: theme.red, P2: theme.amber, P3: theme.text.subtle };
