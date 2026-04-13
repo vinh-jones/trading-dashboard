@@ -3,7 +3,7 @@
 -- Last updated: 2026-04-12
 -- Update manually when Ryan changes the list (roughly quarterly)
 
-CREATE TABLE wheel_universe (
+CREATE TABLE IF NOT EXISTS wheel_universe (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticker TEXT NOT NULL UNIQUE,
   company TEXT,
@@ -111,7 +111,8 @@ INSERT INTO wheel_universe (ticker, company, sector, list_type, price_category, 
   ('OSCR', 'Oscar Health Inc', 'Health Insurance Technology', 'not_approved', 'Under $50', NULL),
   ('RKT', 'Rocket Companies Inc', 'Mortgage Lending / FinTech', 'not_approved', 'Under $50', NULL),
   ('BE', 'Bloom Energy Corp', 'Energy', 'not_approved', '$100-$200', NULL),
-  ('HIMS', 'Hims & Hers Health Inc', 'Telehealth / Wellness', 'not_approved', 'Under $50', 38.06);
+  ('HIMS', 'Hims & Hers Health Inc', 'Telehealth / Wellness', 'not_approved', 'Under $50', 38.06)
+ON CONFLICT (ticker) DO NOTHING;
 
 -- New columns on quotes table for Bollinger Band data
 ALTER TABLE quotes ADD COLUMN IF NOT EXISTS bb_position     NUMERIC;
