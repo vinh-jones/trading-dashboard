@@ -114,39 +114,41 @@ function ruleUncoveredShares(positions, quoteMap) {
         return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
       }, 0) ?? 0;
 
-      const quote = quoteMap.get(s.ticker);
-      const ivRank = quote?.iv_rank ?? null;
-      const iv     = quote?.iv     ?? null;
+      const quote     = quoteMap.get(s.ticker);
+      const ivRank    = quote?.iv_rank ?? null;
+      const iv        = quote?.iv      ?? null;
+      const costBasis = s.cost_basis_total ?? 0;
 
-      let ivGuidance, ivDisplay;
-      if (ivRank != null) {
-        ivDisplay = `IV rank ${ivRank.toFixed(0)}`;
-        if (ivRank >= 50)      ivGuidance = "favorable";
-        else if (ivRank >= 25) ivGuidance = "moderate";
-        else                   ivGuidance = "unfavorable";
-      } else if (iv != null) {
-        ivDisplay = `IV ${(iv * 100).toFixed(0)}%`;
-        if (iv >= 0.45)      ivGuidance = "favorable";
-        else if (iv >= 0.25) ivGuidance = "moderate";
-        else                 ivGuidance = "unfavorable";
+      let ivSuffix;
+
+      if (ivRank == null && iv == null) {
+        // Both missing — still fire P1, note data gap, never suppress
+        ivSuffix = " IV data unavailable.";
       } else {
-        ivDisplay  = null;
-        ivGuidance = "unknown";
+        // Composite 60/40 weighted score
+        // iv_rank weighted 60%: historically favorable conditions for this name
+        // raw iv weighted 40%: absolute premium size, capped at 150% to prevent distortion
+        const rankComponent = ivRank != null ? (ivRank / 100) * 0.60 : 0;
+        const ivComponent   = iv     != null ? Math.min(iv / 1.50, 1.0) * 0.40 : 0;
+        const score         = rankComponent + ivComponent;
+
+        let quality, guidance;
+        if (score >= 0.65) {
+          quality  = "Strong";
+          guidance = "Good window to write CC.";
+        } else if (score >= 0.45) {
+          quality  = "Moderate";
+          guidance = "Acceptable conditions to write CC.";
+        } else {
+          quality  = "Weak";
+          guidance = "Consider waiting for better premium.";
+        }
+
+        const rawIvDisplay  = iv     != null ? `${(iv * 100).toFixed(0)}%` : "N/A";
+        const ivRankDisplay = ivRank != null ? ivRank.toFixed(1)            : "N/A";
+
+        ivSuffix = ` IV ${rawIvDisplay} · IV Rank ${ivRankDisplay} · Premium quality: ${quality} (${score.toFixed(2)}). ${guidance}`;
       }
-
-      const guidanceText = {
-        favorable:   "IV elevated — good window to write CC.",
-        moderate:    "IV moderate — acceptable conditions for CC.",
-        unfavorable: "IV low — consider waiting for better premium.",
-        unknown:     null,
-      }[ivGuidance];
-
-      const costBasis  = s.cost_basis_total ?? 0;
-      const ivSuffix   = ivDisplay && guidanceText
-        ? ` ${ivDisplay}. ${guidanceText}`
-        : ivDisplay
-        ? ` ${ivDisplay}.`
-        : "";
 
       items.push({
         id:       `uncovered-${s.ticker}`,
