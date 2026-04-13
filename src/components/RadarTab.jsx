@@ -206,7 +206,7 @@ function ScoreBar({ score }) {
 
 // ── Compact row ───────────────────────────────────────────────────────────────
 
-function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
+function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank);
@@ -215,6 +215,12 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
   const bucketColors = bucket ? BB_BUCKET_COLORS[bucket] : null;
   const indicators   = getPositionIndicators(ticker, positions);
   const earningsWarn = getEarningsWarning(ticker, marketContext);
+
+  // Highlight the active sort field's value
+  const sortId = sortBy?.id;
+  const highlight = (field) => sortId === field
+    ? { color: theme.blue, fontWeight: 700 }
+    : {};
 
   const rowBg = label === "Strong" ? SCORE_ROW_BG.Strong
     : label === "Weak"   ? SCORE_ROW_BG.Weak
@@ -268,33 +274,33 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
 
         {/* BB value */}
         {bb_position != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("bb") }}>
             BB: {bb_position.toFixed(2)}
           </span>
         )}
 
         {/* IV */}
-        <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+        <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_raw") }}>
           {iv != null ? `IV: ${Math.round(iv * 100)}%` : "IV pending"}
         </span>
 
         {/* IVR */}
         {iv_rank != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_rank") }}>
             IVR: {iv_rank.toFixed(1)}
           </span>
         )}
 
         {/* Composite IV */}
         {ivComp != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_composite") }}>
             IVC: {ivComp.toFixed(2)}
           </span>
         )}
 
         {/* P/E */}
         {pe_ttm != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("pe") }}>
             P/E: {pe_ttm.toFixed(1)}
           </span>
         )}
@@ -916,6 +922,7 @@ export function RadarTab({ positions = null }) {
               marketContext={marketContext}
               expanded={expandedTicker === row.ticker}
               onToggle={() => handleRowToggle(row.ticker)}
+              sortBy={sortBy}
             />
           ))
         )}
