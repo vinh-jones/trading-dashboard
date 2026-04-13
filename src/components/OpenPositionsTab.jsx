@@ -94,6 +94,7 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   // State 4-6: have data — render roll windows
   const { current_cc_mid, assignment_strike,
           roll_14dte_expiry, roll_14dte_dte, roll_14dte_strike, roll_14dte_mid, roll_14dte_net, roll_14dte_viable,
+          roll_21dte_expiry, roll_21dte_dte, roll_21dte_strike, roll_21dte_mid, roll_21dte_net, roll_21dte_viable,
           roll_28dte_expiry, roll_28dte_dte, roll_28dte_strike, roll_28dte_mid, roll_28dte_net, roll_28dte_viable,
           any_viable, data_sufficient, notes } = rollData;
 
@@ -175,6 +176,11 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
         mid={roll_14dte_mid} net={roll_14dte_net} viable={roll_14dte_viable}
       />
       <RollRow
+        label="21 DTE"
+        expiry={roll_21dte_expiry} dte={roll_21dte_dte} strike={roll_21dte_strike}
+        mid={roll_21dte_mid} net={roll_21dte_net} viable={roll_21dte_viable}
+      />
+      <RollRow
         label="28 DTE"
         expiry={roll_28dte_expiry} dte={roll_28dte_dte} strike={roll_28dte_strike}
         mid={roll_28dte_mid} net={roll_28dte_net} viable={roll_28dte_viable}
@@ -182,9 +188,11 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
 
       {any_viable && (
         <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: theme.green, fontWeight: 600 }}>
-          {roll_14dte_viable && `Roll to $${roll_14dte_strike ?? assignment_strike} for net +$${roll_14dte_net?.toFixed(2)} credit (14 DTE)`}
-          {roll_14dte_viable && roll_28dte_viable && " or"}
-          {roll_28dte_viable && `${roll_14dte_viable ? " r" : "R"}oll to $${roll_28dte_strike ?? assignment_strike} for net +$${roll_28dte_net?.toFixed(2)} credit (28 DTE)`}.
+          {[
+            roll_14dte_viable && `$${roll_14dte_strike ?? assignment_strike}C +$${roll_14dte_net?.toFixed(2)} credit (14 DTE)`,
+            roll_21dte_viable && `$${roll_21dte_strike ?? assignment_strike}C +$${roll_21dte_net?.toFixed(2)} credit (21 DTE)`,
+            roll_28dte_viable && `$${roll_28dte_strike ?? assignment_strike}C +$${roll_28dte_net?.toFixed(2)} credit (28 DTE)`,
+          ].filter(Boolean).join(" · ")}
         </div>
       )}
 
