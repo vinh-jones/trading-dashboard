@@ -309,7 +309,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
       {expanded && (
         <ExpandedPanel
           row={row}
-          positions={positions}
+          indicators={indicators}
           marketContext={marketContext}
           bucket={bucket}
           score={score}
@@ -321,13 +321,12 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, positions, marketContext, bucket, score }) {
+function ExpandedPanel({ row, indicators, marketContext, bucket, score }) {
   const { ticker, company, sector, price_category, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20 } = row;
 
   const ivComp    = compositeIv(iv, iv_rank);
   const label     = scoreLabel(score);
   const ivLabel   = scoreLabel(ivComp != null ? ivComp : null);
-  const indicators = getPositionIndicators(ticker, positions);
 
   // Earnings info
   const earningsDate = marketContext?.positions?.find(p => p.ticker === ticker)?.nextEarnings?.date ?? null;
@@ -544,6 +543,18 @@ function FilterBtn({ label, active, onClick }) {
   );
 }
 
+// ── Sort button ───────────────────────────────────────────────────────────────
+
+function SortBtn({ id, label, sortBy, setSortBy }) {
+  return (
+    <FilterBtn
+      label={sortBy === id ? `${label} ▼` : label}
+      active={sortBy === id}
+      onClick={() => setSortBy(id)}
+    />
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function RadarTab({ positions = [], marketContext = null }) {
@@ -655,14 +666,6 @@ export function RadarTab({ positions = [], marketContext = null }) {
     );
   }
 
-  const SortBtn = ({ id, label }) => (
-    <FilterBtn
-      label={sortBy === id ? `${label} ▼` : label}
-      active={sortBy === id}
-      onClick={() => setSortBy(id)}
-    />
-  );
-
   return (
     <div>
       {/* ── Filter + sort bar ── */}
@@ -688,9 +691,9 @@ export function RadarTab({ positions = [], marketContext = null }) {
         {/* Sort buttons + stats row */}
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], flexWrap: "wrap" }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Sort by:</span>
-          <SortBtn id="score"   label="Scanner Score" />
-          <SortBtn id="bb"      label="BB Position" />
-          <SortBtn id="iv_rank" label="IV Rank" />
+          <SortBtn id="score"   label="Scanner Score" sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="bb"      label="BB Position" sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="iv_rank" label="IV Rank" sortBy={sortBy} setSortBy={setSortBy} />
 
           <div style={{ flex: 1 }} />
 
