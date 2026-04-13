@@ -158,7 +158,7 @@ export default function TradeDashboard() {
         {activeTab === "focus" && <FocusTab />}
         {activeTab === "positions" && <OpenPositionsTab />}
         {activeTab === "journal" && <JournalTab />}
-        {activeTab === "radar" && <RadarTab positions={positions} marketContext={null} />}
+        {activeTab === "radar" && <RadarTab positions={positions} />}
       </div>
     </div>
     </DataContext.Provider>

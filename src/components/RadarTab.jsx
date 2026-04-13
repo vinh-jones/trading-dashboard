@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import marketContextDev from "../data/market-context.json";
 import { theme } from "../lib/theme";
 import { useRadar } from "../hooks/useRadar";
 
@@ -557,13 +558,25 @@ function SortBtn({ id, label, sortBy, setSortBy }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function RadarTab({ positions = [], marketContext = null }) {
+export function RadarTab({ positions = [] }) {
   const { rows, loading, error } = useRadar();
 
+  const [marketContext, setMarketContext] = useState(null);
   const [bbFilter, setBbFilter]         = useState("all");
   const [sortBy, setSortBy]             = useState("score");
   const [hideHeld, setHideHeld]         = useState(false);
   const [expandedTicker, setExpandedTicker] = useState(null);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD) {
+      setMarketContext(marketContextDev);
+      return;
+    }
+    fetch("/api/focus-context")
+      .then(r => r.json())
+      .then(data => { if (data.ok && data.marketContext) setMarketContext(data.marketContext); })
+      .catch(err => console.warn("[RadarTab] market context fetch failed:", err.message));
+  }, []);
 
 
   // BB data freshness
