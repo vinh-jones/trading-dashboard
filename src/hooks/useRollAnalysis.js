@@ -35,7 +35,9 @@ function isMarketHours() {
   }).formatToParts(new Date());
   const p    = Object.fromEntries(parts.map(x => [x.type, x.value]));
   const mins = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
-  return !["Sat", "Sun"].includes(p.weekday) && mins >= 9 * 60 + 30 && mins < 16 * 60;
+  // 30-min grace period past close (9:30–16:30 ET) ensures the polling interval
+  // fires at least once after market close to capture final prices
+  return !["Sat", "Sun"].includes(p.weekday) && mins >= 9 * 60 + 30 && mins < 16 * 60 + 30;
 }
 
 export function useRollAnalysis() {
