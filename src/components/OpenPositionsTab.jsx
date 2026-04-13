@@ -186,16 +186,6 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
         mid={roll_28dte_mid} net={roll_28dte_net} viable={roll_28dte_viable}
       />
 
-      {any_viable && (
-        <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: theme.green, fontWeight: 600 }}>
-          {[
-            roll_14dte_viable && `$${roll_14dte_strike ?? assignment_strike}C +$${roll_14dte_net?.toFixed(2)} credit (14 DTE)`,
-            roll_21dte_viable && `$${roll_21dte_strike ?? assignment_strike}C +$${roll_21dte_net?.toFixed(2)} credit (21 DTE)`,
-            roll_28dte_viable && `$${roll_28dte_strike ?? assignment_strike}C +$${roll_28dte_net?.toFixed(2)} credit (28 DTE)`,
-          ].filter(Boolean).join(" · ")}
-        </div>
-      )}
-
       {!any_viable && data_sufficient && (
         <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: theme.text.subtle }}>
           No net-neutral or better roll currently available.
