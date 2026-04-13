@@ -15,6 +15,7 @@ import { CalendarTab } from "./components/CalendarTab";
 import { OpenPositionsTab } from "./components/OpenPositionsTab";
 import { JournalTab } from "./components/journal/JournalTab";
 import { FocusTab } from "./components/FocusTab";
+import { RadarTab } from "./components/RadarTab";
 
 export default function TradeDashboard() {
   // ── Data state — initialized from static JSON imports ──
@@ -103,6 +104,9 @@ export default function TradeDashboard() {
           <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
             YTD Summary
           </button>
+          <button style={tabStyle("radar")} onClick={() => setActiveTab("radar")}>
+            Radar
+          </button>
         </div>
 
         {/* Active filter chips — shown on Summary and Calendar */}
@@ -154,6 +158,7 @@ export default function TradeDashboard() {
         {activeTab === "focus" && <FocusTab />}
         {activeTab === "positions" && <OpenPositionsTab />}
         {activeTab === "journal" && <JournalTab />}
+        {activeTab === "radar" && <RadarTab positions={positions} />}
       </div>
     </div>
     </DataContext.Provider>
