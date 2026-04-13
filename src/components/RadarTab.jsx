@@ -2,6 +2,10 @@ import { useState, useMemo, useEffect } from "react";
 import marketContextDev from "../data/market-context.json";
 import { theme } from "../lib/theme";
 import { useRadar } from "../hooks/useRadar";
+import { supabase } from "../lib/supabase";
+import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
+import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
+import RadarPresetBar from "./radar/RadarPresetBar";
 
 // ── Score computation ─────────────────────────────────────────────────────────
 
@@ -98,6 +102,13 @@ function getEarningsWarning(ticker, marketContext) {
   const daysAway = Math.ceil((new Date(ctx.nextEarnings.date) - new Date()) / (1000 * 60 * 60 * 24));
   if (daysAway <= 21 && daysAway >= 0) return `⚠ Earnings ${ctx.nextEarnings.date}`;
   return null;
+}
+
+function getEarningsDaysAway(ticker, marketContext) {
+  if (!marketContext?.positions) return null;
+  const ctx = marketContext.positions.find(p => p.ticker === ticker);
+  if (!ctx?.nextEarnings?.date) return null;
+  return Math.ceil((new Date(ctx.nextEarnings.date) - new Date()) / (1000 * 60 * 60 * 24));
 }
 
 // ── Plain-English explanations ────────────────────────────────────────────────
@@ -597,11 +608,15 @@ function SortBtn({ id, label, sortBy, setSortBy }) {
 export function RadarTab({ positions = null }) {
   const { rows, loading, error } = useRadar();
 
-  const [marketContext, setMarketContext] = useState(null);
-  const [bbFilter, setBbFilter]         = useState("all");
-  const [sortBy, setSortBy]             = useState("score");
-  const [hideHeld, setHideHeld]         = useState(false);
-  const [expandedTicker, setExpandedTicker] = useState(null);
+  const [marketContext, setMarketContext]       = useState(null);
+  const [bbFilter, setBbFilter]                 = useState("all");
+  const [sortBy, setSortBy]                     = useState("score");
+  const [expandedTicker, setExpandedTicker]     = useState(null);
+  const [advancedFilters, setAdvancedFilters]   = useState(DEFAULT_FILTERS);
+  const [filtersExpanded, setFiltersExpanded]   = useState(false);
+  const [presets, setPresets]                   = useState([]);
+  const [activePresetId, setActivePresetId]     = useState(null);
+  const [saveModalOpen, setSaveModalOpen]       = useState(false);
 
   useEffect(() => {
     if (!import.meta.env.PROD) {
@@ -614,6 +629,11 @@ export function RadarTab({ positions = null }) {
       .catch(err => console.warn("[RadarTab] market context fetch failed:", err.message));
   }, []);
 
+  // Load presets from Supabase
+  useEffect(() => {
+    supabase.from('radar_presets').select('*').order('display_order', { ascending: true })
+      .then(({ data }) => { if (data) setPresets(data); });
+  }, []);
 
   // BB data freshness
   const bbAsOf = useMemo(() => {
@@ -636,19 +656,63 @@ export function RadarTab({ positions = null }) {
     return (new Date() - new Date(bbAsOf)) / (1000 * 60 * 60) > 2.5;
   }, [bbAsOf]);
 
+  // Filter handlers
+  function updateFilter(field, value) {
+    setActivePresetId(null); // deactivate preset on any manual filter change
+    setAdvancedFilters(prev => ({ ...prev, [field]: value }));
+  }
+
+  function applyPreset(preset) {
+    if (!preset) {
+      setActivePresetId(null);
+      setAdvancedFilters(DEFAULT_FILTERS);
+      return;
+    }
+    setActivePresetId(preset.id);
+    setAdvancedFilters({ ...DEFAULT_FILTERS, ...preset.filters });
+  }
+
   // Filter + sort
   const processedRows = useMemo(() => {
     let result = [...rows];
 
-    // 1. BB filter
+    // 1. BB bucket filter
     if (bbFilter !== "all") {
       result = result.filter(r => bbBucket(r.bb_position) === bbFilter);
     }
 
-    // 2. Hide held
-    if (hideHeld) {
-      result = result.filter(r => getPositionIndicators(r.ticker, positions).length === 0);
-    }
+    // 2. Advanced filters
+    const f = advancedFilters;
+    const includeSectors = expandGroupsToSectors(f.sectors_include);
+    const excludeSectors = expandGroupsToSectors(f.sectors_exclude);
+
+    result = result.filter(row => {
+      if (f.bb_position_min  !== null && row.bb_position < f.bb_position_min)  return false;
+      if (f.bb_position_max  !== null && row.bb_position > f.bb_position_max)  return false;
+      if (f.raw_iv_min       !== null && row.iv          < f.raw_iv_min)        return false;
+      if (f.raw_iv_max       !== null && row.iv          > f.raw_iv_max)        return false;
+      const civ = compositeIv(row.iv, row.iv_rank);
+      if (f.composite_iv_min !== null && civ             < f.composite_iv_min)  return false;
+      if (f.composite_iv_max !== null && civ             > f.composite_iv_max)  return false;
+      if (f.iv_rank_min      !== null && row.iv_rank     < f.iv_rank_min)       return false;
+      if (f.iv_rank_max      !== null && row.iv_rank     > f.iv_rank_max)       return false;
+      // Sectors
+      if (includeSectors.length > 0) {
+        if (!includeSectors.includes(row.sector)) return false;
+      } else if (excludeSectors.length > 0) {
+        if (excludeSectors.includes(row.sector)) return false;
+      }
+      // Ownership
+      const isHeld = getPositionIndicators(row.ticker, positions).length > 0;
+      if (f.ownership === 'not_held' && isHeld)  return false;
+      if (f.ownership === 'held'     && !isHeld) return false;
+      // Earnings
+      if (f.earnings_days_min !== null) {
+        const days = getEarningsDaysAway(row.ticker, marketContext);
+        if (days !== null && days < f.earnings_days_min) return false;
+      }
+      return true;
+    });
 
     // 3. Sort
     if (sortBy === "score") {
@@ -693,7 +757,7 @@ export function RadarTab({ positions = null }) {
     }
 
     return result;
-  }, [rows, bbFilter, hideHeld, sortBy, positions]);
+  }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext]);
 
   const strongCount = useMemo(() =>
     processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank)) === "Strong").length,
@@ -750,6 +814,25 @@ export function RadarTab({ positions = null }) {
           ))}
         </div>
 
+        {/* Presets row */}
+        <div style={{ marginBottom: theme.space[2] }}>
+          <RadarPresetBar
+            presets={presets}
+            activePresetId={activePresetId}
+            filtersExpanded={filtersExpanded}
+            activeFilterCount={countActiveFilters(advancedFilters)}
+            currentFilters={advancedFilters}
+            onSelect={applyPreset}
+            onPresetsChange={(next, nextActiveId) => {
+              setPresets(next);
+              setActivePresetId(nextActiveId);
+            }}
+            onToggleFilters={() => setFiltersExpanded(e => !e)}
+            saveModalOpen={saveModalOpen}
+            onSaveModalClose={() => setSaveModalOpen(false)}
+          />
+        </div>
+
         {/* Sort buttons row */}
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], flexWrap: "wrap", marginBottom: theme.space[2] }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Sort by:</span>
@@ -760,42 +843,33 @@ export function RadarTab({ positions = null }) {
           <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
         </div>
 
-        {/* Hide held + counts row */}
-        <div style={{ display: "flex", alignItems: "center", gap: theme.space[3] }}>
-          {/* Hide held checkbox */}
-          <label style={{
-            display:    "flex",
-            alignItems: "center",
-            gap:        6,
-            fontSize:   theme.size.sm,
-            color:      theme.text.muted,
-            cursor:     "pointer",
-          }}>
-            <input
-              type="checkbox"
-              checked={hideHeld}
-              onChange={e => setHideHeld(e.target.checked)}
-              style={{ cursor: "pointer" }}
-            />
-            Hide positions I already hold
-          </label>
-
-          {/* Counts */}
-          <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
-            Showing {processedRows.length} tickers
-            {strongCount > 0 && (
-              <span style={{ color: theme.green }}> · {strongCount} strong candidates</span>
-            )}
-          </span>
+        {/* Stats + BB freshness line */}
+        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>
+          {bbAsOfLabel && (
+            <span style={{ color: bbAsOfStale ? theme.amber : theme.text.subtle }}>
+              {bbAsOfStale ? "⚠ " : ""}BB data as of: {bbAsOfLabel}
+              {" · "}
+            </span>
+          )}
+          <span>{processedRows.length} tickers</span>
+          {strongCount > 0 && (
+            <span style={{ color: theme.green }}> · {strongCount} strong candidates</span>
+          )}
         </div>
-
-        {/* BB freshness */}
-        {bbAsOfLabel && (
-          <div style={{ marginTop: theme.space[2], fontSize: theme.size.xs, color: bbAsOfStale ? theme.amber : theme.text.subtle }}>
-            {bbAsOfStale ? "⚠ " : ""}BB data as of: {bbAsOfLabel}
-          </div>
-        )}
       </div>
+
+      {/* Advanced filters panel */}
+      {filtersExpanded && (
+        <RadarAdvancedFilters
+          filters={advancedFilters}
+          onChange={updateFilter}
+          onClear={() => {
+            setAdvancedFilters(DEFAULT_FILTERS);
+            setActivePresetId(null);
+          }}
+          onSavePreset={() => setSaveModalOpen(true)}
+        />
+      )}
 
       {/* ── Rows ── */}
       <div style={panelStyle}>
