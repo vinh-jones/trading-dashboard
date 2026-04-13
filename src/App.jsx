@@ -89,11 +89,14 @@ export default function TradeDashboard() {
 
         {/* Tab bar */}
         <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${theme.border.default}`, marginBottom: theme.space[5], overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
+            Open Positions
+          </button>
           <button style={tabStyle("focus")} onClick={() => setActiveTab("focus")}>
             Focus
           </button>
-          <button style={tabStyle("positions")} onClick={() => setActiveTab("positions")}>
-            Open Positions
+          <button style={tabStyle("radar")} onClick={() => setActiveTab("radar")}>
+            Radar
           </button>
           <button style={tabStyle("journal")} onClick={() => setActiveTab("journal")}>
             Journal
@@ -103,9 +106,6 @@ export default function TradeDashboard() {
           </button>
           <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
             YTD Summary
-          </button>
-          <button style={tabStyle("radar")} onClick={() => setActiveTab("radar")}>
-            Radar
           </button>
         </div>
 
