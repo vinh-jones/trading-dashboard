@@ -20,8 +20,6 @@ function buildOccSymbol(ticker, expiryIso, isCall, strike) {
 function getCostBasisPerShare(lots) {
   const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
   const totalShares  = lots.reduce((sum, lot) => {
-    // Handles both "(100, $530)" and "($121, 300)" formats:
-    // strip dollar amounts, then take the first remaining integer.
     const withoutPrices = (lot.description || "").replace(/\$[\d,]+\.?\d*/g, "");
     const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
     return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
@@ -33,7 +31,6 @@ function getCostBasisPerShare(lots) {
 // ── Roll Analysis card section ────────────────────────────────────────────────
 
 function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, costBasisPerShare, ccStrike, stockPrice, threshold }) {
-  // Only show for below-cost CCs
   if (ccStrike == null || costBasisPerShare == null || ccStrike >= costBasisPerShare) return null;
 
   const labelStyle = {
@@ -51,7 +48,6 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
     marginTop:  theme.space[2],
   };
 
-  // State 1: never checked
   if (!lastCheckedAt && !rollLoading) {
     return (
       <div style={wrapStyle}>
@@ -63,7 +59,6 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
     );
   }
 
-  // State 2: in-flight
   if (rollLoading) {
     return (
       <div style={wrapStyle}>
@@ -73,7 +68,6 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
     );
   }
 
-  // State 3: checked but this ticker was outside the proximity threshold
   if (lastCheckedAt && !rollData) {
     const pctBelow = stockPrice != null
       ? Math.round(((costBasisPerShare - stockPrice) / costBasisPerShare) * 100)
@@ -91,7 +85,6 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
     );
   }
 
-  // State 4-6: have data — render roll windows
   const { current_cc_mid, assignment_strike,
           roll_14dte_expiry, roll_14dte_dte, roll_14dte_strike, roll_14dte_mid, roll_14dte_net, roll_14dte_viable,
           roll_21dte_expiry, roll_21dte_dte, roll_21dte_strike, roll_21dte_mid, roll_21dte_net, roll_21dte_viable,
@@ -201,6 +194,121 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   );
 }
 
+// ── Shared positions table ────────────────────────────────────────────────────
+
+function PositionsTable({ rows, positionType, quoteMap }) {
+  const isLeap = positionType === "leaps";
+  const isCC   = positionType === "ccs";
+
+  const colHeader = (label) => (
+    <th key={label} style={{
+      padding:       "8px 10px",
+      textAlign:     "left",
+      color:         theme.text.muted,
+      fontWeight:    500,
+      fontSize:      theme.size.sm,
+      textTransform: "uppercase",
+      letterSpacing: "0.5px",
+    }}>
+      {label}
+    </th>
+  );
+
+  if (!rows.length) {
+    return (
+      <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, padding: "12px 0" }}>
+        No open {positionType.toUpperCase()} positions.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
+        <thead>
+          <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
+            {[
+              "Ticker", "Strike", "Expiry", "DTE", "% DTE Left",
+              isLeap ? "Cost" : "Premium",
+              "G/L $", "G/L %",
+            ].map(colHeader)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((pos, i) => {
+            const dte = calcDTE(pos.expiry_date);
+
+            let dtePct = null;
+            if (pos.open_date && pos.expiry_date && dte != null) {
+              const totalDays = Math.ceil(
+                (new Date(pos.expiry_date + "T00:00:00") - new Date(pos.open_date + "T00:00:00")) / 86400000
+              );
+              dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
+            }
+            const dtePctColor = dtePct == null ? theme.text.muted
+              : dtePct >= 60 ? theme.green
+              : dtePct >= 20 ? theme.amber
+              : theme.red;
+
+            // G/L
+            let glDollars = null, glPct = null;
+            if (pos.expiry_date && pos.strike != null && pos.contracts) {
+              const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC || isLeap, pos.strike);
+              const mid = quoteMap.get(sym)?.mid;
+              if (mid != null) {
+                if (isLeap) {
+                  // Long: current value vs cost paid
+                  const cost = pos.capital_fronted;
+                  if (cost) {
+                    glDollars = (mid * pos.contracts * 100) - cost;
+                    glPct     = (glDollars / cost) * 100;
+                  }
+                } else {
+                  // Short (CSP or CC): premium collected vs current cost to close
+                  const premium = pos.premium_collected;
+                  if (premium) {
+                    glDollars = premium - (mid * pos.contracts * 100);
+                    glPct     = (glDollars / premium) * 100;
+                  }
+                }
+              }
+            }
+            const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
+
+            const displayValue = isLeap ? pos.capital_fronted : pos.premium_collected;
+            const valueColor   = isLeap ? theme.chart.leaps : theme.green;
+
+            const td = (content, style = {}) => (
+              <td style={{ padding: "9px 10px", ...style }}>{content}</td>
+            );
+
+            return (
+              <tr
+                key={i}
+                style={{ borderBottom: `1px solid ${theme.border.default}` }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#1a3a5c22")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
+                {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary })}
+                {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
+                {td(dte != null ? `${dte}d` : "—", {
+                  color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
+                  fontWeight: dte != null && dte <= 5 ? 600 : 400,
+                })}
+                {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600 })}
+                {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600 })}
+                {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600 })}
+                {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500 })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function OpenPositionsTab() {
@@ -211,11 +319,11 @@ export function OpenPositionsTab() {
 
   const { rollMap, rollLoading, lastCheckedAt, isStale, checkRolls, relativeTime } = useRollAnalysis();
 
+  const [positionTab, setPositionTab] = useState("csps");
   const [threshold, setThreshold]     = useState(25);
   const [thresholdInput, setThresholdInput] = useState("25");
   const [thresholdError, setThresholdError] = useState(null);
 
-  // Re-render every minute so relative time label stays current
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 60000);
@@ -239,12 +347,19 @@ export function OpenPositionsTab() {
     checkRolls(threshold);
   }
 
-  const checkedLabel   = relativeTime();
-  const buttonLabel    = rollLoading
+  const checkedLabel = relativeTime();
+  const buttonLabel  = rollLoading
     ? "Checking…"
     : isStale && lastCheckedAt
     ? "Check Rolls (stale)"
     : "Check Rolls";
+
+  // ── Derived position lists ────────────────────────────────────────────────
+  const open_ccs = assigned_shares.map(pos => pos.active_cc).filter(Boolean);
+  const allOpenLeaps = [
+    ...open_leaps,
+    ...assigned_shares.flatMap(pos => pos.open_leaps ?? []),
+  ];
 
   // ── Allocation chart data ─────────────────────────────────────────────────
   const accountValue = account?.account_value || 1;
@@ -275,11 +390,11 @@ export function OpenPositionsTab() {
     .sort((a, b) => b.totalPct - a.totalPct);
   const SCALE = Math.max(allocRows[0]?.totalPct ?? 0.20, 0.20);
 
-  // Collect ALL open LEAPS
-  const allOpenLeaps = [
-    ...open_leaps,
-    ...assigned_shares.flatMap(pos => pos.open_leaps ?? []),
-  ];
+  const panel = (children, style = {}) => (
+    <div style={{ padding: "20px", background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: 16, ...style }}>
+      {children}
+    </div>
+  );
 
   const sectionHeader = (title) => (
     <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
@@ -287,11 +402,25 @@ export function OpenPositionsTab() {
     </div>
   );
 
-  const panel = (children, style = {}) => (
-    <div style={{ padding: "20px", background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: 16, ...style }}>
-      {children}
-    </div>
-  );
+  // ── Tab button style ──────────────────────────────────────────────────────
+  const tabBtnStyle = (key) => ({
+    padding:      "3px 12px",
+    fontSize:     theme.size.sm,
+    fontFamily:   "inherit",
+    cursor:       "pointer",
+    borderRadius: theme.radius.sm,
+    border:       `1px solid ${positionTab === key ? theme.blue : theme.border.strong}`,
+    background:   positionTab === key ? "rgba(58,130,246,0.15)" : theme.bg.elevated,
+    color:        positionTab === key ? theme.blue : theme.text.secondary,
+    fontWeight:   positionTab === key ? 600 : 400,
+  });
+
+  const positionTabs = [
+    { key: "csps",  label: `CSPs (${open_csps.length})`,      rows: open_csps     },
+    { key: "ccs",   label: `CCs (${open_ccs.length})`,        rows: open_ccs      },
+    { key: "leaps", label: `LEAPs (${allOpenLeaps.length})`,  rows: allOpenLeaps  },
+  ];
+  const activeTab = positionTabs.find(t => t.key === positionTab);
 
   return (
     <div>
@@ -333,127 +462,35 @@ export function OpenPositionsTab() {
         </>
       )}
 
-      {/* ── Open CSPs ── */}
+      {/* ── Open Positions (tabbed: CSPs / CCs / LEAPs) ── */}
       {panel(
         <>
-          {sectionHeader(`Open Cash-Secured Puts (${open_csps.length})`)}
-          {isMobile ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {open_csps.map((csp, i) => {
-                const dte = calcDTE(csp.expiry_date);
-                let dtePct = null;
-                if (csp.open_date && csp.expiry_date && dte != null) {
-                  const totalDays = Math.ceil(
-                    (new Date(csp.expiry_date + "T00:00:00") - new Date(csp.open_date + "T00:00:00")) / 86400000
-                  );
-                  dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
-                }
-                const dtePctColor = dtePct == null ? theme.text.muted
-                  : dtePct >= 60 ? theme.green
-                  : dtePct >= 20 ? theme.amber
-                  : theme.red;
-                return (
-                  <div key={i} style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm, padding: "10px 12px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{csp.ticker}</span>
-                        <span style={{ color: theme.text.primary, fontSize: theme.size.md }}>${csp.strike}</span>
-                        <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{formatExpiry(csp.expiry_date)}</span>
-                      </div>
-                      <span style={{ fontWeight: 600, color: theme.green, fontSize: theme.size.md }}>{formatDollarsFull(csp.premium_collected)}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 12, fontSize: theme.size.sm, flexWrap: "wrap" }}>
-                      <span style={{ color: dte != null && dte <= 5 ? theme.red : theme.text.muted, fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
-                        {dte != null ? `${dte}d` : "—"}
-                      </span>
-                      {dtePct != null && <span style={{ color: dtePctColor, fontWeight: 600 }}>{dtePct.toFixed(0)}% DTE left</span>}
-                    </div>
-                  </div>
-                );
-              })}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: theme.space[2] }}>
+            {sectionHeader("Open Positions")}
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {positionTabs.map(t => (
+                <button key={t.key} style={tabBtnStyle(t.key)} onClick={() => setPositionTab(t.key)}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
-                    {["Ticker", "Strike", "Expiry", "DTE", "% DTE Left", "Premium", "G/L $", "G/L %"].map((h) => (
-                      <th key={h} style={{ padding: "8px 10px", textAlign: "left", color: theme.text.muted, fontWeight: 500, fontSize: theme.size.sm, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {open_csps.map((csp, i) => {
-                    const dte = calcDTE(csp.expiry_date);
-
-                    let dtePct = null;
-                    if (csp.open_date && csp.expiry_date && dte != null) {
-                      const totalDays = Math.ceil(
-                        (new Date(csp.expiry_date + "T00:00:00") - new Date(csp.open_date + "T00:00:00")) / 86400000
-                      );
-                      dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
-                    }
-                    const dtePctColor = dtePct == null ? theme.text.muted
-                      : dtePct >= 60 ? theme.green
-                      : dtePct >= 20 ? theme.amber
-                      : theme.red;
-
-                    let glDollars = null;
-                    let glPct     = null;
-                    if (csp.expiry_date && csp.strike && csp.contracts) {
-                      const sym  = buildOccSymbol(csp.ticker, csp.expiry_date, false, csp.strike);
-                      const mid  = quoteMap.get(sym)?.mid;
-                      if (mid != null && csp.premium_collected) {
-                        const currentCost = mid * csp.contracts * 100;
-                        glDollars = csp.premium_collected - currentCost;
-                        glPct     = (glDollars / csp.premium_collected) * 100;
-                      }
-                    }
-                    const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
-
-                    return (
-                      <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#1a3a5c22")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                      >
-                        <td style={{ padding: "9px 10px", fontWeight: 700, color: theme.text.primary }}>{csp.ticker}</td>
-                        <td style={{ padding: "9px 10px", color: theme.text.primary }}>${csp.strike}</td>
-                        <td style={{ padding: "9px 10px", color: theme.text.muted }}>{formatExpiry(csp.expiry_date)}</td>
-                        <td style={{ padding: "9px 10px", color: dte != null && dte <= 5 ? theme.red : theme.text.muted, fontWeight: dte != null && dte <= 5 ? 600 : 400 }}>
-                          {dte != null ? `${dte}d` : "—"}
-                        </td>
-                        <td style={{ padding: "9px 10px", fontWeight: 600, color: dtePctColor }}>
-                          {dtePct != null ? `${dtePct.toFixed(0)}%` : "—"}
-                        </td>
-                        <td style={{ padding: "9px 10px", color: theme.green, fontWeight: 600 }}>{formatDollarsFull(csp.premium_collected)}</td>
-                        <td style={{ padding: "9px 10px", color: glColor, fontWeight: 600 }}>
-                          {glDollars != null ? formatDollarsFull(glDollars) : "—"}
-                        </td>
-                        <td style={{ padding: "9px 10px", color: glColor, fontWeight: 500 }}>
-                          {glPct != null ? `${glPct.toFixed(1)}%` : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          </div>
+          <PositionsTable
+            rows={activeTab?.rows ?? []}
+            positionType={positionTab}
+            quoteMap={quoteMap}
+          />
         </>
       )}
 
       {/* ── Assigned Shares ── */}
       {panel(
         <>
-          {/* Section header + Check Rolls controls */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: theme.space[2], marginBottom: 14 }}>
             <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
               Assigned Shares ({assigned_shares.length} tickers)
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
-              {/* Proximity threshold input */}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Proximity threshold:</span>
                 <input
@@ -462,15 +499,15 @@ export function OpenPositionsTab() {
                   onChange={handleThresholdChange}
                   min={10} max={50} step={5}
                   style={{
-                    width:         46,
-                    background:    theme.bg.elevated,
-                    border:        `1px solid ${thresholdError ? theme.red : theme.border.strong}`,
-                    borderRadius:  theme.radius.sm,
-                    color:         thresholdError ? theme.red : theme.text.primary,
-                    fontSize:      theme.size.sm,
-                    fontFamily:    "inherit",
-                    padding:       "2px 6px",
-                    textAlign:     "right",
+                    width:        46,
+                    background:   theme.bg.elevated,
+                    border:       `1px solid ${thresholdError ? theme.red : theme.border.strong}`,
+                    borderRadius: theme.radius.sm,
+                    color:        thresholdError ? theme.red : theme.text.primary,
+                    fontSize:     theme.size.sm,
+                    fontFamily:   "inherit",
+                    padding:      "2px 6px",
+                    textAlign:    "right",
                   }}
                 />
                 <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>%</span>
@@ -479,7 +516,6 @@ export function OpenPositionsTab() {
                 )}
               </div>
 
-              {/* Check Rolls button */}
               <button
                 onClick={handleCheckRolls}
                 disabled={rollLoading || !!thresholdError}
@@ -498,7 +534,6 @@ export function OpenPositionsTab() {
                 ↻ {buttonLabel}
               </button>
 
-              {/* Last checked label */}
               {checkedLabel && (
                 <span style={{ fontSize: theme.size.xs, color: isStale ? theme.amber : theme.text.faint }}>
                   Last checked: {checkedLabel}
@@ -507,7 +542,6 @@ export function OpenPositionsTab() {
             </div>
           </div>
 
-          {/* Cards grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
             {assigned_shares.map((pos) => {
               const cc  = pos.active_cc;
@@ -519,7 +553,6 @@ export function OpenPositionsTab() {
 
               return (
                 <div key={pos.ticker} style={{ background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}`, padding: "16px" }}>
-                  {/* Header */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
                     <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary }}>{pos.ticker}</span>
                     <span style={{ fontSize: theme.size.md, color: theme.text.muted }}>
@@ -527,7 +560,6 @@ export function OpenPositionsTab() {
                     </span>
                   </div>
 
-                  {/* Lots */}
                   <div style={{ marginBottom: 10 }}>
                     {pos.positions.map((p, i) => (
                       <div key={i} style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: 2 }}>
@@ -536,7 +568,6 @@ export function OpenPositionsTab() {
                     ))}
                   </div>
 
-                  {/* Active CC */}
                   {cc ? (
                     <div style={{ padding: "10px 12px", background: "#1a4a3a", border: "1px solid #2a6a5a", borderRadius: theme.radius.sm }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -566,7 +597,6 @@ export function OpenPositionsTab() {
                     </div>
                   )}
 
-                  {/* Roll Analysis section — only for below-cost CCs */}
                   {cc && (
                     <RollAnalysisSection
                       ticker={pos.ticker}
@@ -582,26 +612,6 @@ export function OpenPositionsTab() {
                 </div>
               );
             })}
-          </div>
-        </>
-      )}
-
-      {/* ── Open LEAPS ── */}
-      {panel(
-        <>
-          {sectionHeader(`Open LEAPS (${allOpenLeaps.length})`)}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {allOpenLeaps.map((l, i) => (
-              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 14px", background: "#2a1a3a", border: "1px solid #4a2a5c", borderRadius: theme.radius.sm }}>
-                <div>
-                  <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary, marginRight: 12 }}>{l.ticker}</span>
-                  <span style={{ fontSize: theme.size.md, color: theme.chart.leaps }}>{l.description}</span>
-                </div>
-                <div style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
-                  Capital: <span style={{ color: theme.text.primary, fontWeight: 600 }}>{formatDollarsFull(l.capital_fronted)}</span>
-                </div>
-              </div>
-            ))}
           </div>
         </>
       )}
