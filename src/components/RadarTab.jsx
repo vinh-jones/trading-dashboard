@@ -145,6 +145,13 @@ const IV_EXPLANATIONS = {
     `Raw IV of ${(ivPct * 100).toFixed(0)}% is ${ivPct > 0.60 ? "meaningful in absolute terms" : "moderate in absolute terms"}. ` +
     `Acceptable conditions to sell premium. Composite score: ${composite.toFixed(2)}.`,
 
+  Neutral: (ticker, ivPct, ivRank, composite) =>
+    `IV rank of ${ivRank.toFixed(1)} puts ${ticker} in the middle of its historical range. ` +
+    `Options are priced near their median levels for the past year. ` +
+    `Raw IV of ${(ivPct * 100).toFixed(0)}% offers modest premium. ` +
+    `Acceptable conditions for premium selling, though not a high-conviction IV setup. ` +
+    `Composite score: ${composite.toFixed(2)}.`,
+
   Weak: (ticker, ivPct, ivRank, composite) =>
     `IV rank of ${ivRank.toFixed(1)} puts ${ticker} near its cheapest options levels of the past year. ` +
     `Raw IV of ${(ivPct * 100).toFixed(0)}% means premium is thin. ` +
@@ -558,7 +565,7 @@ function SortBtn({ id, label, sortBy, setSortBy }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function RadarTab({ positions = [] }) {
+export function RadarTab({ positions = null }) {
   const { rows, loading, error } = useRadar();
 
   const [marketContext, setMarketContext] = useState(null);
@@ -594,13 +601,13 @@ export function RadarTab({ positions = [] }) {
     const d = new Date(bbAsOf);
     const now = new Date();
     const ageHours = (now - d) / (1000 * 60 * 60);
-    if (ageHours > 3) return "Data may be stale";
+    if (ageHours > 2.5) return "Data may be stale";
     return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
   }, [bbAsOf]);
 
   const bbAsOfStale = useMemo(() => {
     if (!bbAsOf) return false;
-    return (new Date() - new Date(bbAsOf)) / (1000 * 60 * 60) > 3;
+    return (new Date() - new Date(bbAsOf)) / (1000 * 60 * 60) > 2.5;
   }, [bbAsOf]);
 
   // Filter + sort
