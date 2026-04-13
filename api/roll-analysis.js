@@ -126,11 +126,12 @@ function findNearestExpiry(fridays, targetDTE) {
 // ── Strike rounding ───────────────────────────────────────────────────────────
 
 function candidateStrikes(costBasis) {
-  const r1   = Math.round(parseFloat(costBasis));
-  const r500 = Math.round(parseFloat(costBasis) / 5) * 5;
-  // Include adjacent $1 strikes so we still find a real contract when the
-  // exact rounded strike doesn't exist in the option chain (e.g. IREN: no $52, only $51/$55)
-  return [...new Set([r1 - 1, r1, r1 + 1, r500])].filter(s => s > 0);
+  const r1    = Math.round(parseFloat(costBasis));
+  const r500  = Math.round(parseFloat(costBasis) / 5) * 5;
+  // r1-1/r1/r1+1 handles chains with $1 increment gaps around cost basis
+  // r500+5 ensures the next $5 strike above is always tried so we can
+  // prefer a strike at/above assignment price when the exact one doesn't exist
+  return [...new Set([r1 - 1, r1, r1 + 1, r500, r500 + 5])].filter(s => s > 0);
 }
 
 // ── Cost basis helpers ────────────────────────────────────────────────────────
@@ -244,9 +245,10 @@ export default async function handler(req, res) {
       // 5. Calculate target expiry dates from upcoming Fridays
       const allFridays = getUpcomingFridays(TODAY, 70);
       const target14   = findNearestExpiry(allFridays, 14);
+      const target21   = findNearestExpiry(allFridays, 21);
       const target28   = findNearestExpiry(allFridays, 28);
 
-      // 6. Build roll instrument list (3 strike candidates × 2 expiry windows per ticker)
+      // 6. Build roll instrument list (candidates × 3 expiry windows per ticker, single batch)
       const rollInstruments   = [];
       const seenSymbols       = new Set();
       const planByTicker      = {};
@@ -254,22 +256,19 @@ export default async function handler(req, res) {
       for (const pos of qualifiedPositions) {
         const strikes      = candidateStrikes(pos.costBasisPerShare);
         const candidates14 = [];
+        const candidates21 = [];
         const candidates28 = [];
 
         for (const strike of strikes) {
-          if (target14) {
-            const sym = buildOccSymbol(pos.ticker, target14.expiry, true, strike);
+          for (const [target, bucket] of [[target14, candidates14], [target21, candidates21], [target28, candidates28]]) {
+            if (!target) continue;
+            const sym = buildOccSymbol(pos.ticker, target.expiry, true, strike);
             if (!seenSymbols.has(sym)) { seenSymbols.add(sym); rollInstruments.push({ symbol: sym, type: "OPTION" }); }
-            candidates14.push({ sym, strike });
-          }
-          if (target28) {
-            const sym = buildOccSymbol(pos.ticker, target28.expiry, true, strike);
-            if (!seenSymbols.has(sym)) { seenSymbols.add(sym); rollInstruments.push({ symbol: sym, type: "OPTION" }); }
-            candidates28.push({ sym, strike });
+            bucket.push({ sym, strike });
           }
         }
 
-        planByTicker[pos.ticker] = { pos, candidates14, candidates28 };
+        planByTicker[pos.ticker] = { pos, candidates14, candidates21, candidates28 };
       }
 
       // 7. Fetch roll premiums from Public.com
@@ -290,36 +289,43 @@ export default async function handler(req, res) {
       }
 
       // 8. Run roll math and build result rows
-      function bestCandidate(candidates) {
-        let best = null;
-        for (const c of candidates) {
-          const q = rollQuoteMap[c.sym];
-          if (q?.outcome === "SUCCESS" && q.mid != null) {
-            if (!best || q.mid > best.mid) best = { sym: c.sym, strike: c.strike, mid: q.mid };
-          }
-        }
-        return best;
+      // Prefer the lowest available strike at or above assignment price;
+      // fall back to the highest strike below (nearest from below) if nothing above succeeds.
+      function bestCandidate(candidates, assignmentStrike) {
+        const live = candidates
+          .filter(c => rollQuoteMap[c.sym]?.outcome === "SUCCESS" && rollQuoteMap[c.sym].mid != null)
+          .map(c => ({ ...c, mid: rollQuoteMap[c.sym].mid }));
+        if (!live.length) return null;
+        const atOrAbove = live.filter(c => c.strike >= assignmentStrike);
+        if (atOrAbove.length) return atOrAbove.reduce((a, b) => a.strike < b.strike ? a : b);
+        return live.reduce((a, b) => a.strike > b.strike ? a : b);
       }
 
       const now = new Date().toISOString();
       const upsertRows = [];
 
       for (const [ticker, plan] of Object.entries(planByTicker)) {
-        const { pos, candidates14, candidates28 } = plan;
-        const currentCCMid    = quoteCache[pos.ccOccSym] ?? null;
-        const stockPrice      = quoteCache[ticker]        ?? null;
+        const { pos, candidates14, candidates21, candidates28 } = plan;
+        const currentCCMid     = quoteCache[pos.ccOccSym] ?? null;
+        const stockPrice       = quoteCache[ticker]        ?? null;
         const assignmentStrike = Math.round(pos.costBasisPerShare);
 
-        const best14 = bestCandidate(candidates14);
-        const best28 = bestCandidate(candidates28);
+        const best14 = bestCandidate(candidates14, assignmentStrike);
+        const best21 = bestCandidate(candidates21, assignmentStrike);
+        const best28 = bestCandidate(candidates28, assignmentStrike);
 
         const roll14Mid    = best14?.mid    ?? null;
         const roll14Strike = best14?.strike ?? null;
+        const roll21Mid    = best21?.mid    ?? null;
+        const roll21Strike = best21?.strike ?? null;
         const roll28Mid    = best28?.mid    ?? null;
         const roll28Strike = best28?.strike ?? null;
+
         const roll14Net    = roll14Mid != null && currentCCMid != null ? Math.round((roll14Mid - currentCCMid) * 100) / 100 : null;
+        const roll21Net    = roll21Mid != null && currentCCMid != null ? Math.round((roll21Mid - currentCCMid) * 100) / 100 : null;
         const roll28Net    = roll28Mid != null && currentCCMid != null ? Math.round((roll28Mid - currentCCMid) * 100) / 100 : null;
         const roll14Viable = roll14Net != null ? roll14Net >= 0 : null;
+        const roll21Viable = roll21Net != null ? roll21Net >= 0 : null;
         const roll28Viable = roll28Net != null ? roll28Net >= 0 : null;
 
         // Detect monthly-only case: 14 DTE target exists but no candidates succeeded
@@ -347,14 +353,20 @@ export default async function handler(req, res) {
           roll_14dte_mid:       roll14Mid,
           roll_14dte_net:       roll14Net,
           roll_14dte_viable:    roll14Viable,
+          roll_21dte_expiry:    target21?.expiry ?? null,
+          roll_21dte_dte:       target21?.dte    ?? null,
+          roll_21dte_strike:    roll21Strike,
+          roll_21dte_mid:       roll21Mid,
+          roll_21dte_net:       roll21Net,
+          roll_21dte_viable:    roll21Viable,
           roll_28dte_expiry:    target28?.expiry ?? null,
           roll_28dte_dte:       target28?.dte    ?? null,
           roll_28dte_strike:    roll28Strike,
           roll_28dte_mid:       roll28Mid,
           roll_28dte_net:       roll28Net,
           roll_28dte_viable:    roll28Viable,
-          any_viable:           roll14Viable === true || roll28Viable === true,
-          data_sufficient:      currentCCMid != null && (roll14Mid != null || roll28Mid != null),
+          any_viable:           roll14Viable === true || roll21Viable === true || roll28Viable === true,
+          data_sufficient:      currentCCMid != null && (roll14Mid != null || roll21Mid != null || roll28Mid != null),
           notes:                notes.join("; "),
         });
       }
@@ -371,6 +383,7 @@ export default async function handler(req, res) {
         rows:         upsertRows,
         threshold,
         target_14dte: target14,
+        target_21dte: target21,
         target_28dte: target28,
         instruments:  rollInstruments.length,
       });
