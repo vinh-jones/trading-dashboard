@@ -20,11 +20,11 @@ function buildOccSymbol(ticker, expiryIso, isCall, strike) {
 function getCostBasisPerShare(lots) {
   const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
   const totalShares  = lots.reduce((sum, lot) => {
-    const m1 = lot.description?.match(/\((\d[\d,]*)[,\s]/);
-    if (m1) return sum + parseInt(m1[1].replace(/,/g, ""), 10);
-    const m2 = lot.description?.match(/^(\d[\d,]*)/);
-    if (m2) return sum + parseInt(m2[1].replace(/,/g, ""), 10);
-    return sum;
+    // Handles both "(100, $530)" and "($121, 300)" formats:
+    // strip dollar amounts, then take the first remaining integer.
+    const withoutPrices = (lot.description || "").replace(/\$[\d,]+\.?\d*/g, "");
+    const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
+    return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
   }, 0);
   if (!totalShares) return null;
   return totalFronted / totalShares;

@@ -136,11 +136,11 @@ function candidateStrikes(costBasis) {
 
 function parseSharesFromDescription(description) {
   if (!description) return 0;
-  const m1 = description.match(/\((\d[\d,]*)[,\s]/);
-  if (m1) return parseInt(m1[1].replace(/,/g, ""), 10);
-  const m2 = description.match(/^(\d[\d,]*)/);
-  if (m2) return parseInt(m2[1].replace(/,/g, ""), 10);
-  return 0;
+  // Handles both "(100, $530)" and "($121, 300)" formats:
+  // strip all dollar amounts, then take the first remaining integer.
+  const withoutPrices = description.replace(/\$[\d,]+\.?\d*/g, "");
+  const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
+  return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
 }
 
 function getCostBasisPerShare(lots) {
