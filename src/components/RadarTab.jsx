@@ -628,9 +628,6 @@ export function RadarTab({ positions = null }) {
   const bbAsOfLabel = useMemo(() => {
     if (!bbAsOf) return null;
     const d = new Date(bbAsOf);
-    const now = new Date();
-    const ageHours = (now - d) / (1000 * 60 * 60);
-    if (ageHours > 2.5) return "Data may be stale";
     return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
   }, [bbAsOf]);
 
@@ -753,17 +750,18 @@ export function RadarTab({ positions = null }) {
           ))}
         </div>
 
-        {/* Sort buttons + stats row */}
-        <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], flexWrap: "wrap" }}>
+        {/* Sort buttons row */}
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], flexWrap: "wrap", marginBottom: theme.space[2] }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Sort by:</span>
           <SortBtn id="score"        label="Scanner Score" sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="bb"           label="BB Position"   sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_rank"      label="IV Rank"       sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_raw"       label="Raw IV"        sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
+        </div>
 
-          <div style={{ flex: 1 }} />
-
+        {/* Hide held + counts row */}
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[3] }}>
           {/* Hide held checkbox */}
           <label style={{
             display:    "flex",
@@ -772,7 +770,6 @@ export function RadarTab({ positions = null }) {
             fontSize:   theme.size.sm,
             color:      theme.text.muted,
             cursor:     "pointer",
-            flexShrink: 0,
           }}>
             <input
               type="checkbox"
@@ -784,7 +781,7 @@ export function RadarTab({ positions = null }) {
           </label>
 
           {/* Counts */}
-          <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
             Showing {processedRows.length} tickers
             {strongCount > 0 && (
               <span style={{ color: theme.green }}> · {strongCount} strong candidates</span>
