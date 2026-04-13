@@ -208,6 +208,15 @@ export default function RadarAdvancedFilters({
           placeholderMin="e.g. 50"
           placeholderMax="e.g. 90"
         />
+        <RangeInput
+          label="P/E (TTM)"
+          minField="pe_min"
+          maxField="pe_max"
+          filters={filters}
+          onChange={onChange}
+          placeholderMin="e.g. 10"
+          placeholderMax="e.g. 30"
+        />
       </div>
 
       {/* ── Sector toggles ── */}

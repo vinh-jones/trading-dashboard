@@ -23,23 +23,38 @@ export function useRadar() {
 
         const approvedTickers = universe.map((u) => u.ticker);
 
-        // 2. Fetch quotes filtered to approved tickers
-        const { data: quotes, error: quotesErr } = await supabase
-          .from("quotes")
-          .select("symbol, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at")
-          .in("symbol", approvedTickers);
+        // 2. Fetch quotes + fundamentals in parallel
+        const [
+          { data: quotes,       error: quotesErr },
+          { data: fundamentals, error: fundErr   },
+        ] = await Promise.all([
+          supabase
+            .from("quotes")
+            .select("symbol, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at")
+            .in("symbol", approvedTickers),
+          supabase
+            .from("fundamentals")
+            .select("ticker, pe_ttm, pe_annual, eps_ttm")
+            .in("ticker", approvedTickers),
+        ]);
 
         if (quotesErr) throw quotesErr;
+        if (fundErr) console.warn("[useRadar] fundamentals fetch failed:", fundErr.message);
 
-        // 3. Build quotes lookup map
+        // 3. Build lookup maps
         const quotesMap = {};
         for (const q of quotes) {
           quotesMap[q.symbol] = q;
         }
+        const fundMap = {};
+        for (const f of (fundamentals || [])) {
+          fundMap[f.ticker] = f;
+        }
 
-        // 4. Merge universe + quotes
+        // 4. Merge universe + quotes + fundamentals
         const merged = universe.map((u) => {
           const q = quotesMap[u.ticker] || {};
+          const f = fundMap[u.ticker]   || {};
           return {
             ticker:          u.ticker,
             company:         u.company,
@@ -53,6 +68,9 @@ export function useRadar() {
             bb_lower:        q.bb_lower        ?? null,
             bb_sma20:        q.bb_sma20        ?? null,
             bb_refreshed_at: q.bb_refreshed_at ?? null,
+            pe_ttm:          f.pe_ttm           ?? null,
+            pe_annual:       f.pe_annual        ?? null,
+            eps_ttm:         f.eps_ttm          ?? null,
           };
         });
 

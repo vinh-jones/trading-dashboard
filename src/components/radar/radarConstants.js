@@ -76,6 +76,8 @@ export const DEFAULT_FILTERS = {
   composite_iv_max: null,
   iv_rank_min:      null,
   iv_rank_max:      null,
+  pe_min:           null,
+  pe_max:           null,
   sectors_include:  [],
   sectors_exclude:  [],
   earnings_days_min: null,
@@ -92,6 +94,7 @@ export function countActiveFilters(filters) {
     'raw_iv_min',      'raw_iv_max',
     'composite_iv_min','composite_iv_max',
     'iv_rank_min',     'iv_rank_max',
+    'pe_min',          'pe_max',
     'earnings_days_min',
   ];
   numericFields.forEach(f => { if (filters[f] !== null) count++; });
@@ -120,6 +123,8 @@ export function filterSummaryLines(filters) {
   if (filters.iv_rank_max     !== null) lines.push(`IV Rank max: ${filters.iv_rank_max}`);
   if (filters.sectors_include?.length > 0) lines.push(`Include sectors: ${filters.sectors_include.join(', ')}`);
   if (filters.sectors_exclude?.length > 0) lines.push(`Exclude sectors: ${filters.sectors_exclude.join(', ')}`);
+  if (filters.pe_min           !== null) lines.push(`P/E min: ${filters.pe_min}`);
+  if (filters.pe_max           !== null) lines.push(`P/E max: ${filters.pe_max}`);
   if (filters.earnings_days_min !== null) lines.push(`Earnings > ${filters.earnings_days_min} days away`);
   if (filters.ownership !== 'all') lines.push(`Ownership: ${filters.ownership === 'not_held' ? 'Not held' : 'Held'}`);
   return lines;

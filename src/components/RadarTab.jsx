@@ -207,7 +207,7 @@ function ScoreBar({ score }) {
 // ── Compact row ───────────────────────────────────────────────────────────────
 
 function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank);
   const ivComp   = compositeIv(iv, iv_rank);
@@ -292,6 +292,13 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
           </span>
         )}
 
+        {/* P/E */}
+        {pe_ttm != null && (
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0 }}>
+            P/E: {pe_ttm.toFixed(1)}
+          </span>
+        )}
+
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
@@ -340,7 +347,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle }) {
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, indicators, positions, marketContext, bucket, score }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20 } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm } = row;
 
   // Detailed position data for this ticker
   const sharePos    = (positions?.assigned_shares || []).find(s => s.ticker === ticker) ?? null;
@@ -545,6 +552,18 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
         </div>
       )}
 
+      {/* ── Valuation section ── */}
+      <div style={sectionLabelStyle}>Valuation</div>
+      {pe_ttm != null || pe_annual != null || eps_ttm != null ? (
+        <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap" }}>
+          {pe_ttm    != null && fieldRow("P/E TTM",    pe_ttm.toFixed(1))}
+          {pe_annual != null && fieldRow("P/E Annual",  pe_annual.toFixed(1))}
+          {eps_ttm   != null && fieldRow("EPS TTM",    `$${eps_ttm.toFixed(2)}`)}
+        </div>
+      ) : (
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Valuation data pending</div>
+      )}
+
       {/* ── Earnings section ── */}
       <div style={sectionLabelStyle}>Earnings</div>
       {earningsDate ? (
@@ -696,6 +715,9 @@ export function RadarTab({ positions = null }) {
       if (f.composite_iv_max !== null && civ             > f.composite_iv_max)  return false;
       if (f.iv_rank_min      !== null && row.iv_rank     < f.iv_rank_min)       return false;
       if (f.iv_rank_max      !== null && row.iv_rank     > f.iv_rank_max)       return false;
+      // P/E — tickers with no P/E data pass the filter (unknown = no penalty)
+      if (f.pe_min !== null && row.pe_ttm != null && row.pe_ttm < f.pe_min)  return false;
+      if (f.pe_max !== null && row.pe_ttm != null && row.pe_ttm > f.pe_max)  return false;
       // Sectors
       if (includeSectors.length > 0) {
         if (!includeSectors.includes(row.sector)) return false;
@@ -753,6 +775,14 @@ export function RadarTab({ positions = null }) {
         if (ca == null) return 1;
         if (cb == null) return -1;
         return cb - ca;
+      });
+    } else if (sortBy === "pe") {
+      // Ascending — lower P/E first; nulls pushed to end
+      result.sort((a, b) => {
+        if (a.pe_ttm == null && b.pe_ttm == null) return 0;
+        if (a.pe_ttm == null) return 1;
+        if (b.pe_ttm == null) return -1;
+        return a.pe_ttm - b.pe_ttm;
       });
     }
 
@@ -841,6 +871,7 @@ export function RadarTab({ positions = null }) {
           <SortBtn id="iv_rank"      label="IV Rank"       sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_raw"       label="Raw IV"        sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="pe"           label="P/E"           sortBy={sortBy} setSortBy={setSortBy} />
         </div>
 
         {/* Stats + BB freshness line */}
