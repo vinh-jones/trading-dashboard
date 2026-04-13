@@ -1,23 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { theme } from "../../lib/theme";
-import { SECTOR_GROUPS, DEFAULT_FILTERS } from "./radarConstants";
+import { SECTOR_GROUPS } from "./radarConstants";
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
 function SectorTooltip({ group, data }) {
   return (
     <div style={{
-      position:     "absolute",
-      bottom:       "calc(100% + 6px)",
-      left:         "50%",
-      transform:    "translateX(-50%)",
-      background:   theme.bg.elevated,
-      border:       `1px solid ${theme.border.strong}`,
-      borderRadius: theme.radius.md,
-      padding:      `${theme.space[2]}px ${theme.space[3]}px`,
-      zIndex:       100,
-      minWidth:     200,
-      maxWidth:     280,
+      position:      "absolute",
+      bottom:        "calc(100% + 6px)",
+      left:          "50%",
+      transform:     "translateX(-50%)",
+      background:    theme.bg.elevated,
+      border:        `1px solid ${theme.border.strong}`,
+      borderRadius:  theme.radius.md,
+      padding:       `${theme.space[2]}px ${theme.space[3]}px`,
+      zIndex:        300,
+      minWidth:      200,
+      maxWidth:      280,
       pointerEvents: "none",
     }}>
       <div style={{ fontSize: theme.size.xs, fontWeight: 700, color: theme.text.primary, marginBottom: 4 }}>
@@ -69,20 +69,33 @@ function SectorBtn({ group, active, onClick }) {
 }
 
 // ── Numeric range input ───────────────────────────────────────────────────────
+// Uses local string state so partial input like "-", "-0." doesn't reset mid-type.
+// Syncs from external filters when they change (preset applied, clear all).
 
 function RangeInput({ label, minField, maxField, filters, onChange, placeholderMin, placeholderMax, displayScale, storeScale }) {
-  // displayScale: factor to multiply stored value for display (e.g. 100 to show 65 instead of 0.65)
-  // storeScale: factor to multiply display value for storage (e.g. /100)
-
-  function toDisplay(stored) {
+  function storedToDisplay(stored) {
     if (stored === null || stored === undefined) return '';
     return displayScale ? String(Math.round(stored * displayScale)) : String(stored);
   }
 
-  function toStore(display) {
-    const n = parseFloat(display);
-    if (isNaN(n)) return null;
-    return storeScale ? n * storeScale : n;
+  const [minStr, setMinStr] = useState(() => storedToDisplay(filters[minField]));
+  const [maxStr, setMaxStr] = useState(() => storedToDisplay(filters[maxField]));
+
+  // Sync display state when filters change externally (preset load, clear all)
+  useEffect(() => { setMinStr(storedToDisplay(filters[minField])); }, [filters[minField]]);
+  useEffect(() => { setMaxStr(storedToDisplay(filters[maxField])); }, [filters[maxField]]);
+
+  function isPartial(s) {
+    // Allow mid-type states: "-", "0.", "-0.", "-0.1" etc.
+    return s === '-' || s === '.' || s === '-.' || /^-?\d*\.$/.test(s);
+  }
+
+  function handleChange(str, field, setStr) {
+    setStr(str);
+    if (str === '') { onChange(field, null); return; }
+    if (isPartial(str)) return; // don't flush to store yet
+    const n = parseFloat(str);
+    if (!isNaN(n)) onChange(field, storeScale ? n * storeScale : n);
   }
 
   return (
@@ -93,16 +106,16 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
       <div style={{ display: "flex", alignItems: "center", gap: theme.space[1] }}>
         <input
           type="text"
-          value={toDisplay(filters[minField])}
-          onChange={e => onChange(minField, toStore(e.target.value))}
+          value={minStr}
+          onChange={e => handleChange(e.target.value, minField, setMinStr)}
           placeholder={placeholderMin}
           style={inputStyle}
         />
         <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>–</span>
         <input
           type="text"
-          value={toDisplay(filters[maxField])}
-          onChange={e => onChange(maxField, toStore(e.target.value))}
+          value={maxStr}
+          onChange={e => handleChange(e.target.value, maxField, setMaxStr)}
           placeholder={placeholderMax}
           style={inputStyle}
         />
@@ -123,12 +136,20 @@ const inputStyle = {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
+// bare=true    — strips card chrome (background/border/padding); used when embedded in a modal
+// hideFooter=true — hides Clear All / Save as Preset buttons
 
-export default function RadarAdvancedFilters({ filters, onChange, onClear, onSavePreset }) {
+export default function RadarAdvancedFilters({
+  filters,
+  onChange,
+  onClear       = () => {},
+  onSavePreset  = () => {},
+  hideFooter    = false,
+  bare          = false,
+}) {
   const groupNames = Object.keys(SECTOR_GROUPS);
 
   function toggleSectorGroup(row, group) {
-    // row: 'sectors_include' | 'sectors_exclude'
     const current = filters[row] ?? [];
     const next = current.includes(group)
       ? current.filter(g => g !== group)
@@ -136,14 +157,16 @@ export default function RadarAdvancedFilters({ filters, onChange, onClear, onSav
     onChange(row, next);
   }
 
+  const cardStyle = bare ? {} : {
+    background:   theme.bg.surface,
+    border:       `1px solid ${theme.border.default}`,
+    borderRadius: theme.radius.md,
+    padding:      `${theme.space[3]}px ${theme.space[4]}px`,
+    marginBottom: theme.space[3],
+  };
+
   return (
-    <div style={{
-      background:   theme.bg.surface,
-      border:       `1px solid ${theme.border.default}`,
-      borderRadius: theme.radius.md,
-      padding:      `${theme.space[3]}px ${theme.space[4]}px`,
-      marginBottom: theme.space[3],
-    }}>
+    <div style={cardStyle}>
 
       {/* ── Numeric ranges ── */}
       <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[3] }}>
@@ -153,8 +176,8 @@ export default function RadarAdvancedFilters({ filters, onChange, onClear, onSav
           maxField="bb_position_max"
           filters={filters}
           onChange={onChange}
-          placeholderMin="-0.10"
-          placeholderMax="0.25"
+          placeholderMin="e.g. -0.10"
+          placeholderMax="e.g. 0.25"
         />
         <RangeInput
           label="Raw IV (%)"
@@ -189,45 +212,25 @@ export default function RadarAdvancedFilters({ filters, onChange, onClear, onSav
 
       {/* ── Sector toggles ── */}
       <div style={{ marginBottom: theme.space[3] }}>
-        {/* Include row */}
         <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[2] }}>
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, minWidth: 64 }}>
-            Include:
-          </span>
+          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, minWidth: 64 }}>Include:</span>
           {groupNames.map(g => (
-            <SectorBtn
-              key={g}
-              group={g}
-              active={filters.sectors_include?.includes(g)}
-              onClick={() => toggleSectorGroup('sectors_include', g)}
-            />
+            <SectorBtn key={g} group={g} active={filters.sectors_include?.includes(g)} onClick={() => toggleSectorGroup('sectors_include', g)} />
           ))}
         </div>
-
-        {/* Exclude row */}
         <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[1] }}>
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, minWidth: 64 }}>
-            Exclude:
-          </span>
+          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, minWidth: 64 }}>Exclude:</span>
           {groupNames.map(g => (
-            <SectorBtn
-              key={g}
-              group={g}
-              active={filters.sectors_exclude?.includes(g)}
-              onClick={() => toggleSectorGroup('sectors_exclude', g)}
-            />
+            <SectorBtn key={g} group={g} active={filters.sectors_exclude?.includes(g)} onClick={() => toggleSectorGroup('sectors_exclude', g)} />
           ))}
         </div>
-
         <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 4 }}>
           Include takes precedence over Exclude if both are set.
         </div>
       </div>
 
       {/* ── Ownership + Earnings ── */}
-      <div style={{ display: "flex", gap: theme.space[6], flexWrap: "wrap", marginBottom: theme.space[3] }}>
-
-        {/* Ownership radio */}
+      <div style={{ display: "flex", gap: theme.space[6], flexWrap: "wrap", marginBottom: hideFooter ? 0 : theme.space[3] }}>
         <div>
           <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 6 }}>Ownership</div>
           <div style={{ display: "flex", gap: theme.space[3] }}>
@@ -247,7 +250,6 @@ export default function RadarAdvancedFilters({ filters, onChange, onClear, onSav
           </div>
         </div>
 
-        {/* Earnings */}
         <div>
           <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 6 }}>Min days to earnings</div>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
@@ -267,14 +269,12 @@ export default function RadarAdvancedFilters({ filters, onChange, onClear, onSav
       </div>
 
       {/* ── Footer ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={onClear} style={ghostBtnStyle}>
-          Clear All
-        </button>
-        <button onClick={onSavePreset} style={ghostBtnStyle}>
-          Save as Preset
-        </button>
-      </div>
+      {!hideFooter && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: theme.space[3] }}>
+          <button onClick={onClear} style={ghostBtnStyle}>Clear All</button>
+          <button onClick={onSavePreset} style={ghostBtnStyle}>Save as Preset</button>
+        </div>
+      )}
     </div>
   );
 }

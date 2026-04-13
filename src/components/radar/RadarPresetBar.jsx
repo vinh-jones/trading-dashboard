@@ -1,24 +1,27 @@
 import { useState } from "react";
 import { theme } from "../../lib/theme";
 import { supabase } from "../../lib/supabase";
-import { filterSummaryLines } from "./radarConstants";
+import { DEFAULT_FILTERS } from "./radarConstants";
+import RadarAdvancedFilters from "./RadarAdvancedFilters";
 
 const PRESET_BUTTON_THRESHOLD = 5;
 
-// ── Simple modal overlay ──────────────────────────────────────────────────────
+// ── Modal overlay ─────────────────────────────────────────────────────────────
 
-function Modal({ onClose, children }) {
+function Modal({ onClose, wide = false, children }) {
   return (
     <div
       onClick={onClose}
       style={{
-        position:        "fixed",
-        inset:           0,
-        background:      "rgba(0,0,0,0.55)",
-        zIndex:          200,
-        display:         "flex",
-        alignItems:      "center",
-        justifyContent:  "center",
+        position:       "fixed",
+        inset:          0,
+        background:     "rgba(0,0,0,0.55)",
+        zIndex:         200,
+        display:        "flex",
+        alignItems:     "center",
+        justifyContent: "center",
+        padding:        `${theme.space[4]}px`,
+        overflowY:      "auto",
       }}
     >
       <div
@@ -28,8 +31,10 @@ function Modal({ onClose, children }) {
           border:       `1px solid ${theme.border.strong}`,
           borderRadius: theme.radius.md,
           padding:      `${theme.space[4]}px`,
-          minWidth:     320,
-          maxWidth:     400,
+          width:        "100%",
+          maxWidth:     wide ? 740 : 400,
+          maxHeight:    "90vh",
+          overflowY:    "auto",
         }}
       >
         {children}
@@ -40,11 +45,15 @@ function Modal({ onClose, children }) {
 
 // ── Save preset modal ─────────────────────────────────────────────────────────
 
-function SavePresetModal({ filters, onSave, onClose }) {
-  const [name, setName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const summaryLines = filterSummaryLines(filters);
+function SavePresetModal({ initialFilters, onSave, onClose }) {
+  const [name, setName]               = useState('');
+  const [localFilters, setLocalFilters] = useState({ ...DEFAULT_FILTERS, ...initialFilters });
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState(null);
+
+  function handleFilterChange(field, value) {
+    setLocalFilters(prev => ({ ...prev, [field]: value }));
+  }
 
   async function handleSave() {
     if (!name.trim()) { setError('Name is required.'); return; }
@@ -57,7 +66,7 @@ function SavePresetModal({ filters, onSave, onClose }) {
     const maxOrder = existing?.[0]?.display_order ?? 0;
     const { data, error: err } = await supabase
       .from('radar_presets')
-      .insert({ name: name.trim(), filters, display_order: maxOrder + 1, updated_at: new Date().toISOString() })
+      .insert({ name: name.trim(), filters: localFilters, display_order: maxOrder + 1, updated_at: new Date().toISOString() })
       .select()
       .single();
     if (err) { setError(err.message); setSaving(false); return; }
@@ -65,7 +74,7 @@ function SavePresetModal({ filters, onSave, onClose }) {
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} wide>
       <div style={{ fontSize: theme.size.md, fontWeight: 700, color: theme.text.primary, marginBottom: theme.space[3] }}>
         Save Filter Preset
       </div>
@@ -80,21 +89,19 @@ function SavePresetModal({ filters, onSave, onClose }) {
           onChange={e => { setName(e.target.value); setError(null); }}
           placeholder="e.g. High Income"
           style={modalInputStyle}
-          onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+          onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         />
         {error && <div style={{ fontSize: theme.size.xs, color: theme.red, marginTop: 4 }}>{error}</div>}
       </div>
 
-      {summaryLines.length > 0 && (
-        <div style={{ marginBottom: theme.space[3] }}>
-          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 4 }}>Filters being saved:</div>
-          {summaryLines.map((line, i) => (
-            <div key={i} style={{ fontSize: theme.size.xs, color: theme.text.muted }}>· {line}</div>
-          ))}
-        </div>
-      )}
+      <RadarAdvancedFilters
+        filters={localFilters}
+        onChange={handleFilterChange}
+        hideFooter
+        bare
+      />
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: theme.space[2] }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: theme.space[2], marginTop: theme.space[3] }}>
         <button onClick={onClose} style={cancelBtnStyle}>Cancel</button>
         <button onClick={handleSave} disabled={saving} style={primaryBtnStyle}>
           {saving ? 'Saving…' : 'Save Preset'}
@@ -107,17 +114,22 @@ function SavePresetModal({ filters, onSave, onClose }) {
 // ── Edit preset modal ─────────────────────────────────────────────────────────
 
 function EditPresetModal({ preset, onSave, onDelete, onClose }) {
-  const [name, setName] = useState(preset.name);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [name, setName]               = useState(preset.name);
+  const [localFilters, setLocalFilters] = useState({ ...DEFAULT_FILTERS, ...preset.filters });
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function handleFilterChange(field, value) {
+    setLocalFilters(prev => ({ ...prev, [field]: value }));
+  }
 
   async function handleSave() {
     if (!name.trim()) { setError('Name is required.'); return; }
     setSaving(true);
     const { data, error: err } = await supabase
       .from('radar_presets')
-      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .update({ name: name.trim(), filters: localFilters, updated_at: new Date().toISOString() })
       .eq('id', preset.id)
       .select()
       .single();
@@ -150,9 +162,9 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
   }
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} wide>
       <div style={{ fontSize: theme.size.md, fontWeight: 700, color: theme.text.primary, marginBottom: theme.space[3] }}>
-        Edit Preset
+        Edit Preset: {preset.name}
       </div>
 
       <div style={{ marginBottom: theme.space[3] }}>
@@ -164,12 +176,19 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
           value={name}
           onChange={e => { setName(e.target.value); setError(null); }}
           style={modalInputStyle}
-          onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose(); }}
+          onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         />
         {error && <div style={{ fontSize: theme.size.xs, color: theme.red, marginTop: 4 }}>{error}</div>}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <RadarAdvancedFilters
+        filters={localFilters}
+        onChange={handleFilterChange}
+        hideFooter
+        bare
+      />
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: theme.space[3] }}>
         <button onClick={() => setConfirmDelete(true)} style={{ ...cancelBtnStyle, color: theme.red, borderColor: theme.red }}>
           Delete Preset
         </button>
@@ -191,7 +210,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
 
   return (
     <div
-      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -199,35 +218,39 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
         onClick={onSelect}
         style={{
           fontSize:     theme.size.sm,
-          padding:      `3px ${hovered ? '6px' : '10px'} 3px 10px`,
+          padding:      "3px 10px",
           borderRadius: theme.radius.pill,
           border:       `1px solid ${active ? theme.blue : theme.border.default}`,
           background:   active ? theme.blue : "transparent",
           color:        active ? "#fff" : theme.text.muted,
           cursor:       "pointer",
           fontWeight:   active ? 600 : 400,
-          transition:   "all 0.1s",
           whiteSpace:   "nowrap",
         }}
       >
         {preset.name}
       </button>
-      {/* Pencil icon — visible on hover */}
+
+      {/* Edit icon — separate circle button, appears on hover */}
       {hovered && (
         <button
           onClick={e => { e.stopPropagation(); onEdit(); }}
-          style={{
-            fontSize:    theme.size.xs,
-            padding:     "3px 6px 3px 4px",
-            borderRadius: `0 ${theme.radius.pill}px ${theme.radius.pill}px 0`,
-            border:      `1px solid ${active ? theme.blue : theme.border.default}`,
-            borderLeft:  "none",
-            background:  active ? theme.blue : theme.bg.elevated,
-            color:       active ? "rgba(255,255,255,0.8)" : theme.text.subtle,
-            cursor:      "pointer",
-            marginLeft:  -1,
-          }}
           title={`Edit "${preset.name}"`}
+          style={{
+            width:          18,
+            height:         18,
+            borderRadius:   "50%",
+            border:         `1px solid ${theme.border.default}`,
+            background:     theme.bg.elevated,
+            color:          theme.text.subtle,
+            cursor:         "pointer",
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "center",
+            fontSize:       10,
+            padding:        0,
+            flexShrink:     0,
+          }}
         >
           ✎
         </button>
@@ -251,9 +274,8 @@ export default function RadarPresetBar({
   onSaveModalClose,
 }) {
   const [internalSaveModal, setInternalSaveModal] = useState(false);
-  const [editPreset, setEditPreset] = useState(null); // preset object being edited
+  const [editPreset, setEditPreset]               = useState(null);
 
-  // saveModalOpen can be triggered externally (e.g. from "Save as Preset" in filter panel)
   const saveModal = saveModalOpen || internalSaveModal;
   function closeSaveModal() {
     setInternalSaveModal(false);
@@ -262,7 +284,6 @@ export default function RadarPresetBar({
 
   const activePreset = presets.find(p => p.id === activePresetId) ?? null;
 
-  // Toggle label
   let toggleLabel;
   if (activePreset) {
     toggleLabel = `${filtersExpanded ? '▲' : '▼'} Preset: ${activePreset.name}`;
@@ -283,8 +304,10 @@ export default function RadarPresetBar({
   }
 
   function handleDeleted(deletedId) {
-    const next = presets.filter(p => p.id !== deletedId);
-    onPresetsChange(next, activePresetId === deletedId ? null : activePresetId);
+    onPresetsChange(
+      presets.filter(p => p.id !== deletedId),
+      activePresetId === deletedId ? null : activePresetId,
+    );
     setEditPreset(null);
   }
 
@@ -294,19 +317,15 @@ export default function RadarPresetBar({
     <>
       <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
 
-        {/* "Presets:" label */}
-        <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>
-          Presets:
-        </span>
+        <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Presets:</span>
 
-        {/* Preset buttons or dropdown */}
         {useDropdown ? (
           <>
             <select
               value={activePresetId || ''}
               onChange={e => {
                 const p = presets.find(x => x.id === e.target.value);
-                if (p) onSelect(p); else onSelect(null);
+                onSelect(p ?? null);
               }}
               style={{
                 fontSize:     theme.size.sm,
@@ -319,9 +338,7 @@ export default function RadarPresetBar({
               }}
             >
               <option value="">Select preset…</option>
-              {presets.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <button
               onClick={() => setEditPreset(presets.find(p => p.id === activePresetId) ?? presets[0])}
@@ -342,31 +359,25 @@ export default function RadarPresetBar({
           ))
         )}
 
-        {/* + New Preset */}
-        <button onClick={() => setInternalSaveModal(true)} style={ghostBtnStyle}>
-          + New Preset
-        </button>
+        <button onClick={() => setInternalSaveModal(true)} style={ghostBtnStyle}>+ New Preset</button>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Advanced Filters toggle */}
         <button
           onClick={onToggleFilters}
           style={{
             ...ghostBtnStyle,
             borderColor: (filtersExpanded || activeFilterCount > 0) ? theme.blue : theme.border.default,
-            color:        (filtersExpanded || activeFilterCount > 0) ? theme.blue : theme.text.muted,
+            color:       (filtersExpanded || activeFilterCount > 0) ? theme.blue : theme.text.muted,
           }}
         >
           {toggleLabel}
         </button>
       </div>
 
-      {/* Modals */}
       {saveModal && (
         <SavePresetModal
-          filters={currentFilters}
+          initialFilters={currentFilters}
           onSave={handleSaved}
           onClose={closeSaveModal}
         />
@@ -418,13 +429,13 @@ const primaryBtnStyle = {
 };
 
 const modalInputStyle = {
-  width:        "100%",
-  padding:      "6px 10px",
-  fontSize:     theme.size.sm,
-  background:   theme.bg.base,
-  border:       `1px solid ${theme.border.default}`,
+  width:      "100%",
+  padding:    "6px 10px",
+  fontSize:   theme.size.sm,
+  background: theme.bg.base,
+  border:     `1px solid ${theme.border.default}`,
   borderRadius: theme.radius.sm,
-  color:        theme.text.primary,
-  outline:      "none",
-  boxSizing:    "border-box",
+  color:      theme.text.primary,
+  outline:    "none",
+  boxSizing:  "border-box",
 };
