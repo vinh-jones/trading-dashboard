@@ -329,7 +329,11 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           {weeks.map((week, wi) => {
             const weekData = weeklyTotals[wi];
             const isExpanded = expandedWeek === wi;
-            const bg = weekData.count > 0 ? getWeekBg(weekData.total) : theme.bg.surface;
+            const hasTint = weekData.count > 0;
+            const bg = hasTint ? getWeekBg(weekData.total) : theme.bg.surface;
+            // On heatmap-tinted rows, mid-grays wash out — bump label text to secondary for contrast
+            const labelColor = hasTint ? theme.text.secondary : theme.text.muted;
+            const subLabelColor = hasTint ? theme.text.secondary : theme.text.subtle;
             const inMonthDays = week.filter(d => d.getMonth() === monthInfo.month);
             const rangeLabel = inMonthDays.length > 0
               ? inMonthDays[0].getDate() === inMonthDays[inMonthDays.length - 1].getDate()
@@ -354,28 +358,28 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                     cursor: "pointer",
                   }}
                 >
-                  <div style={{ fontSize: theme.size.sm, color: theme.text.muted, fontWeight: 500, minWidth: 52 }}>
+                  <div style={{ fontSize: theme.size.sm, color: labelColor, fontWeight: 500, minWidth: 52 }}>
                     Week {wi + 1}
                   </div>
-                  <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, flex: 1 }}>
+                  <div style={{ fontSize: theme.size.sm, color: subLabelColor, flex: 1 }}>
                     {rangeLabel}
                     {weekHasExpiry && !isExpanded && (
                       <span style={{ color: theme.blue, marginLeft: theme.space[2] }}>⚑</span>
                     )}
                   </div>
-                  {weekData.count > 0 ? (
+                  {hasTint ? (
                     <>
                       <div style={{ fontSize: theme.size.md, fontWeight: 600, color: weekData.total >= 0 ? theme.green : theme.red }}>
                         {formatDollarsFull(weekData.total)}
                       </div>
-                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, minWidth: 32, textAlign: "right" }}>
+                      <div style={{ fontSize: theme.size.xs, color: subLabelColor, minWidth: 32, textAlign: "right" }}>
                         {weekData.count} tr
                       </div>
                     </>
                   ) : (
                     <div style={{ fontSize: theme.size.sm, color: theme.text.faint, minWidth: 40, textAlign: "right" }}>—</div>
                   )}
-                  <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[1], width: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: theme.size.sm, color: subLabelColor, marginLeft: theme.space[1], width: 12, textAlign: "center" }}>
                     {isExpanded ? "▴" : "▾"}
                   </div>
                 </div>
