@@ -336,7 +336,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap }) {
+function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -373,9 +373,12 @@ function PositionsTable({ rows, positionType, quoteMap }) {
             {[
               "Ticker", "Strike",
               ...(!isLeap ? ["% OTM"] : []),
-              "Expiry", "DTE", "% DTE Left",
-              isLeap ? "Cost" : "Premium",
-              "G/L $", "G/L %",
+              ...(!isMobile ? ["Expiry"] : []),
+              ...(!isMobile ? ["DTE"] : []),
+              ...(!isMobile ? ["% DTE Left"] : []),
+              ...(!isMobile ? [isLeap ? "Cost" : "Premium"] : []),
+              ...(!isMobile ? ["G/L $"] : []),
+              "G/L %",
               ...(canExpand ? [""] : []),
             ].map(colHeader)}
           </tr>
@@ -478,15 +481,15 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                   {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
                   {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
                   {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—", { color: otmColor, fontWeight: 600, textAlign: "right" })}
-                  {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
-                  {td(dte != null ? `${dte}d` : "—", {
+                  {!isMobile && td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
+                  {!isMobile && td(dte != null ? `${dte}d` : "—", {
                     color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
                     fontWeight: dte != null && dte <= 5 ? 600 : 400,
                     textAlign:  "right",
                   })}
-                  {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
-                  {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
-                  {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
+                  {!isMobile && td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
+                  {!isMobile && td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
+                  {!isMobile && td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
                   {td(glPct != null ? `${glPct.toFixed(1)}%` : "—", { color: glColor, fontWeight: 500, textAlign: "right" })}
                   {canExpand && td(
                     <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
@@ -495,7 +498,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                 </tr>
                 {isExpanded && priceTargets && (
                   <tr>
-                    <td colSpan={10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
+                    <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
                       <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                     </td>
                   </tr>
@@ -679,6 +682,7 @@ export function OpenPositionsTab() {
             rows={activeTab?.rows ?? []}
             positionType={positionTab}
             quoteMap={quoteMap}
+            isMobile={isMobile}
           />
         </>
       )}
