@@ -60,6 +60,49 @@ export function bsCallPrice(S, K, T, r, iv) {
 }
 
 /**
+ * Back-solve implied volatility from a market option price.
+ * Given the current market mid for an option, finds the IV that makes
+ * Black-Scholes match that price. This captures the real vol skew for
+ * the specific strike, rather than using the equity-level IV.
+ *
+ * @param {number} marketMid  - Observed option mid price per share
+ * @param {number} S          - Current stock price
+ * @param {number} K          - Strike price
+ * @param {number} T          - Time to expiry in years
+ * @param {number} r          - Risk-free rate
+ * @param {string} optionType - 'put' or 'call'
+ * @returns {number|null}     - Implied vol as decimal, or null if no solution
+ */
+export function impliedVol(marketMid, S, K, T, r, optionType) {
+  if (T <= 0 || marketMid <= 0) return null;
+
+  const priceFn = optionType === "put" ? bsPutPrice : bsCallPrice;
+
+  // Search IV between 5% and 500%
+  let lo = 0.05, hi = 5.0;
+
+  // Verify solution exists
+  const loPrice = priceFn(S, K, T, r, lo);
+  const hiPrice = priceFn(S, K, T, r, hi);
+  const minPrice = Math.min(loPrice, hiPrice);
+  const maxPrice = Math.max(loPrice, hiPrice);
+  if (marketMid < minPrice || marketMid > maxPrice) return null;
+
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    const price = priceFn(S, K, T, r, mid);
+
+    // Higher IV always means higher option price
+    if (price < marketMid) lo = mid;
+    else hi = mid;
+
+    if (Math.abs(hi - lo) < 0.0001) break; // 0.01% precision
+  }
+
+  return (lo + hi) / 2;
+}
+
+/**
  * Find the stock price that produces a target option mid at a future date.
  * Uses binary search — converges in ~30-50 iterations to $0.01 precision.
  *
@@ -186,20 +229,30 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
   const isLosing = currentProfitPct != null && currentProfitPct < 0;
   const isOnTrack = currentProfitPct != null && currentProfitPct >= targetProfitPct * 0.5;
 
+  const optionType = position.type === "CSP" ? "put" : "call";
+
+  // Back-solve the option's own IV from its market price when possible.
+  // This captures the real vol skew for this specific strike, which can
+  // differ significantly from the equity-level IV (e.g. 110% vs 88%).
+  const T = remainingDTE / 365;
+  const optionIV = (currentMid != null && currentStockPrice != null)
+    ? impliedVol(currentMid, currentStockPrice, position.strike, T, RISK_FREE_RATE, optionType)
+    : null;
+  const iv = optionIV ?? currentIV;
+
   // Bail early if we can't compute price targets
-  if (currentIV == null || currentStockPrice == null) {
+  if (iv == null || currentStockPrice == null) {
     return {
       originalDTE, remainingDTE, dtePct,
       targetProfitPct, currentProfitPct,
       premiumPerShare, targetMid,
       isOnTrack, isLosing,
-      iv: currentIV,
+      iv,
       targets: [],
     };
   }
 
   const fridays = getNextTwoFridays(today);
-  const optionType = position.type === "CSP" ? "put" : "call";
 
   const targets = fridays.map(friday => {
     const daysToFriday = Math.ceil((friday - today) / (1000 * 60 * 60 * 24));
@@ -212,13 +265,13 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
 
     const targetStockPrice = findStockPriceForTargetMid(
       targetMid, position.strike, dteOnFriday,
-      RISK_FREE_RATE, currentIV, optionType, currentStockPrice
+      RISK_FREE_RATE, iv, optionType, currentStockPrice
     );
 
     const breakEvenStockPrice = isLosing
       ? findStockPriceForTargetMid(
           breakEvenMid, position.strike, dteOnFriday,
-          RISK_FREE_RATE, currentIV, optionType, currentStockPrice
+          RISK_FREE_RATE, iv, optionType, currentStockPrice
         )
       : null;
 
@@ -235,7 +288,7 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
     targetProfitPct, currentProfitPct,
     premiumPerShare, targetMid,
     isOnTrack, isLosing,
-    iv: currentIV,
+    iv,
     targets,
   };
 }
