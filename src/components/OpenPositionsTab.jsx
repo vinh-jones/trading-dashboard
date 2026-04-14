@@ -342,10 +342,11 @@ function PositionsTable({ rows, positionType, quoteMap }) {
   const [expandedRowKey, setExpandedRowKey] = useState(null);
   const canExpand = !isLeap;
 
+  const numericCols = new Set(["Strike", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
   const colHeader = (label) => (
     <th key={label} style={{
       padding:       "8px 10px",
-      textAlign:     "left",
+      textAlign:     numericCols.has(label) ? "right" : "left",
       color:         theme.text.muted,
       fontWeight:    500,
       fontSize:      theme.size.sm,
@@ -452,16 +453,17 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
                   {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
-                  {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary })}
+                  {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
                   {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
                   {td(dte != null ? `${dte}d` : "—", {
                     color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
                     fontWeight: dte != null && dte <= 5 ? 600 : 400,
+                    textAlign:  "right",
                   })}
-                  {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600 })}
-                  {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600 })}
-                  {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600 })}
-                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500 })}
+                  {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
+                  {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
+                  {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
+                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500, textAlign: "right" })}
                   {canExpand && td(
                     <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
                     { width: 30, textAlign: "center", padding: "9px 4px" }
