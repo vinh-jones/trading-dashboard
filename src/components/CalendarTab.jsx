@@ -185,7 +185,8 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
   }, [weeklyTotals]);
 
   function getWeekBg(premium) {
-    const intensity = Math.min(Math.abs(premium) / maxAbsWeekPremium, 1);
+    // Cap at 40% of full intensity so the month's dominant week doesn't crush the scale
+    const intensity = Math.min(Math.abs(premium) / maxAbsWeekPremium, 1) * 0.4;
     if (premium > 0) {
       return `rgb(${Math.round(13 + intensity * 22)}, ${Math.round(17 + intensity * 100)}, ${Math.round(23 + intensity * 30)})`;
     } else {
