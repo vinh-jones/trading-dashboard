@@ -342,7 +342,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
   const [expandedRowKey, setExpandedRowKey] = useState(null);
   const canExpand = !isLeap;
 
-  const numericCols = new Set(["Strike", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
+  const numericCols = new Set(["Strike", "% OTM", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
   const colHeader = (label) => (
     <th key={label} style={{
       padding:       "8px 10px",
@@ -371,7 +371,9 @@ function PositionsTable({ rows, positionType, quoteMap }) {
         <thead>
           <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
             {[
-              "Ticker", "Strike", "Expiry", "DTE", "% DTE Left",
+              "Ticker", "Strike",
+              ...(!isLeap ? ["% OTM"] : []),
+              "Expiry", "DTE", "% DTE Left",
               isLeap ? "Cost" : "Premium",
               "G/L $", "G/L %",
               ...(canExpand ? [""] : []),
@@ -419,6 +421,19 @@ function PositionsTable({ rows, positionType, quoteMap }) {
             }
             const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
 
+            // % OTM — how far stock is from strike (positive = OTM / safe)
+            let otmPct = null, otmColor = theme.text.muted;
+            if (!isLeap && pos.strike != null) {
+              const stockMid = quoteMap.get(pos.ticker)?.mid;
+              if (stockMid != null) {
+                // CSP (put): OTM when stock > strike. CC (call): OTM when stock < strike.
+                otmPct = isCC
+                  ? ((pos.strike - stockMid) / stockMid) * 100
+                  : ((stockMid - pos.strike) / pos.strike) * 100;
+                otmColor = otmPct > 0 ? theme.green : theme.red;
+              }
+            }
+
             const displayValue = isLeap ? pos.capital_fronted : pos.premium_collected;
             const valueColor   = isLeap ? theme.chart.leaps : theme.green;
 
@@ -454,6 +469,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                 >
                   {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
                   {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
+                  {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—", { color: otmColor, fontWeight: 600, textAlign: "right" })}
                   {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
                   {td(dte != null ? `${dte}d` : "—", {
                     color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
@@ -471,7 +487,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                 </tr>
                 {isExpanded && priceTargets && (
                   <tr>
-                    <td colSpan={9} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
+                    <td colSpan={10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
                       <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                     </td>
                   </tr>
