@@ -1,4 +1,5 @@
 import { formatExpiry } from "../../lib/format";
+import { theme } from "../../lib/theme";
 
 export function getTradeEmoji(trade) {
   const premium = trade.premium ?? 0;
@@ -60,9 +61,9 @@ export function buildAutoTitle(entryType, linkedPosition, linkedTrade) {
 
 // Helper: floor status label + color for EOD stinger line
 export function eodFloorLabel(status) {
-  if (status === "above") return { text: "↑ ceiling", color: "#e3b341" };
-  if (status === "below") return { text: "↓ floor",   color: "#f85149" };
-  if (status === "within") return { text: "✓ in band", color: "#3fb950" };
+  if (status === "above")  return { text: "↑ ceiling", color: theme.amber };
+  if (status === "below")  return { text: "↓ floor",   color: theme.red   };
+  if (status === "within") return { text: "✓ in band", color: theme.green };
   return null;
 }
 

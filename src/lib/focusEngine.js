@@ -1,4 +1,4 @@
-import { calcDTE } from "./trading";
+import { calcDTE, buildOccSymbol, parseShareCount } from "./trading";
 import { getVixBand } from "./vixBand";
 import { formatExpiry } from "./format";
 
@@ -8,16 +8,6 @@ function daysBetween(isoA, isoB) {
   const a = new Date(isoA + "T00:00:00");
   const b = new Date(isoB + "T00:00:00");
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
-}
-
-// Builds the OCC symbol used as the key in quoteMap for option lookups.
-// Mirrors the same function in api/quotes.js — kept in sync manually.
-function buildOccSymbol(ticker, expiryIso, isCall, strike) {
-  const [y, m, d] = expiryIso.split("-");
-  const expiry = y.slice(2) + m + d;
-  const side = isCall ? "C" : "P";
-  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
-  return `${ticker}${expiry}${side}${strikePadded}`;
 }
 
 function today() {
@@ -109,10 +99,10 @@ function ruleUncoveredShares(positions, quoteMap) {
   const items = [];
   for (const s of positions.assigned_shares ?? []) {
     if (!s.active_cc) {
-      const totalShares = s.positions?.reduce((sum, lot) => {
-        const m = lot.description?.match(/\((\d[\d,]*)[,\s]/);
-        return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
-      }, 0) ?? 0;
+      const totalShares = s.positions?.reduce(
+        (sum, lot) => sum + parseShareCount(lot.description),
+        0,
+      ) ?? 0;
 
       const quote     = quoteMap.get(s.ticker);
       const ivRank    = quote?.iv_rank ?? null;

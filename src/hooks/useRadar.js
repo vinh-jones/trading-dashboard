@@ -7,8 +7,9 @@ export function useRadar() {
   const [error, setError]     = useState(null);
 
   useEffect(() => {
-    // Fire-and-forget BB refresh — don't block on it
-    fetch("/api/bb").catch(() => {});
+    // Fire-and-forget BB refresh — don't block on it, but log failures so
+    // stale BB data isn't silently hidden during debugging.
+    fetch("/api/bb").catch(err => console.warn("[useRadar] BB refresh failed:", err));
 
     async function fetchData() {
       try {

@@ -547,15 +547,15 @@ export function JournalTab() {
                         key={m.emoji}
                         onClick={() => setFormMood(m.emoji)}
                         style={{
-                          flex: 1, padding: "8px 2px", borderRadius: 4, cursor: "pointer",
-                          border: `2px solid ${active ? m.activeBorder : "#30363d"}`,
+                          flex: 1, padding: "8px 2px", borderRadius: theme.radius.sm, cursor: "pointer",
+                          border: `2px solid ${active ? m.activeBorder : theme.border.strong}`,
                           background: active ? m.activeBg : "transparent",
                           display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                           fontFamily: "inherit",
                         }}
                       >
                         <span style={{ fontSize: 20, lineHeight: 1 }}>{m.emoji}</span>
-                        <span style={{ fontSize: 10, color: active ? m.activeBorder : "#6e7681" }}>{m.label}</span>
+                        <span style={{ fontSize: theme.size.xs, color: active ? m.activeBorder : theme.text.subtle }}>{m.label}</span>
                       </button>
                     );
                   })}
@@ -681,7 +681,7 @@ export function JournalTab() {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
               onClick={resetForm}
-              style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: 13, fontFamily: "inherit", padding: "6px 12px" }}
+              style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 12px" }}
             >
               Cancel
             </button>
@@ -689,10 +689,10 @@ export function JournalTab() {
               onClick={handleSave}
               disabled={saving}
               style={{
-                background: theme.green, border: "none", color: "#fff",
+                background: theme.green, border: "none", color: theme.text.primary,
                 cursor: saving ? "not-allowed" : "pointer",
-                fontSize: 13, fontFamily: "inherit", padding: "6px 16px",
-                borderRadius: 4, fontWeight: 500, opacity: saving ? 0.7 : 1,
+                fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 16px",
+                borderRadius: theme.radius.sm, fontWeight: 500, opacity: saving ? 0.7 : 1,
               }}
             >
               {saving ? "Saving..." : entryType === "eod_update" ? "Save Update" : "Save Note"}

@@ -1,4 +1,42 @@
 import { getVixBand } from "./vixBand";
+import { theme } from "./theme";
+
+// ── Shared parsing helpers ──────────────────────────────────────────────────
+
+// Parse an "YYYY-MM-DD" string to a Date at local noon — avoids TZ off-by-one
+// when comparing dates-as-calendar-days. Returns null for null/undefined.
+export function parseLocalDate(iso) {
+  return iso ? new Date(iso + "T12:00:00") : null;
+}
+
+// Parse a comma-tolerant integer ("1,234" → 1234). Returns 0 on no match.
+export function parseThousands(str) {
+  if (str == null) return 0;
+  const m = String(str).match(/-?\d[\d,]*/);
+  return m ? parseInt(m[0].replace(/,/g, ""), 10) : 0;
+}
+
+// Extract share count from a lot description. Handles both formats:
+//   "(100, $530)"   → 100
+//   "($121, 300)"   → 300
+// Strategy: strip dollar amounts first, then take the first remaining integer.
+export function parseShareCount(description) {
+  if (!description) return 0;
+  const withoutPrices = description.replace(/\$[\d,]+\.?\d*/g, "");
+  const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
+  return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+}
+
+// Build the OCC symbol used as the key in quoteMap for option lookups.
+// Example: buildOccSymbol("AAPL", "2026-05-01", false, 180) → "AAPL260501P00180000"
+// The matching backend copy lives in api/_lib/occ.js — keep the two in sync.
+export function buildOccSymbol(ticker, expiryIso, isCall, strike) {
+  const [y, m, d] = expiryIso.split("-");
+  const expiry = y.slice(2) + m + d;
+  const side = isCall ? "C" : "P";
+  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
+  return `${ticker}${expiry}${side}${strikePadded}`;
+}
 
 export function normalizeTrade(t) {
   const fmtDate = (iso) => (iso ? iso.slice(5).replace("-", "/") : "—");
@@ -91,7 +129,7 @@ export function calcPipeline(positions, captureRate) {
 }
 
 export function allocColor(pct) {
-  if (pct >= 0.15) return "#f85149";  // red — at hard ceiling
-  if (pct >= 0.10) return "#e3b341";  // amber — approaching limit
-  return "#8b949e";                    // gray — normal
+  if (pct >= 0.15) return theme.red;          // at hard ceiling
+  if (pct >= 0.10) return theme.amber;        // approaching limit
+  return theme.text.muted;                     // normal
 }

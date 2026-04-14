@@ -82,7 +82,7 @@ export function AccountBar({ captureRate }) {
           <span>{formatDollars(baseline)} baseline · {formatDollars(stretch)} stretch</span>
         </div>
         <div style={{ height: 6, background: theme.border.default, borderRadius: theme.radius.sm, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? theme.green : "#1f6feb", borderRadius: theme.radius.sm, transition: "width 0.3s" }} />
+          <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? theme.green : theme.blueBold, borderRadius: theme.radius.sm, transition: "width 0.3s" }} />
         </div>
       </div>
       {liveVix != null && (

@@ -4,26 +4,14 @@ import { useQuotes } from "../hooks/useQuotes";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { useRollAnalysis } from "../hooks/useRollAnalysis";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
-import { calcDTE, allocColor } from "../lib/trading";
+import { calcDTE, allocColor, buildOccSymbol, parseShareCount } from "../lib/trading";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { SixtyCheck } from "./SixtyCheck";
 import { theme } from "../lib/theme";
 
-function buildOccSymbol(ticker, expiryIso, isCall, strike) {
-  const [y, m, d] = expiryIso.split("-");
-  const expiry = y.slice(2) + m + d;
-  const side   = isCall ? "C" : "P";
-  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
-  return `${ticker}${expiry}${side}${strikePadded}`;
-}
-
 function getCostBasisPerShare(lots) {
   const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
-  const totalShares  = lots.reduce((sum, lot) => {
-    const withoutPrices = (lot.description || "").replace(/\$[\d,]+\.?\d*/g, "");
-    const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
-    return sum + (m ? parseInt(m[1].replace(/,/g, ""), 10) : 0);
-  }, 0);
+  const totalShares  = lots.reduce((sum, lot) => sum + parseShareCount(lot.description), 0);
   if (!totalShares) return null;
   return totalFronted / totalShares;
 }
@@ -286,7 +274,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
               <tr
                 key={i}
                 style={{ borderBottom: `1px solid ${theme.border.default}` }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#1a3a5c22")}
+                onMouseEnter={e => (e.currentTarget.style.background = `${TYPE_COLORS.CSP.bg}22`)}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
                 {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
@@ -569,9 +557,9 @@ export function OpenPositionsTab() {
                   </div>
 
                   {cc ? (
-                    <div style={{ padding: "10px 12px", background: "#1a4a3a", border: "1px solid #2a6a5a", borderRadius: theme.radius.sm }}>
+                    <div style={{ padding: "10px 12px", background: TYPE_COLORS.CC.bg, border: `1px solid ${TYPE_COLORS.CC.border}`, borderRadius: theme.radius.sm }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ fontSize: theme.size.sm, color: "#6dd9a0", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Active CC</span>
+                        <span style={{ fontSize: theme.size.sm, color: TYPE_COLORS.CC.text, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Active CC</span>
                         <span style={{ fontSize: theme.size.sm, color: dte != null && dte <= 3 ? theme.red : theme.text.muted }}>
                           {dte != null ? `${dte}d DTE` : "—"} · exp {formatExpiry(cc.expiry_date)}
                         </span>
@@ -592,7 +580,7 @@ export function OpenPositionsTab() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ padding: "8px 12px", background: "#3a1a1a", border: "1px solid #7c2a2a", borderRadius: theme.radius.sm, fontSize: theme.size.md, color: theme.red, fontWeight: 500 }}>
+                    <div style={{ padding: "8px 12px", background: theme.alert.dangerBg, border: `1px solid ${theme.alert.dangerBorder}`, borderRadius: theme.radius.sm, fontSize: theme.size.md, color: theme.red, fontWeight: 500 }}>
                       NO ACTIVE CC
                     </div>
                   )}
