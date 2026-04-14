@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useData } from "../hooks/useData";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { formatDollars, formatDollarsFull } from "../lib/format";
@@ -13,6 +13,8 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
   const isMobile = useWindowWidth() < 600;
   const [calMonth, setCalMonth] = useState(3); // default to April
   const [selectedWeek, setSelectedWeek] = useState(null); // null or week index (0-4)
+  const [expandedWeek, setExpandedWeek] = useState(null); // mobile: which week row is expanded
+  const [filtersOpen, setFiltersOpen] = useState(false); // mobile: type filter drawer
 
   const monthInfo = MONTHS[calMonth];
 
@@ -175,6 +177,292 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
     }
   }
 
+  // Mobile-only: week-level heatmap (weekly totals are larger than daily, needs its own max)
+  const maxAbsWeekPremium = useMemo(() => {
+    let max = 0;
+    weeklyTotals.forEach(w => { max = Math.max(max, Math.abs(w.total)); });
+    return max || 1;
+  }, [weeklyTotals]);
+
+  function getWeekBg(premium) {
+    const intensity = Math.min(Math.abs(premium) / maxAbsWeekPremium, 1);
+    if (premium > 0) {
+      return `rgb(${Math.round(13 + intensity * 22)}, ${Math.round(17 + intensity * 100)}, ${Math.round(23 + intensity * 30)})`;
+    } else {
+      return `rgb(${Math.round(13 + intensity * 100)}, ${Math.round(17 + intensity * 5)}, ${Math.round(23 + intensity * 10)})`;
+    }
+  }
+
+  // Today key (YYYY-MM-DD) for highlighting in mobile week list
+  const todayKey = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }, []);
+
+  // Mobile: auto-expand the week containing today when viewing the current month
+  useEffect(() => {
+    const today = new Date();
+    const sameMonth = today.getFullYear() === monthInfo.year && today.getMonth() === monthInfo.month;
+    if (sameMonth) {
+      const idx = weeks.findIndex(w => w.some(d =>
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate()
+      ));
+      setExpandedWeek(idx >= 0 ? idx : null);
+    } else {
+      setExpandedWeek(null);
+    }
+  }, [calMonth, monthInfo.month, monthInfo.year, weeks]);
+
+  // ── Mobile layout ──────────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div>
+        {/* Compact header: prev/month/next + P&L + filter toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: theme.space[2], marginBottom: theme.space[3] }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <button
+              onClick={() => { if (calMonth > 0) { setCalMonth(calMonth - 1); setSelectedDay(null); setSelectedWeek(null); } }}
+              disabled={calMonth === 0}
+              style={{
+                background: "transparent", border: "none",
+                color: calMonth === 0 ? theme.text.faint : theme.text.secondary,
+                fontSize: theme.size.xl, cursor: calMonth === 0 ? "default" : "pointer",
+                padding: "2px 6px", fontFamily: "inherit", lineHeight: 1,
+              }}
+              aria-label="Previous month"
+            >‹</button>
+            <div style={{ fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary, minWidth: 72, textAlign: "center" }}>
+              {monthInfo.label} {monthInfo.year}
+            </div>
+            <button
+              onClick={() => { if (calMonth < MONTHS.length - 1) { setCalMonth(calMonth + 1); setSelectedDay(null); setSelectedWeek(null); } }}
+              disabled={calMonth === MONTHS.length - 1}
+              style={{
+                background: "transparent", border: "none",
+                color: calMonth === MONTHS.length - 1 ? theme.text.faint : theme.text.secondary,
+                fontSize: theme.size.xl, cursor: calMonth === MONTHS.length - 1 ? "default" : "pointer",
+                padding: "2px 6px", fontFamily: "inherit", lineHeight: 1,
+              }}
+              aria-label="Next month"
+            >›</button>
+          </div>
+          <div style={{ fontSize: theme.size.md, fontWeight: 600, color: monthTotal.total >= 0 ? theme.green : theme.red, marginLeft: "auto", marginRight: theme.space[2] }}>
+            {formatDollarsFull(monthTotal.total)}
+          </div>
+          <button
+            onClick={() => setFiltersOpen(v => !v)}
+            style={{
+              padding: "4px 10px", borderRadius: theme.radius.sm, fontSize: theme.size.sm,
+              background: (filtersOpen || selectedType) ? theme.bg.elevated : "transparent",
+              color: selectedType ? (TYPE_COLORS[selectedType]?.text || theme.text.secondary) : theme.text.muted,
+              border: `1px solid ${selectedType ? (TYPE_COLORS[selectedType]?.border || theme.border.strong) : theme.border.strong}`,
+              cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+            }}
+          >
+            {selectedType ? selectedType : "Filter"}
+          </button>
+        </div>
+
+        {/* Expandable filter pill row */}
+        {filtersOpen && (
+          <div style={{ display: "flex", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[3], padding: theme.space[2], background: theme.bg.surface, borderRadius: theme.radius.sm }}>
+            <button
+              onClick={() => { setSelectedType(null); setFiltersOpen(false); }}
+              style={{
+                padding: "4px 10px", borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
+                cursor: "pointer", border: "none",
+                background: !selectedType ? theme.bg.elevated : "transparent",
+                color: !selectedType ? theme.text.primary : theme.text.muted,
+              }}
+            >
+              ALL ({TRADES.length})
+            </button>
+            {typeSummary.map(ts => (
+              <button
+                key={ts.type}
+                onClick={() => { setSelectedType(selectedType === ts.type ? null : ts.type); setFiltersOpen(false); }}
+                style={{
+                  padding: "4px 10px", borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
+                  cursor: "pointer",
+                  border: `1px solid ${TYPE_COLORS[ts.type]?.border || theme.border.strong}`,
+                  background: selectedType === ts.type ? (TYPE_COLORS[ts.type]?.bg || theme.bg.elevated) : "transparent",
+                  color: TYPE_COLORS[ts.type]?.text || theme.text.secondary,
+                }}
+              >
+                {ts.type} ({ts.count})
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Compact pipeline card — 3 hero numbers only */}
+        {hasPipelinePositions && (
+          <div style={{
+            padding: `${theme.space[3]}px ${theme.space[4]}px`,
+            background: theme.bg.surface,
+            borderRadius: theme.radius.md,
+            border: `1px solid ${theme.border.default}`,
+            marginBottom: theme.space[4],
+          }}>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[2] }}>
+              Premium Pipeline
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.space[2] }}>
+              {[
+                { label: "Gross open", value: formatDollarsFull(grossOpenPremium) },
+                { label: "MTD collected", value: formatDollarsFull(mtdCollected) },
+                { label: "Implied total", value: `~${formatDollarsFull(impliedTotal)}` },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: theme.size.sm, fontWeight: 600, color: theme.text.primary }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Week list — each row expandable to show its in-month days */}
+        <div style={{ border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, overflow: "hidden", marginBottom: theme.space[4] }}>
+          {weeks.map((week, wi) => {
+            const weekData = weeklyTotals[wi];
+            const isExpanded = expandedWeek === wi;
+            const bg = weekData.count > 0 ? getWeekBg(weekData.total) : theme.bg.surface;
+            const inMonthDays = week.filter(d => d.getMonth() === monthInfo.month);
+            const rangeLabel = inMonthDays.length > 0
+              ? inMonthDays[0].getDate() === inMonthDays[inMonthDays.length - 1].getDate()
+                ? `${monthInfo.label} ${inMonthDays[0].getDate()}`
+                : `${monthInfo.label} ${inMonthDays[0].getDate()}–${inMonthDays[inMonthDays.length - 1].getDate()}`
+              : "—";
+            const weekHasExpiry = inMonthDays.some(d => {
+              const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+              return !!expiryMap[k];
+            });
+
+            return (
+              <div key={wi}>
+                {/* Week header row */}
+                <div
+                  onClick={() => setExpandedWeek(isExpanded ? null : wi)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: theme.space[2],
+                    padding: `${theme.space[3]}px ${theme.space[3]}px`,
+                    background: bg,
+                    borderBottom: (wi < weeks.length - 1 || isExpanded) ? `1px solid ${theme.border.default}` : "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: theme.size.sm, color: theme.text.muted, fontWeight: 500, minWidth: 52 }}>
+                    Week {wi + 1}
+                  </div>
+                  <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, flex: 1 }}>
+                    {rangeLabel}
+                    {weekHasExpiry && !isExpanded && (
+                      <span style={{ color: theme.blue, marginLeft: theme.space[2] }}>⚑</span>
+                    )}
+                  </div>
+                  {weekData.count > 0 ? (
+                    <>
+                      <div style={{ fontSize: theme.size.md, fontWeight: 600, color: weekData.total >= 0 ? theme.green : theme.red }}>
+                        {formatDollarsFull(weekData.total)}
+                      </div>
+                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, minWidth: 32, textAlign: "right" }}>
+                        {weekData.count} tr
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: theme.size.sm, color: theme.text.faint, minWidth: 40, textAlign: "right" }}>—</div>
+                  )}
+                  <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[1], width: 12, textAlign: "center" }}>
+                    {isExpanded ? "▴" : "▾"}
+                  </div>
+                </div>
+
+                {/* Expanded day rows (all 7 days Sun→Sat; out-of-month are dimmed) */}
+                {isExpanded && (
+                  <div style={{ background: theme.bg.base, borderBottom: wi < weeks.length - 1 ? `1px solid ${theme.border.default}` : "none" }}>
+                    {week.map((day, di) => {
+                      const inMonth = day.getMonth() === monthInfo.month;
+                      const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                      const data = dailyData[key];
+                      const hasTrades = inMonth && data && data.count > 0;
+                      const hasExpiry = inMonth && !!expiryMap[key];
+                      const isClickable = hasTrades || hasExpiry;
+                      const isSelected = selectedDay === key;
+                      const isToday = inMonth && key === todayKey;
+                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                      const wk = day.toLocaleDateString("en-US", { weekday: "short" });
+
+                      return (
+                        <div
+                          key={di}
+                          onClick={() => { if (isClickable) { setSelectedDay(isSelected ? null : key); setSelectedWeek(null); } }}
+                          style={{
+                            display: "flex", alignItems: "center", gap: theme.space[2],
+                            padding: `${theme.space[2]}px ${theme.space[3]}px`,
+                            borderBottom: di < week.length - 1 ? `1px solid ${theme.border.default}` : "none",
+                            background: isSelected ? theme.bg.elevated : (inMonth && isWeekend ? theme.bg.weekend : "transparent"),
+                            cursor: isClickable ? "pointer" : "default",
+                            borderLeft: isToday ? `3px solid ${theme.blue}` : "3px solid transparent",
+                            opacity: inMonth ? 1 : 0.35,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[1], minWidth: 64 }}>
+                            <span style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              {wk}
+                            </span>
+                            <span style={{ fontSize: theme.size.sm, color: isToday ? theme.blue : theme.text.secondary, fontWeight: isToday ? 600 : 400 }}>
+                              {day.getDate()}
+                            </span>
+                          </div>
+                          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: theme.space[2] }}>
+                            {hasTrades ? (
+                              <>
+                                <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>
+                                  {data.count} tr
+                                </span>
+                                <span style={{ fontSize: theme.size.sm, fontWeight: 600, color: data.premium >= 0 ? theme.green : theme.red, minWidth: 68, textAlign: "right" }}>
+                                  {formatDollarsFull(data.premium)}
+                                </span>
+                              </>
+                            ) : (
+                              <span style={{ fontSize: theme.size.sm, color: theme.text.faint, minWidth: 68, textAlign: "right" }}>
+                                {!inMonth ? "" : isWeekend ? "—" : "$0"}
+                              </span>
+                            )}
+                            <span style={{ width: 14, display: "inline-flex", justifyContent: "center", fontSize: theme.size.sm, color: hasExpiry ? theme.blue : "transparent" }}>
+                              {hasExpiry ? "⚑" : ""}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <CalendarDetailPanel
+          selectedDay={selectedDay}
+          selectedWeek={selectedWeek}
+          displayClosed={displayClosed}
+          displayExpiring={displayExpiring}
+          hasDisplay={hasDisplay}
+          dailyData={dailyData}
+          weeklyTotals={weeklyTotals}
+          calMonth={calMonth}
+          isMobile={isMobile}
+          deleteTrade={deleteTrade}
+        />
+      </div>
+    );
+  }
+
+  // ── Desktop layout (unchanged) ─────────────────────────────────────────────
   return (
     <div>
       {/* Type filter pills */}
