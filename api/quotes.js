@@ -213,10 +213,11 @@ async function refreshQuotes(supabase) {
       const greeksUpdates = greeks
         .filter(g => g.greeks?.impliedVolatility != null)
         .map(g => ({
-          symbol:       g.symbol,
-          iv:           parseFloat(g.greeks.impliedVolatility),
-          delta:        g.greeks.delta != null ? parseFloat(g.greeks.delta) : null,
-          refreshed_at: now,
+          symbol:          g.symbol,
+          instrument_type: "OPTION",
+          iv:              parseFloat(g.greeks.impliedVolatility),
+          delta:           g.greeks.delta != null ? parseFloat(g.greeks.delta) : null,
+          refreshed_at:    now,
         }));
 
       if (greeksUpdates.length) {
