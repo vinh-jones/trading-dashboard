@@ -421,6 +421,13 @@ function PositionsTable({ rows, positionType, quoteMap }) {
             }
             const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
 
+            // Profit target hit — CSP/CC only
+            let targetHit = false;
+            if (!isLeap && glPct != null && dtePct != null) {
+              const targetPct = dtePct > 80 ? 50 : dtePct > 40 ? 60 : 80;
+              targetHit = glPct >= targetPct;
+            }
+
             // % OTM — how far stock is from strike (positive = OTM / safe)
             let otmPct = null, otmColor = theme.text.muted;
             if (!isLeap && pos.strike != null) {
@@ -461,6 +468,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                 <tr
                   style={{
                     borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
+                    borderLeft: targetHit ? `3px solid ${theme.green}` : "3px solid transparent",
                     cursor: canExpand ? "pointer" : "default",
                   }}
                   onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
@@ -479,7 +487,12 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                   {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
                   {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
                   {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
-                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500, textAlign: "right" })}
+                  {td(
+                    glPct != null
+                      ? <>{glPct.toFixed(1)}%{targetHit && <span style={{ fontSize: theme.size.xs, marginLeft: 4, opacity: 0.8 }}>✓</span>}</>
+                      : "—",
+                    { color: glColor, fontWeight: 500, textAlign: "right" }
+                  )}
                   {canExpand && td(
                     <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
                     { width: 30, textAlign: "center", padding: "9px 4px" }
