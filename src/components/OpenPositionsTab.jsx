@@ -487,12 +487,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                   {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
                   {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
                   {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
-                  {td(
-                    glPct != null
-                      ? <>{glPct.toFixed(1)}%{targetHit && <span style={{ fontSize: theme.size.xs, marginLeft: 4, opacity: 0.8 }}>✓</span>}</>
-                      : "—",
-                    { color: glColor, fontWeight: 500, textAlign: "right" }
-                  )}
+                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—", { color: glColor, fontWeight: 500, textAlign: "right" })}
                   {canExpand && td(
                     <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
                     { width: 30, textAlign: "center", padding: "9px 4px" }
