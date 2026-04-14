@@ -340,10 +340,6 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 ? `${monthInfo.label} ${inMonthDays[0].getDate()}`
                 : `${monthInfo.label} ${inMonthDays[0].getDate()}–${inMonthDays[inMonthDays.length - 1].getDate()}`
               : "—";
-            const weekHasExpiry = inMonthDays.some(d => {
-              const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-              return !!expiryMap[k];
-            });
 
             return (
               <div key={wi}>
@@ -363,9 +359,6 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                   </div>
                   <div style={{ fontSize: theme.size.sm, color: subLabelColor, flex: 1 }}>
                     {rangeLabel}
-                    {weekHasExpiry && !isExpanded && (
-                      <span style={{ color: theme.blue, marginLeft: theme.space[2] }}>⚑</span>
-                    )}
                   </div>
                   {hasTint ? (
                     <>
