@@ -185,10 +185,18 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
 
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
-function PriceTargetPanel({ targets, position }) {
+function PriceTargetPanel({ targets, position, stockPrice }) {
   const isCSP = position.type === "CSP";
   const direction = isCSP ? "stays above" : "stays below";
   const ticker = position.ticker;
+
+  // Format delta from current price, e.g. "(−3.2%)" or "(+1.5%)"
+  const pctFrom = (targetPrice) => {
+    if (targetPrice == null || stockPrice == null) return "";
+    const pct = ((targetPrice - stockPrice) / stockPrice) * 100;
+    const sign = pct >= 0 ? "+" : "";
+    return `(${sign}${pct.toFixed(1)}%)`;
+  };
 
   const panelStyle = {
     background:   theme.bg.elevated,
@@ -256,6 +264,7 @@ function PriceTargetPanel({ targets, position }) {
         <span style={labelStyle}>Price Targets</span>
         <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>
           · {ticker} ${position.strike}{isCSP ? "p" : "c"} · {dtePct}% DTE left · Target: {targetProfitPct}%
+          {stockPrice != null && <> · Stock: <span style={{ color: theme.text.secondary }}>${stockPrice.toFixed(2)}</span></>}
         </span>
       </div>
 
@@ -277,6 +286,7 @@ function PriceTargetPanel({ targets, position }) {
               {t.breakEvenStockPrice != null ? (
                 <div style={{ fontSize: theme.size.sm, color: theme.text.muted, marginLeft: theme.space[3] }}>
                   Break-even: {ticker} {direction} <span style={{ color: theme.text.secondary, fontWeight: 600 }}>${t.breakEvenStockPrice.toFixed(2)}</span>
+                  {" "}<span style={{ color: theme.text.subtle }}>{pctFrom(t.breakEvenStockPrice)}</span>
                 </div>
               ) : (
                 <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[3] }}>
@@ -286,6 +296,7 @@ function PriceTargetPanel({ targets, position }) {
               {t.targetStockPrice != null ? (
                 <div style={{ fontSize: theme.size.sm, color: theme.text.muted, marginLeft: theme.space[3] }}>
                   Target ({targetProfitPct}%): {ticker} {direction} <span style={{ color: theme.green, fontWeight: 600 }}>${t.targetStockPrice.toFixed(2)}</span>
+                  {" "}<span style={{ color: theme.text.subtle }}>{pctFrom(t.targetStockPrice)}</span>
                 </div>
               ) : (
                 <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[3] }}>
@@ -305,6 +316,7 @@ function PriceTargetPanel({ targets, position }) {
               <>
                 {ticker} {direction}{" "}
                 <span style={{ color: theme.text.primary, fontWeight: 600 }}>${t.targetStockPrice.toFixed(2)}</span>
+                {" "}<span style={{ color: theme.text.subtle }}>{pctFrom(t.targetStockPrice)}</span>
                 {" "}to hit {targetProfitPct}%
               </>
             ) : (
@@ -456,7 +468,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
                 {isExpanded && priceTargets && (
                   <tr>
                     <td colSpan={9} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
-                      <PriceTargetPanel targets={priceTargets} position={pos} />
+                      <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                     </td>
                   </tr>
                 )}
