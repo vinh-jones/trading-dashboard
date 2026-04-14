@@ -44,3 +44,4 @@ Key token categories:
 - `MOODS` in `journalConstants.js` — mood-specific activeBg/activeBorder per mood
 - `JOURNAL_ENTRY_TYPES` in `journalConstants.js` — type-specific activeColor/activeBg per entry type
 - Monthly target progress bar colors in `JournalEntryCard.jsx` — semantic data values tied to target labels
+- `BB_COLORS` / `SCORE_BG_COLORS` in `src/components/RadarTab.jsx` — semantic-data maps for Bollinger-Band buckets and score buckets (same role as TYPE_COLORS)

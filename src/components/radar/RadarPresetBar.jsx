@@ -222,7 +222,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
           borderRadius: theme.radius.pill,
           border:       `1px solid ${active ? theme.blue : theme.border.default}`,
           background:   active ? theme.blue : "transparent",
-          color:        active ? "#fff" : theme.text.muted,
+          color:        active ? theme.text.primary : theme.text.muted,
           cursor:       "pointer",
           fontWeight:   active ? 600 : 400,
           whiteSpace:   "nowrap",
@@ -423,7 +423,7 @@ const primaryBtnStyle = {
   borderRadius: theme.radius.sm,
   border:       `1px solid ${theme.blue}`,
   background:   theme.blue,
-  color:        "#fff",
+  color:        theme.text.primary,
   cursor:       "pointer",
   fontWeight:   600,
 };

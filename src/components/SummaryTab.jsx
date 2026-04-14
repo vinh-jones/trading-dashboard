@@ -156,8 +156,8 @@ export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, se
                           <div style={{
                             width: "70%", height: md.count > 0 ? h : 2,
                             background: md.count === 0 ? theme.border.default : neg
-                              ? "linear-gradient(180deg, #8b2a2a 0%, #da3633 100%)"
-                              : "linear-gradient(180deg, #238636 0%, #1a5a2a 100%)",
+                              ? theme.gradient.loss
+                              : theme.gradient.gain,
                             borderRadius: 2, transition: "height 0.3s",
                           }} />
                           <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 1 }}>{md.label}</div>
@@ -208,7 +208,7 @@ export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, se
                     <div style={{ fontSize: theme.size.md, color: isSelected ? theme.blue : theme.text.muted }}>{b.count}</div>
                     <div style={{
                       width: "60%", height: barH,
-                      background: b.count > 0 ? (isSelected ? theme.blue : "#1f6feb") : theme.border.default,
+                      background: b.count > 0 ? (isSelected ? theme.blue : theme.blueBold) : theme.border.default,
                       borderRadius: 2, transition: "height 0.3s",
                       border: isSelected ? `1px solid ${theme.blue}` : "1px solid transparent",
                     }} />

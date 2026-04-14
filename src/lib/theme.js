@@ -25,10 +25,24 @@ export const theme = {
   },
 
   // ── Semantic / status ─────────────────────────────────────────────────────
-  green: "#3fb950",
-  red:   "#f85149",
-  blue:  "#58a6ff",
-  amber: "#e3b341",
+  green:     "#3fb950",
+  red:       "#f85149",
+  blue:      "#58a6ff",  // link / accent blue (lighter)
+  blueBold:  "#1f6feb",  // primary-action blue (progress bars, bar chart fills)
+  amber:     "#e3b341",
+
+  // ── Danger / warning panels ───────────────────────────────────────────────
+  // Darker than TYPE_COLORS.Shares for an inset "empty state" alert feel.
+  alert: {
+    dangerBg:     "#3a1a1a",
+    dangerBorder: "#7c2a2a",
+  },
+
+  // ── Loss / gain gradients (monthly bar chart) ────────────────────────────
+  gradient: {
+    loss: "linear-gradient(180deg, #8b2a2a 0%, #da3633 100%)",
+    gain: "linear-gradient(180deg, #238636 0%, #1a5a2a 100%)",
+  },
 
   // ── Typography ────────────────────────────────────────────────────────────
   font: {

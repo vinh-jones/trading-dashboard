@@ -11,6 +11,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { buildOccSymbol } from "./_lib/occ.js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
@@ -32,18 +33,6 @@ function isMarketOpen() {
   const day  = et.getDay();                               // 0=Sun, 6=Sat
   const time = et.getHours() + et.getMinutes() / 60;
   return day >= 1 && day <= 5 && time >= 9.5 && time <= 16;
-}
-
-// ── OCC symbol builder ────────────────────────────────────────────────────────
-
-function buildOccSymbol(ticker, expiryIso, isCall, strike) {
-  // expiryIso: "2026-05-01" → "260501"
-  const [y, m, d] = expiryIso.split("-");
-  const expiry    = y.slice(2) + m + d;
-  const side      = isCall ? "C" : "P";
-  // strike: 315 → "00315000", 12.50 → "00012500"
-  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
-  return `${ticker}${expiry}${side}${strikePadded}`;
 }
 
 // ── Public.com auth (token cached in Supabase, valid 24h) ────────────────────

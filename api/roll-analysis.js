@@ -19,6 +19,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { buildOccSymbol } from "./_lib/occ.js";
 
 const PUBLIC_COM_BASE        = "https://api.public.com";
 const ACCOUNT_ID             = process.env.PUBLIC_COM_ACCOUNT_ID;
@@ -81,16 +82,6 @@ async function fetchPublicQuotes(token, instruments) {
   if (!res.ok) throw new Error(`Public.com quotes failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   return data.quotes || [];
-}
-
-// ── OCC symbol builder ────────────────────────────────────────────────────────
-
-function buildOccSymbol(ticker, expiryIso, isCall, strike) {
-  const [y, m, d]    = expiryIso.split("-");
-  const expiry       = y.slice(2) + m + d;
-  const side         = isCall ? "C" : "P";
-  const strikePadded = String(Math.round(parseFloat(strike) * 1000)).padStart(8, "0");
-  return `${ticker}${expiry}${side}${strikePadded}`;
 }
 
 // ── Expiry date helpers ───────────────────────────────────────────────────────
