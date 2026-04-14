@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useData } from "../hooks/useData";
 import { useQuotes } from "../hooks/useQuotes";
 import { useWindowWidth } from "../hooks/useWindowWidth";
@@ -6,6 +6,7 @@ import { useRollAnalysis } from "../hooks/useRollAnalysis";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
 import { calcDTE, allocColor, buildOccSymbol, parseShareCount } from "../lib/trading";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
+import { computePriceTargets } from "../lib/blackScholes";
 import { SixtyCheck } from "./SixtyCheck";
 import { theme } from "../lib/theme";
 
@@ -182,11 +183,152 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   );
 }
 
+// ── Price Target expanded panel ───────────────────────────────────────────────
+
+function PriceTargetPanel({ targets, position }) {
+  const isCSP = position.type === "CSP";
+  const direction = isCSP ? "stays above" : "stays below";
+  const ticker = position.ticker;
+
+  const panelStyle = {
+    background:   theme.bg.elevated,
+    borderTop:    `1px solid ${theme.border.default}`,
+    padding:      `${theme.space[3]}px ${theme.space[4]}px`,
+  };
+
+  const labelStyle = {
+    fontSize:      theme.size.xs,
+    color:         theme.text.muted,
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    fontWeight:    500,
+  };
+
+  // Null state: IV unavailable
+  if (targets.iv == null) {
+    return (
+      <div style={panelStyle}>
+        <div style={labelStyle}>Price Targets</div>
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginTop: theme.space[1] }}>
+          IV data unavailable — price targets require implied volatility.
+        </div>
+      </div>
+    );
+  }
+
+  // Null state: no Fridays before expiry
+  if (targets.targets.length === 0) {
+    return (
+      <div style={panelStyle}>
+        <div style={labelStyle}>Price Targets</div>
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginTop: theme.space[1] }}>
+          Position expires before next Friday — let theta finish.
+        </div>
+      </div>
+    );
+  }
+
+  const { targetProfitPct, currentProfitPct, isLosing, isOnTrack, dtePct } = targets;
+
+  // Status line
+  let statusText, statusColor;
+  if (isLosing) {
+    statusText = `Current: ${currentProfitPct}% · Position is at a loss`;
+    statusColor = theme.red;
+  } else if (!isOnTrack) {
+    statusText = `Current: ${currentProfitPct}% profit · Running below target pace`;
+    statusColor = theme.amber;
+  } else {
+    const remaining = targetProfitPct - currentProfitPct;
+    statusText = `Current: ${currentProfitPct}% profit · Need ${remaining}% more to hit target`;
+    statusColor = theme.green;
+  }
+
+  const formatFriday = (date) => {
+    const m = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `Fri ${m}`;
+  };
+
+  return (
+    <div style={panelStyle}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[1] }}>
+        <span style={labelStyle}>Price Targets</span>
+        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>
+          · {ticker} ${position.strike}{isCSP ? "p" : "c"} · {dtePct}% DTE left · Target: {targetProfitPct}%
+        </span>
+      </div>
+
+      {/* Status */}
+      {currentProfitPct != null && (
+        <div style={{ fontSize: theme.size.sm, color: statusColor, fontWeight: 500, marginBottom: theme.space[2] }}>
+          {statusText}
+        </div>
+      )}
+
+      {/* Friday rows */}
+      {targets.targets.map((t, i) => {
+        if (isLosing) {
+          return (
+            <div key={i} style={{ marginBottom: i < targets.targets.length - 1 ? theme.space[2] : 0 }}>
+              <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, fontWeight: 600, marginBottom: 2 }}>
+                By {formatFriday(t.date)}  ({t.daysAway}d)
+              </div>
+              {t.breakEvenStockPrice != null ? (
+                <div style={{ fontSize: theme.size.sm, color: theme.text.muted, marginLeft: theme.space[3] }}>
+                  Break-even: {ticker} {direction} <span style={{ color: theme.text.secondary, fontWeight: 600 }}>${t.breakEvenStockPrice.toFixed(2)}</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[3] }}>
+                  Break-even: Target price outside model range at this date.
+                </div>
+              )}
+              {t.targetStockPrice != null ? (
+                <div style={{ fontSize: theme.size.sm, color: theme.text.muted, marginLeft: theme.space[3] }}>
+                  Target ({targetProfitPct}%): {ticker} {direction} <span style={{ color: theme.green, fontWeight: 600 }}>${t.targetStockPrice.toFixed(2)}</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginLeft: theme.space[3] }}>
+                  Target ({targetProfitPct}%): Target price outside model range at this date.
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // On-track or lagging
+        return (
+          <div key={i} style={{ fontSize: theme.size.sm, color: theme.text.muted, marginBottom: 2 }}>
+            <span style={{ color: theme.text.secondary }}>By {formatFriday(t.date)}</span>
+            {"  "}({t.daysAway}d){"    "}
+            {t.targetStockPrice != null ? (
+              <>
+                {ticker} {direction}{" "}
+                <span style={{ color: theme.text.primary, fontWeight: 600 }}>${t.targetStockPrice.toFixed(2)}</span>
+                {" "}to hit {targetProfitPct}%
+              </>
+            ) : (
+              <span style={{ color: theme.text.subtle }}>Target price outside model range at this date.</span>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Footer */}
+      <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: theme.space[2] }}>
+        Estimated via Black-Scholes · IV {Math.round(targets.iv * 100)}% · Rate 4.5%
+      </div>
+    </div>
+  );
+}
+
 // ── Shared positions table ────────────────────────────────────────────────────
 
 function PositionsTable({ rows, positionType, quoteMap }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
+  const [expandedRowKey, setExpandedRowKey] = useState(null);
+  const canExpand = !isLeap;
 
   const colHeader = (label) => (
     <th key={label} style={{
@@ -219,6 +361,7 @@ function PositionsTable({ rows, positionType, quoteMap }) {
               "Ticker", "Strike", "Expiry", "DTE", "% DTE Left",
               isLeap ? "Cost" : "Premium",
               "G/L $", "G/L %",
+              ...(canExpand ? [""] : []),
             ].map(colHeader)}
           </tr>
         </thead>
@@ -270,25 +413,54 @@ function PositionsTable({ rows, positionType, quoteMap }) {
               <td style={{ padding: "9px 10px", ...style }}>{content}</td>
             );
 
+            const rowKey = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
+            const isExpanded = canExpand && expandedRowKey === rowKey;
+
+            // Compute price targets lazily on expand
+            let priceTargets = null;
+            if (isExpanded) {
+              const currentIV = quoteMap.get(pos.ticker)?.iv ?? null;
+              const currentStockPrice = quoteMap.get(pos.ticker)?.mid ?? null;
+              const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC, pos.strike);
+              const optionMid = quoteMap.get(sym)?.mid ?? null;
+              priceTargets = computePriceTargets(pos, currentIV, currentStockPrice, optionMid);
+            }
+
             return (
-              <tr
-                key={i}
-                style={{ borderBottom: `1px solid ${theme.border.default}` }}
-                onMouseEnter={e => (e.currentTarget.style.background = `${TYPE_COLORS.CSP.bg}22`)}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-              >
-                {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
-                {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary })}
-                {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
-                {td(dte != null ? `${dte}d` : "—", {
-                  color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
-                  fontWeight: dte != null && dte <= 5 ? 600 : 400,
-                })}
-                {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600 })}
-                {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600 })}
-                {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600 })}
-                {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500 })}
-              </tr>
+              <React.Fragment key={i}>
+                <tr
+                  style={{
+                    borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
+                    cursor: canExpand ? "pointer" : "default",
+                  }}
+                  onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
+                  onMouseEnter={e => (e.currentTarget.style.background = `${TYPE_COLORS.CSP.bg}22`)}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                >
+                  {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
+                  {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary })}
+                  {td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
+                  {td(dte != null ? `${dte}d` : "—", {
+                    color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
+                    fontWeight: dte != null && dte <= 5 ? 600 : 400,
+                  })}
+                  {td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600 })}
+                  {td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600 })}
+                  {td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600 })}
+                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",          { color: glColor, fontWeight: 500 })}
+                  {canExpand && td(
+                    <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
+                    { width: 30, textAlign: "center", padding: "9px 4px" }
+                  )}
+                </tr>
+                {isExpanded && priceTargets && (
+                  <tr>
+                    <td colSpan={9} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
+                      <PriceTargetPanel targets={priceTargets} position={pos} />
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             );
           })}
         </tbody>
