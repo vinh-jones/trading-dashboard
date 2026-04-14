@@ -193,12 +193,13 @@ export function getNextTwoFridays(fromDate) {
  * Compute dynamic profit target and stock price targets for a position.
  *
  * @param {Object} position         - Position from positions table
- * @param {number|null} currentIV   - IV from equity quote (decimal)
+ * @param {number|null} currentIV   - IV from equity quote (decimal, fallback)
  * @param {number|null} currentStockPrice - Current stock price
  * @param {number|null} currentMid  - Current option mid price (per share)
+ * @param {number|null} optionIVFromGreeks - Per-strike IV from Public.com greeks API (preferred)
  * @returns {Object} Price target results
  */
-export function computePriceTargets(position, currentIV, currentStockPrice, currentMid) {
+export function computePriceTargets(position, currentIV, currentStockPrice, currentMid, optionIVFromGreeks) {
   const today = new Date();
   const openDate = new Date(position.open_date + "T00:00:00");
   const expiryDate = new Date(position.expiry_date + "T00:00:00");
@@ -231,14 +232,12 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
 
   const optionType = position.type === "CSP" ? "put" : "call";
 
-  // Back-solve the option's own IV from its market price when possible.
-  // This captures the real vol skew for this specific strike, which can
-  // differ significantly from the equity-level IV (e.g. 110% vs 88%).
+  // IV priority: per-strike from greeks API > back-solved from market mid > equity-level
   const T = remainingDTE / 365;
-  const optionIV = (currentMid != null && currentStockPrice != null)
+  const backSolvedIV = (optionIVFromGreeks == null && currentMid != null && currentStockPrice != null)
     ? impliedVol(currentMid, currentStockPrice, position.strike, T, RISK_FREE_RATE, optionType)
     : null;
-  const iv = optionIV ?? currentIV;
+  const iv = optionIVFromGreeks ?? backSolvedIV ?? currentIV;
 
   // Bail early if we can't compute price targets
   if (iv == null || currentStockPrice == null) {

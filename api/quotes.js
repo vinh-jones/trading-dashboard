@@ -134,11 +134,24 @@ function buildInstruments(rows) {
   return { equityInstruments, optionInstruments };
 }
 
-// ── IV refresh — handled externally via /api/ingest-iv ───────────────────────
-// Tastytrade blocks Vercel/AWS datacenter IPs. IV is ingested by OpenClaw
-// running on a residential Mac, which POSTs to /api/ingest-iv. This function
-// is a no-op kept for structural symmetry.
-async function refreshIV() { /* no-op — see api/ingest-iv.js */ }
+// ── Fetch option Greeks from Public.com ───────────────────────────────────────
+
+async function fetchOptionGreeks(token, osiSymbols) {
+  if (!ACCOUNT_ID || !osiSymbols.length) return [];
+  const params = osiSymbols.map(s => `osiSymbols=${encodeURIComponent(s)}`).join("&");
+  const res = await fetch(
+    `${PUBLIC_COM_BASE}/userapigateway/option-details/${ACCOUNT_ID}/greeks?${params}`,
+    { headers: { "Authorization": `Bearer ${token}` } }
+  );
+
+  if (!res.ok) {
+    console.warn(`[api/quotes] greeks fetch failed (${res.status}), skipping`);
+    return [];
+  }
+
+  const data = await res.json();
+  return data.greeks || [];
+}
 
 // ── Refresh: fetch from Public.com + upsert into Supabase ────────────────────
 
@@ -192,8 +205,30 @@ async function refreshQuotes(supabase) {
     if (upsertError) throw new Error(`Supabase upsert failed: ${upsertError.message}`);
   }
 
-  // 5. IV is populated externally via /api/ingest-iv (OpenClaw cron on residential IP)
-  await refreshIV();
+  // 5. Fetch per-strike IV + delta from Public.com option greeks
+  const optionSymbols = optionInstruments.map(i => i.symbol);
+  if (optionSymbols.length) {
+    const greeks = await fetchOptionGreeks(token, optionSymbols);
+    if (greeks.length) {
+      const greeksUpdates = greeks
+        .filter(g => g.greeks?.impliedVolatility != null)
+        .map(g => ({
+          symbol:       g.symbol,
+          iv:           parseFloat(g.greeks.impliedVolatility),
+          delta:        g.greeks.delta != null ? parseFloat(g.greeks.delta) : null,
+          refreshed_at: now,
+        }));
+
+      if (greeksUpdates.length) {
+        const { error: greeksError } = await supabase
+          .from("quotes")
+          .upsert(greeksUpdates, { onConflict: "symbol", ignoreDuplicates: false });
+
+        if (greeksError) console.warn("[api/quotes] greeks upsert failed:", greeksError.message);
+        else console.log(`[api/quotes] Updated greeks for ${greeksUpdates.length} options`);
+      }
+    }
+  }
 
   return upsertRows;
 }

@@ -434,8 +434,10 @@ function PositionsTable({ rows, positionType, quoteMap }) {
               const currentIV = quoteMap.get(pos.ticker)?.iv ?? null;
               const currentStockPrice = quoteMap.get(pos.ticker)?.mid ?? null;
               const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC, pos.strike);
-              const optionMid = quoteMap.get(sym)?.mid ?? null;
-              priceTargets = computePriceTargets(pos, currentIV, currentStockPrice, optionMid);
+              const optionQuote = quoteMap.get(sym);
+              const optionMid = optionQuote?.mid ?? null;
+              const optionIV = optionQuote?.iv ?? null; // per-strike IV from greeks API
+              priceTargets = computePriceTargets(pos, currentIV, currentStockPrice, optionMid, optionIV);
             }
 
             return (
