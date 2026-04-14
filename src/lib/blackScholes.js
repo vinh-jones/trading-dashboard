@@ -207,14 +207,17 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
     // Skip if Friday is at or past expiry
     if (daysToFriday >= remainingDTE) return null;
 
+    // BS needs the option's remaining life ON that Friday, not days until Friday
+    const dteOnFriday = remainingDTE - daysToFriday;
+
     const targetStockPrice = findStockPriceForTargetMid(
-      targetMid, position.strike, daysToFriday,
+      targetMid, position.strike, dteOnFriday,
       RISK_FREE_RATE, currentIV, optionType, currentStockPrice
     );
 
     const breakEvenStockPrice = isLosing
       ? findStockPriceForTargetMid(
-          breakEvenMid, position.strike, daysToFriday,
+          breakEvenMid, position.strike, dteOnFriday,
           RISK_FREE_RATE, currentIV, optionType, currentStockPrice
         )
       : null;
