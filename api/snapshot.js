@@ -6,6 +6,8 @@
  * 2. Fetches VIX, SPY, QQQ from Yahoo Finance
  * 3. Computes portfolio metrics from freshly-synced Supabase data
  * 4. Upserts one row into daily_snapshots (one row per market day)
+ * 5. Evaluates Focus Engine and sends Pushover push per P1 item
+ *    (deduped via sent_alerts; failure here is logged but never blocks the snapshot)
  *
  * Triggered automatically by Vercel cron at 9:30 PM UTC (4:30 PM ET) Mon–Fri.
  * Can also be triggered manually:
@@ -16,6 +18,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
+import { generateFocusItems } from "../src/lib/focusEngine.js";
+import { reshapePositions } from "./_lib/reshapePositions.js";
+import { sendPushover } from "./_lib/notify.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -198,6 +203,22 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message });
   }
 
+  // 10. Evaluate Focus Engine and send Pushover pushes for P1 items.
+  // Wrapped in try/catch — a notification failure must NOT fail the snapshot.
+  let notifications = { sent: [], skipped: [], error: null };
+  try {
+    notifications = await evaluateAndNotify({
+      supabase,
+      today,
+      accountSnap,
+      positionRows: positions,
+      liveVix: vix,
+    });
+  } catch (notifyError) {
+    console.error("[api/snapshot] Notification step failed:", notifyError);
+    notifications = { sent: [], skipped: [], error: notifyError.message };
+  }
+
   return res.status(200).json({
     success: true,
     date: today,
@@ -206,5 +227,63 @@ export default async function handler(req, res) {
     within_band: withinBand,
     mtd_premium: mtdPremium,
     pipeline_implied: pipelineImplied,
+    notifications,
   });
+}
+
+/**
+ * Runs the Focus Engine against the freshly-synced account + positions,
+ * filters to P1 items, skips any already pushed today (via sent_alerts),
+ * sends a Pushover push per remaining item, and records the send.
+ *
+ * Quotes and market context are intentionally omitted in this pilot — the
+ * P1 rules that don't depend on quotes (cash-below-floor, expiring-soon
+ * with DTE≤2, uncovered-shares) fire anyway. Quote-dependent rules degrade
+ * gracefully.
+ */
+async function evaluateAndNotify({ supabase, today, accountSnap, positionRows, liveVix }) {
+  const reshapedPositions = reshapePositions(positionRows);
+  const items = generateFocusItems(reshapedPositions, accountSnap, null, liveVix);
+  const p1Items = items.filter(i => i.priority === "P1");
+
+  if (!p1Items.length) return { sent: [], skipped: [] };
+
+  // Load today's already-sent alert ids so we don't re-push
+  const { data: existingRows, error: fetchError } = await supabase
+    .from("sent_alerts")
+    .select("alert_id")
+    .eq("sent_date", today);
+
+  if (fetchError) throw new Error(`sent_alerts read failed: ${fetchError.message}`);
+
+  const alreadySent = new Set((existingRows ?? []).map(r => r.alert_id));
+  const dashboardUrl = process.env.DASHBOARD_URL;
+
+  const sent = [];
+  const skipped = [];
+
+  for (const item of p1Items) {
+    if (alreadySent.has(item.id)) {
+      skipped.push(item.id);
+      continue;
+    }
+
+    await sendPushover({
+      title:   item.title,
+      message: item.detail,
+      url:     dashboardUrl,
+    });
+
+    const { error: insertError } = await supabase
+      .from("sent_alerts")
+      .insert({ alert_id: item.id, sent_date: today, title: item.title });
+
+    if (insertError) {
+      // Push already went out — log but don't re-push on retry within the same cron run
+      console.error(`[api/snapshot] sent_alerts insert failed for ${item.id}:`, insertError);
+    }
+    sent.push(item.id);
+  }
+
+  return { sent, skipped };
 }
