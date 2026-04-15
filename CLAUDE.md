@@ -22,7 +22,7 @@ After creating a PR, merge it immediately (no need to ask).
 
 The user is on **Pacific Time (west coast)**.
 
-- **User-facing timestamps** (tooltips, dashboard displays, notification text, etc.) must be rendered in `America/Los_Angeles` — either implicitly (browser-local, which is PT for the user) or explicitly via `timeZone: "America/Los_Angeles"`. Prefer explicit when the timestamp could be read in a different context (emails, push bodies).
+- **User-facing timestamps** (tooltips, dashboard displays, etc.) should rely on **browser-local time** — don't hardcode `timeZone: "America/Los_Angeles"`. This way the display auto-adjusts if the user ever checks from a different timezone.
 - **Market-hours logic** (any `isMarketOpen()` / `isMarketHours()` check, DTE calc, options expiry math) stays on `America/New_York`. Markets are ET regardless of where the user sits. Don't change these to PT.
 
 ## Design tokens
