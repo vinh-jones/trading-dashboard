@@ -2,6 +2,30 @@ import { calcDTE, buildOccSymbol, parseShareCount } from "./trading.js";
 import { getVixBand } from "./vixBand.js";
 import { formatExpiry } from "./format.js";
 
+// ── Notification config ──────────────────────────────────────────────────────
+// Which Focus Engine rules trigger iPhone pushes via /api/snapshot's EOD step.
+// Keys match the `rule` field on items returned by generateFocusItems(); flip a
+// value to tune signal/noise without touching rule logic. Decouples push-worthi-
+// ness from priority — some P1s are informational, some P2/P3s are actionable.
+//
+// IMPORTANT: when you add a new rule, add an entry here too. Items whose rule
+// isn't listed default to NOT pushed (fail-closed — prevents surprise noise).
+export const NOTIFY_RULES = {
+  cash_below_floor:       false, // often a conscious deployment decision
+  expiring_soon:          true,
+  uncovered_shares:       true,
+  cc_deeply_itm:          true,
+  csp_itm_urgency:        true,
+  near_worthless:         true,
+  rule_60_60:             true,
+  earnings_before_expiry: true,
+  macro_overlap:          true,
+  expiry_cluster:         false, // P3 awareness item, not actionable
+  leaps_low_dte:          true,
+  leaps_profit_target:    true,
+  roll_opportunity:       true,
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function daysBetween(isoA, isoB) {
