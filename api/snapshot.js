@@ -22,6 +22,7 @@ import { getVixBand } from "../src/lib/vixBand.js";
 import { generateFocusItems, NOTIFY_RULES } from "../src/lib/focusEngine.js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { sendPushover } from "./_lib/notify.js";
+import { loadQuoteMap, loadMarketContext, loadRollAnalysisMap } from "./_lib/loadFocusData.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -238,13 +239,29 @@ export default async function handler(req, res) {
  * skips any already pushed today (via sent_alerts), sends a Pushover push
  * per remaining item, and records the send.
  *
- * Quotes and market context are intentionally omitted in this pilot — rules
- * that don't depend on quotes (cash-below-floor, expiring-soon, uncovered-
- * shares) fire anyway. Quote-dependent rules degrade gracefully.
+ * Enriches the focus-engine call with live quotes, market_context and
+ * roll_analysis so quote-dependent rules (cc_deeply_itm, csp_itm_urgency,
+ * near_worthless, rule_60_60, leaps_profit_target, roll_opportunity, etc.)
+ * can fire. Each loader fails soft — an empty map / null marketContext just
+ * means its dependent rules sit out this run.
  */
 async function evaluateAndNotify({ supabase, today, accountSnap, positionRows, liveVix }) {
   const reshapedPositions = reshapePositions(positionRows);
-  const items = generateFocusItems(reshapedPositions, accountSnap, null, liveVix);
+
+  const [quoteMap, marketContext, rollAnalysisMap] = await Promise.all([
+    loadQuoteMap(supabase),
+    loadMarketContext(supabase),
+    loadRollAnalysisMap(supabase),
+  ]);
+
+  const items = generateFocusItems(
+    reshapedPositions,
+    accountSnap,
+    marketContext,
+    liveVix,
+    quoteMap,
+    rollAnalysisMap,
+  );
   const pushItems = items.filter(i => NOTIFY_RULES[i.rule] === true);
 
   if (!pushItems.length) return { sent: [], skipped: [] };
