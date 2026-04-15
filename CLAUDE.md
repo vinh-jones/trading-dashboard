@@ -18,6 +18,13 @@ Increment from that number. Never use the local file's version as the baseline.
 
 After creating a PR, merge it immediately (no need to ask).
 
+## Timezones
+
+The user is on **Pacific Time (west coast)**.
+
+- **User-facing timestamps** (tooltips, dashboard displays, notification text, etc.) must be rendered in `America/Los_Angeles` — either implicitly (browser-local, which is PT for the user) or explicitly via `timeZone: "America/Los_Angeles"`. Prefer explicit when the timestamp could be read in a different context (emails, push bodies).
+- **Market-hours logic** (any `isMarketOpen()` / `isMarketHours()` check, DTE calc, options expiry math) stays on `America/New_York`. Markets are ET regardless of where the user sits. Don't change these to PT.
+
 ## Design tokens
 
 All styles use inline `style={{}}` objects — no CSS files, no Tailwind. **Never hardcode hex color values.** Always import and use `theme` from `src/lib/theme.js`:
