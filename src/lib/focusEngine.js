@@ -12,14 +12,14 @@ import { formatExpiry } from "./format.js";
 // isn't listed default to NOT pushed (fail-closed — prevents surprise noise).
 export const NOTIFY_RULES = {
   cash_below_floor:       false, // often a conscious deployment decision
-  expiring_soon:          true,
-  uncovered_shares:       true,
+  expiring_soon:          false, // already tracked — no surprise value
+  uncovered_shares:       false, // known after assignment — no surprise value
   cc_deeply_itm:          true,
   csp_itm_urgency:        true,
   near_worthless:         true,
   rule_60_60:             true,
-  earnings_before_expiry: true,
-  macro_overlap:          true,
+  earnings_before_expiry: false, // tracked separately
+  macro_overlap:          false, // tracked separately
   expiry_cluster:         false, // P3 awareness item, not actionable
   leaps_low_dte:          true,
   leaps_profit_target:    true,
