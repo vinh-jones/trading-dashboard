@@ -6,8 +6,9 @@
  * 2. Fetches VIX, SPY, QQQ from Yahoo Finance
  * 3. Computes portfolio metrics from freshly-synced Supabase data
  * 4. Upserts one row into daily_snapshots (one row per market day)
- * 5. Evaluates Focus Engine and sends Pushover push per P1 item
- *    (deduped via sent_alerts; failure here is logged but never blocks the snapshot)
+ * 5. Evaluates Focus Engine and sends Pushover push per rule flagged
+ *    push-worthy in NOTIFY_RULES (src/lib/focusEngine.js); deduped via
+ *    sent_alerts. Failure here is logged but never blocks the snapshot.
  *
  * Triggered automatically by Vercel cron at 9:30 PM UTC (4:30 PM ET) Mon–Fri.
  * Can also be triggered manually:
@@ -18,7 +19,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
-import { generateFocusItems } from "../src/lib/focusEngine.js";
+import { generateFocusItems, NOTIFY_RULES } from "../src/lib/focusEngine.js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { sendPushover } from "./_lib/notify.js";
 
@@ -233,20 +234,20 @@ export default async function handler(req, res) {
 
 /**
  * Runs the Focus Engine against the freshly-synced account + positions,
- * filters to P1 items, skips any already pushed today (via sent_alerts),
- * sends a Pushover push per remaining item, and records the send.
+ * keeps only items whose rule is flagged push-worthy in NOTIFY_RULES,
+ * skips any already pushed today (via sent_alerts), sends a Pushover push
+ * per remaining item, and records the send.
  *
- * Quotes and market context are intentionally omitted in this pilot — the
- * P1 rules that don't depend on quotes (cash-below-floor, expiring-soon
- * with DTE≤2, uncovered-shares) fire anyway. Quote-dependent rules degrade
- * gracefully.
+ * Quotes and market context are intentionally omitted in this pilot — rules
+ * that don't depend on quotes (cash-below-floor, expiring-soon, uncovered-
+ * shares) fire anyway. Quote-dependent rules degrade gracefully.
  */
 async function evaluateAndNotify({ supabase, today, accountSnap, positionRows, liveVix }) {
   const reshapedPositions = reshapePositions(positionRows);
   const items = generateFocusItems(reshapedPositions, accountSnap, null, liveVix);
-  const p1Items = items.filter(i => i.priority === "P1");
+  const pushItems = items.filter(i => NOTIFY_RULES[i.rule] === true);
 
-  if (!p1Items.length) return { sent: [], skipped: [] };
+  if (!pushItems.length) return { sent: [], skipped: [] };
 
   // Load today's already-sent alert ids so we don't re-push
   const { data: existingRows, error: fetchError } = await supabase
@@ -262,7 +263,7 @@ async function evaluateAndNotify({ supabase, today, accountSnap, positionRows, l
   const sent = [];
   const skipped = [];
 
-  for (const item of p1Items) {
+  for (const item of pushItems) {
     if (alreadySent.has(item.id)) {
       skipped.push(item.id);
       continue;
