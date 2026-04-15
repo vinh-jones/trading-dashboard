@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/quotes",
+      "schedule": "*/15 12-20 * * 1-5"
+    },
+    {
       "path": "/api/snapshot",
       "schedule": "30 21 * * 1-5"
     }

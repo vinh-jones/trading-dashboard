@@ -16,7 +16,7 @@ import { sendOpsAlert } from "./_lib/notify.js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
-const STALE_MS         = 30 * 60 * 1000; // 30 minutes
+const STALE_MS         = 15 * 60 * 1000; // 15 minutes — matches the intraday cron cadence
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,9 @@ function isMarketOpen() {
   const et   = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day  = et.getDay();                               // 0=Sun, 6=Sat
   const time = et.getHours() + et.getMinutes() / 60;
-  return day >= 1 && day <= 5 && time >= 9.5 && time <= 16;
+  // 8:30 AM–4:00 PM ET Mon–Fri. Lower bound covers the pre-market hour so
+  // the intraday cron can warm the cache before the regular session opens.
+  return day >= 1 && day <= 5 && time >= 8.5 && time <= 16;
 }
 
 // ── Public.com auth (token cached in Supabase, valid 24h) ────────────────────
