@@ -44,3 +44,44 @@ export async function sendPushover({ title, message, priority = 0, url }) {
 
   return res.json();
 }
+
+/**
+ * Operational alert — fires a Pushover push with once-per-day dedup.
+ *
+ * Intended for infra/API health issues (throttling, auth failures, ingest
+ * breakage) that you want to know about immediately but don't want spamming
+ * you every 15 minutes if the issue persists. Reuses the `sent_alerts` table
+ * so the first occurrence of the day pushes and subsequent ones don't.
+ *
+ * Fails soft — returns on error rather than throwing. An ops-alert outage
+ * must never cascade into breaking the caller.
+ */
+export async function sendOpsAlert({ supabase, alertId, title, message, today, priority = 1 }) {
+  const dedupId = `ops-${alertId}`;
+
+  try {
+    const { data: existing } = await supabase
+      .from("sent_alerts")
+      .select("alert_id")
+      .eq("alert_id", dedupId)
+      .eq("sent_date", today)
+      .maybeSingle();
+
+    if (existing) {
+      console.log(`[notify] ops-alert ${dedupId} already sent today — skipping`);
+      return { skipped: true, reason: "already_sent" };
+    }
+
+    const result = await sendPushover({ title, message, priority });
+
+    const { error: insertError } = await supabase
+      .from("sent_alerts")
+      .insert({ alert_id: dedupId, sent_date: today, title });
+    if (insertError) console.warn(`[notify] sent_alerts insert failed for ${dedupId}:`, insertError.message);
+
+    return result;
+  } catch (err) {
+    console.error(`[notify] sendOpsAlert(${dedupId}) failed:`, err.message);
+    return { skipped: true, reason: "error", error: err.message };
+  }
+}

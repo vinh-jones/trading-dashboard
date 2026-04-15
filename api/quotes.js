@@ -12,6 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { buildOccSymbol } from "./_lib/occ.js";
+import { sendOpsAlert } from "./_lib/notify.js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
@@ -97,7 +98,10 @@ async function fetchPublicQuotes(token, instruments) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Public.com quotes failed (${res.status}): ${text}`);
+    throw Object.assign(new Error(`Public.com quotes failed (${res.status}): ${text}`), {
+      status: res.status,
+      body:   text,
+    });
   }
 
   const data = await res.json();
@@ -146,11 +150,43 @@ async function fetchOptionGreeks(token, osiSymbols) {
 
   if (!res.ok) {
     console.warn(`[api/quotes] greeks fetch failed (${res.status}), skipping`);
-    return [];
+    // Surface the status so the caller can fire an ops alert on throttle / auth issues
+    return { greeks: [], status: res.status };
   }
 
   const data = await res.json();
-  return data.greeks || [];
+  return { greeks: data.greeks || [], status: 200 };
+}
+
+// ── Ops alerting ──────────────────────────────────────────────────────────────
+// Fires a one-per-day Pushover push when Public.com returns 429/403/401.
+// These are the status codes that matter operationally:
+//   429 — rate-limited (Public's "Throttles" per their API Program Agreement)
+//   403 — forbidden (account/app-level block, possible ToS issue)
+//   401 — auth failure (cached token revoked or secret changed)
+// Other errors (500s, network) tend to be transient — we let them surface in
+// Vercel logs without paging the user.
+async function maybeAlertOnPublicComError(supabase, err, endpoint) {
+  const status = err?.status;
+  if (status !== 429 && status !== 403 && status !== 401) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const titleMap = {
+    429: "Public.com rate-limited",
+    403: "Public.com access forbidden",
+    401: "Public.com auth failed",
+  };
+  const title = titleMap[status];
+  const message = `${endpoint} call returned ${status}. Check Vercel logs + Public.com API status.`;
+
+  await sendOpsAlert({
+    supabase,
+    alertId: `public-com-${status}-${endpoint}`,
+    title,
+    message,
+    today,
+    priority: 1,
+  });
 }
 
 // ── Refresh: fetch from Public.com + upsert into Supabase ────────────────────
@@ -170,10 +206,17 @@ async function refreshQuotes(supabase) {
   const token = await getPublicAccessToken(supabase);
 
   // 3. Fetch in two batches (equities + options have different instrument types)
-  const [equityQuotes, optionQuotes] = await Promise.all([
-    equityInstruments.length ? fetchPublicQuotes(token, equityInstruments) : [],
-    optionInstruments.length ? fetchPublicQuotes(token, optionInstruments) : [],
-  ]);
+  let equityQuotes = [];
+  let optionQuotes = [];
+  try {
+    [equityQuotes, optionQuotes] = await Promise.all([
+      equityInstruments.length ? fetchPublicQuotes(token, equityInstruments) : [],
+      optionInstruments.length ? fetchPublicQuotes(token, optionInstruments) : [],
+    ]);
+  } catch (err) {
+    await maybeAlertOnPublicComError(supabase, err, "quotes");
+    throw err;
+  }
 
   const allQuotes = [...equityQuotes, ...optionQuotes];
 
@@ -208,7 +251,14 @@ async function refreshQuotes(supabase) {
   // 5. Fetch per-strike IV + delta from Public.com option greeks
   const optionSymbols = optionInstruments.map(i => i.symbol);
   if (optionSymbols.length) {
-    const greeks = await fetchOptionGreeks(token, optionSymbols);
+    const { greeks, status: greeksStatus } = await fetchOptionGreeks(token, optionSymbols);
+    if (greeksStatus === 429 || greeksStatus === 403 || greeksStatus === 401) {
+      await maybeAlertOnPublicComError(
+        supabase,
+        Object.assign(new Error(`Public.com greeks failed (${greeksStatus})`), { status: greeksStatus }),
+        "greeks",
+      );
+    }
     if (greeks.length) {
       const greeksUpdates = greeks
         .filter(g => g.greeks?.impliedVolatility != null)
