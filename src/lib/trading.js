@@ -1,5 +1,5 @@
-import { getVixBand } from "./vixBand";
-import { theme } from "./theme";
+import { getVixBand } from "./vixBand.js";
+import { theme } from "./theme.js";
 
 // ── Shared parsing helpers ──────────────────────────────────────────────────
 

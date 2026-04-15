@@ -1,6 +1,6 @@
-import { calcDTE, buildOccSymbol, parseShareCount } from "./trading";
-import { getVixBand } from "./vixBand";
-import { formatExpiry } from "./format";
+import { calcDTE, buildOccSymbol, parseShareCount } from "./trading.js";
+import { getVixBand } from "./vixBand.js";
+import { formatExpiry } from "./format.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
