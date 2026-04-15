@@ -3,9 +3,13 @@ import { useState, useEffect } from "react";
 /**
  * useQuotes() — fetches cached quotes from /api/quotes on mount.
  *
- * The server handles staleness + refresh logic automatically.
- * If the cache is >30min old and market is open, the server refreshes
- * before responding (adds ~1-2s latency on first load of the day).
+ * A Vercel cron refreshes the quote cache every 15 min during market hours,
+ * so in the common case this is just a Supabase read (fast). The server also
+ * has a lazy-refresh fallback: if the cache is >15 min old AND the market is
+ * open, it refreshes before responding. That path only fires when the cron
+ * has failed or hasn't run yet (e.g. first page load of the day before the
+ * 8:30 AM ET cron tick, or preview deploys where crons don't run), and adds
+ * ~1-2s latency.
  *
  * Returns:
  *   quotes      — flat array of { symbol, instrument_type, last, bid, ask, mid, refreshed_at }
