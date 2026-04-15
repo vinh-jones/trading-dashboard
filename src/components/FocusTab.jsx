@@ -93,7 +93,58 @@ const RULE_LABELS = {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function FocusItemCard({ item, isMobile }) {
+// Bell badge shown next to items that have already triggered a Pushover push
+// (i.e. have a corresponding row in the alert_state table). Hover reveals when
+// the push fired. Timestamps are rendered in browser-local time per CLAUDE.md.
+function NotifiedBadge({ firstFiredAt }) {
+  const [hovered, setHovered] = useState(false);
+  if (!firstFiredAt) return null;
+
+  const d = new Date(firstFiredAt);
+  const label = `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} at ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+
+  return (
+    <span
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={e => e.stopPropagation()}
+      style={{
+        position:     "relative",
+        display:      "inline-flex",
+        alignItems:   "center",
+        fontSize:     theme.size.xs,
+        color:        theme.amber,
+        cursor:       "default",
+        userSelect:   "none",
+      }}
+      aria-label={`Notified ${label}`}
+    >
+      <span style={{ fontSize: theme.size.sm, lineHeight: 1 }}>🔔</span>
+      {hovered && (
+        <div style={{
+          position:      "absolute",
+          top:           "calc(100% + 4px)",
+          left:          "50%",
+          transform:     "translateX(-50%)",
+          background:    theme.bg.elevated,
+          border:        `1px solid ${theme.border.strong}`,
+          borderRadius:  theme.radius.sm,
+          padding:       "4px 8px",
+          whiteSpace:    "nowrap",
+          fontSize:      theme.size.xs,
+          color:         theme.text.primary,
+          fontFamily:    theme.font.mono,
+          zIndex:        100,
+          pointerEvents: "none",
+        }}>
+          Pushed {label}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function FocusItemCard({ item, isMobile, notifiedAt }) {
   const [expanded, setExpanded] = useState(true);
   const p = PRIORITY[item.priority];
   return (
@@ -142,6 +193,7 @@ function FocusItemCard({ item, isMobile }) {
             }}>
               {RULE_LABELS[item.rule] ?? item.rule}
             </span>
+            <NotifiedBadge firstFiredAt={notifiedAt} />
           </div>
 
           {/* Detail (expanded) */}
@@ -166,7 +218,7 @@ function FocusItemCard({ item, isMobile }) {
   );
 }
 
-function WatchingRow({ item }) {
+function WatchingRow({ item, notifiedAt }) {
   const [expanded, setExpanded] = useState(true);
   const p = PRIORITY[item.priority];
   return (
@@ -186,9 +238,12 @@ function WatchingRow({ item }) {
         {RULE_LABELS[item.rule] ?? item.rule}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: theme.size.sm, color: theme.text.secondary }}>
-          {item.title}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.secondary }}>
+            {item.title}
+          </span>
+          <NotifiedBadge firstFiredAt={notifiedAt} />
+        </div>
         {expanded && (
           <div style={{ marginTop: 4, fontSize: theme.size.sm, color: theme.text.muted, lineHeight: 1.6 }}>
             {item.detail}
@@ -275,6 +330,8 @@ export function FocusTab() {
   const [mcLoading, setMcLoading] = useState(true);
   const [infoExpanded, setInfoExpanded] = useState(true);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Map<alert_id, { first_fired_at }> — populated from /api/focus-context in prod
+  const [notifiedMap, setNotifiedMap] = useState(() => new Map());
 
   useEffect(() => {
     if (!import.meta.env.PROD) {
@@ -284,8 +341,14 @@ export function FocusTab() {
     }
     fetch("/api/focus-context")
       .then(r => r.json())
-      .then(data => { if (data.ok && data.marketContext) setMarketContext(data.marketContext); })
-      .catch(err => console.warn("[FocusTab] market context fetch failed:", err.message))
+      .then(data => {
+        if (!data.ok) return;
+        if (data.marketContext) setMarketContext(data.marketContext);
+        if (Array.isArray(data.alertState)) {
+          setNotifiedMap(new Map(data.alertState.map(a => [a.alert_id, { firstFiredAt: a.first_fired_at }])));
+        }
+      })
+      .catch(err => console.warn("[FocusTab] focus-context fetch failed:", err.message))
       .finally(() => setMcLoading(false));
   }, []);
 
@@ -436,7 +499,12 @@ export function FocusTab() {
           </div>
         ) : (
           focus.map(item => (
-            <FocusItemCard key={item.id} item={item} isMobile={isMobile} />
+            <FocusItemCard
+              key={item.id}
+              item={item}
+              isMobile={isMobile}
+              notifiedAt={notifiedMap.get(item.id)?.firstFiredAt}
+            />
           ))
         )}
       </div>
@@ -446,7 +514,11 @@ export function FocusTab() {
         <div style={panelStyle}>
           {sectionHeader("Watching", watching.length)}
           {watching.map(item => (
-            <WatchingRow key={item.id} item={item} />
+            <WatchingRow
+              key={item.id}
+              item={item}
+              notifiedAt={notifiedMap.get(item.id)?.firstFiredAt}
+            />
           ))}
         </div>
       )}
@@ -464,7 +536,11 @@ export function FocusTab() {
             </span>
           </div>
           {infoExpanded && info.map(item => (
-            <WatchingRow key={item.id} item={item} />
+            <WatchingRow
+              key={item.id}
+              item={item}
+              notifiedAt={notifiedMap.get(item.id)?.firstFiredAt}
+            />
           ))}
         </div>
       )}
