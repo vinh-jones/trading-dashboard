@@ -8,7 +8,8 @@
  * 4. Upserts one row into daily_snapshots (one row per market day)
  * 5. Evaluates Focus Engine and sends Pushover push per rule flagged
  *    push-worthy in NOTIFY_RULES (src/lib/focusEngine.js); deduped via
- *    sent_alerts. Failure here is logged but never blocks the snapshot.
+ *    transition-based alert_state table (shared with intraday alert-check
+ *    cron). Failure here is logged but never blocks the snapshot.
  *
  * Triggered automatically by Vercel cron at 9:30 PM UTC (4:30 PM ET) Mon–Fri.
  * Can also be triggered manually:
@@ -19,10 +20,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
-import { generateFocusItems, NOTIFY_RULES } from "../src/lib/focusEngine.js";
-import { reshapePositions } from "./_lib/reshapePositions.js";
-import { sendPushover } from "./_lib/notify.js";
-import { loadQuoteMap, loadMarketContext, loadRollAnalysisMap } from "./_lib/loadFocusData.js";
+import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -205,20 +203,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message });
   }
 
-  // 10. Evaluate Focus Engine and send Pushover pushes for P1 items.
+  // 10. Evaluate Focus Engine and send Pushover pushes for push-worthy rules.
+  // Transition-based dedup via alert_state (shared helper with /api/alert-check).
   // Wrapped in try/catch — a notification failure must NOT fail the snapshot.
-  let notifications = { sent: [], skipped: [], error: null };
+  let notifications = { sent: [], skipped: [], resolved: [], errors: [] };
   try {
-    notifications = await evaluateAndNotify({
+    notifications = await evaluateAlerts({
       supabase,
-      today,
       accountSnap,
       positionRows: positions,
       liveVix: vix,
     });
   } catch (notifyError) {
     console.error("[api/snapshot] Notification step failed:", notifyError);
-    notifications = { sent: [], skipped: [], error: notifyError.message };
+    notifications = { sent: [], skipped: [], resolved: [], errors: [notifyError.message] };
   }
 
   return res.status(200).json({
@@ -231,77 +229,4 @@ export default async function handler(req, res) {
     pipeline_implied: pipelineImplied,
     notifications,
   });
-}
-
-/**
- * Runs the Focus Engine against the freshly-synced account + positions,
- * keeps only items whose rule is flagged push-worthy in NOTIFY_RULES,
- * skips any already pushed today (via sent_alerts), sends a Pushover push
- * per remaining item, and records the send.
- *
- * Enriches the focus-engine call with live quotes, market_context and
- * roll_analysis so quote-dependent rules (cc_deeply_itm, csp_itm_urgency,
- * near_worthless, rule_60_60, leaps_profit_target, roll_opportunity, etc.)
- * can fire. Each loader fails soft — an empty map / null marketContext just
- * means its dependent rules sit out this run.
- */
-async function evaluateAndNotify({ supabase, today, accountSnap, positionRows, liveVix }) {
-  const reshapedPositions = reshapePositions(positionRows);
-
-  const [quoteMap, marketContext, rollAnalysisMap] = await Promise.all([
-    loadQuoteMap(supabase),
-    loadMarketContext(supabase),
-    loadRollAnalysisMap(supabase),
-  ]);
-
-  const items = generateFocusItems(
-    reshapedPositions,
-    accountSnap,
-    marketContext,
-    liveVix,
-    quoteMap,
-    rollAnalysisMap,
-  );
-  const pushItems = items.filter(i => NOTIFY_RULES[i.rule] === true);
-
-  if (!pushItems.length) return { sent: [], skipped: [] };
-
-  // Load today's already-sent alert ids so we don't re-push
-  const { data: existingRows, error: fetchError } = await supabase
-    .from("sent_alerts")
-    .select("alert_id")
-    .eq("sent_date", today);
-
-  if (fetchError) throw new Error(`sent_alerts read failed: ${fetchError.message}`);
-
-  const alreadySent = new Set((existingRows ?? []).map(r => r.alert_id));
-  const dashboardUrl = process.env.DASHBOARD_URL;
-
-  const sent = [];
-  const skipped = [];
-
-  for (const item of pushItems) {
-    if (alreadySent.has(item.id)) {
-      skipped.push(item.id);
-      continue;
-    }
-
-    await sendPushover({
-      title:   item.title,
-      message: item.detail,
-      url:     dashboardUrl,
-    });
-
-    const { error: insertError } = await supabase
-      .from("sent_alerts")
-      .insert({ alert_id: item.id, sent_date: today, title: item.title });
-
-    if (insertError) {
-      // Push already went out — log but don't re-push on retry within the same cron run
-      console.error(`[api/snapshot] sent_alerts insert failed for ${item.id}:`, insertError);
-    }
-    sent.push(item.id);
-  }
-
-  return { sent, skipped };
 }
