@@ -87,6 +87,8 @@ const RULE_LABELS = {
   rule_60_60:             "Close Candidate",
   expiry_cluster:         "Cluster",
   roll_opportunity:       "Roll",
+  leaps_low_dte:          "Manage LEAPS",
+  leaps_profit_target:    "Take Profit",
 };
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -353,7 +355,9 @@ export function FocusTab() {
     { priority: "P2", rule: "Macro overlap",        trigger: "CPI/FOMC/NFP within 2 days of any option expiry",                            source: "Market context" },
     { priority: "P2", rule: "Near worthless",       trigger: "Option mid < $0.10 and < 5% of original premium collected",                  source: "Positions + Quotes" },
     { priority: "P2", rule: "60/60 rule",           trigger: "≥60% premium captured with ≥60% DTE remaining (suppressed below 5 DTE)",     source: "Positions + Quotes" },
-    { priority: "P3", rule: "Expiry cluster",       trigger: "3+ options (CC or CSP) expire on the same date",                             source: "Positions" },
+    { priority: "P2", rule: "Manage LEAPS",          trigger: "LEAP with < 90 DTE — time decay accelerates, consider rolling or closing",   source: "Positions" },
+    { priority: "P2", rule: "Take Profit",           trigger: "LEAP return ≥ 10% of capital invested",                                      source: "Positions + Quotes" },
+    { priority: "P3", rule: "Expiry cluster",        trigger: "3+ options (CC or CSP) expire on the same date",                             source: "Positions" },
     { priority: "P2", rule: "Roll opportunity",     trigger: "Net-neutral or better roll to assignment price available for a below-cost CC. Only fires after Check Rolls is run.", source: "Roll analysis" },
   ];
 

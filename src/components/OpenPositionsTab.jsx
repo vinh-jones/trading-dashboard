@@ -424,11 +424,17 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
             }
             const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
 
-            // Profit target hit — CSP/CC only
-            let targetHit = false;
+            // Row highlight — CSP/CC profit target or LEAPS management signals
+            let rowHighlightColor = null;
             if (!isLeap && glPct != null && dtePct != null) {
               const targetPct = dtePct > 80 ? 50 : dtePct > 40 ? 60 : 80;
-              targetHit = glPct >= targetPct;
+              if (glPct >= targetPct) rowHighlightColor = theme.green;
+            } else if (isLeap) {
+              if (glPct != null && glPct >= 10) {
+                rowHighlightColor = theme.green;   // profit target hit
+              } else if (dte != null && dte < 90) {
+                rowHighlightColor = theme.red;     // needs managing
+              }
             }
 
             // % OTM — how far stock is from strike (positive = OTM / safe)
@@ -471,7 +477,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
                 <tr
                   style={{
                     borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
-                    borderLeft: targetHit ? `3px solid ${theme.green}` : "3px solid transparent",
+                    borderLeft: rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
                     cursor: canExpand ? "pointer" : "default",
                   }}
                   onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}

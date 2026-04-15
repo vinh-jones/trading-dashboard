@@ -461,6 +461,58 @@ function ruleExpiryCluster(positions) {
   return items;
 }
 
+function ruleLeapsLowDTE(positions) {
+  const items = [];
+  const leaps = [
+    ...(positions.open_leaps ?? []),
+    ...((positions.assigned_shares ?? []).flatMap(s => s.open_leaps ?? [])),
+  ];
+  for (const leap of leaps) {
+    const dte = calcDTE(leap.expiry_date);
+    if (dte == null || dte >= 90) continue;
+    items.push({
+      id:       `leaps-low-dte-${leap.ticker}-${leap.expiry_date}`,
+      priority: "P2",
+      rule:     "leaps_low_dte",
+      ticker:   leap.ticker,
+      dte,
+      urgency:  dte,
+      title:    `${leap.ticker} LEAP $${leap.strike} — ${dte}d to expiry`,
+      detail:   `LEAP has ${dte} DTE (under 90). Time decay accelerates significantly here. Consider rolling to a later expiry, closing the position, or converting to shares.`,
+    });
+  }
+  return items;
+}
+
+function ruleLeapsProfitTarget(positions, quoteMap) {
+  const items = [];
+  const leaps = [
+    ...(positions.open_leaps ?? []),
+    ...((positions.assigned_shares ?? []).flatMap(s => s.open_leaps ?? [])),
+  ];
+  for (const leap of leaps) {
+    if (!leap.capital_fronted || !leap.contracts) continue;
+    const dte = calcDTE(leap.expiry_date);
+    const sym = buildOccSymbol(leap.ticker, leap.expiry_date, true, leap.strike);
+    const mid = quoteMap.get(sym)?.mid;
+    if (mid == null) continue;
+    const glDollars = (mid * leap.contracts * 100) - leap.capital_fronted;
+    const glPct = (glDollars / leap.capital_fronted) * 100;
+    if (glPct < 10) continue;
+    items.push({
+      id:       `leaps-profit-target-${leap.ticker}-${leap.expiry_date}`,
+      priority: "P2",
+      rule:     "leaps_profit_target",
+      ticker:   leap.ticker,
+      dte,
+      urgency:  -glPct,
+      title:    `${leap.ticker} LEAP $${leap.strike} — +${glPct.toFixed(1)}% return`,
+      detail:   `LEAP has returned ${glPct.toFixed(1)}% on $${leap.capital_fronted.toLocaleString()} invested ($${glDollars >= 0 ? "+" : ""}${Math.round(glDollars).toLocaleString()}). Target is 10%+ — consider taking profits.`,
+    });
+  }
+  return items;
+}
+
 function ruleRollOpportunity(positions, rollAnalysisMap) {
   const items = [];
   if (!rollAnalysisMap || !Object.keys(rollAnalysisMap).length) return items;
@@ -521,6 +573,8 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ...ruleNearWorthlessOption(positions, quoteMap),
     ...rule6060(positions, quoteMap),
     ...ruleExpiryCluster(positions),
+    ...ruleLeapsLowDTE(positions),
+    ...ruleLeapsProfitTarget(positions, quoteMap),
     ...ruleRollOpportunity(positions, rollAnalysisMap),
   ];
 
