@@ -33,9 +33,11 @@ function isMarketOpen() {
   const et   = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day  = et.getDay();                               // 0=Sun, 6=Sat
   const time = et.getHours() + et.getMinutes() / 60;
-  // 8:30 AM–4:00 PM ET Mon–Fri. Lower bound covers the pre-market hour so
+  // 8:30 AM–4:15 PM ET Mon–Fri. Lower bound covers the pre-market hour so
   // the intraday cron can warm the cache before the regular session opens.
-  return day >= 1 && day <= 5 && time >= 8.5 && time <= 16;
+  // Upper bound extends 15 min past close so the 4:15 PM ET cron captures
+  // final closing prices.
+  return day >= 1 && day <= 5 && time >= 8.5 && time <= 16.25;
 }
 
 // ── Public.com auth (token cached in Supabase, valid 24h) ────────────────────
