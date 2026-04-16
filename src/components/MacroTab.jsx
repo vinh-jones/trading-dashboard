@@ -52,7 +52,7 @@ function ScoreDots({ score, max = 5, color }) {
 }
 
 function SignalCard({ name, value, label, color, direction, score, explanation, children, labelSuffix }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
 
   return (
@@ -65,7 +65,7 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
       flexDirection: "column",
       gap: theme.space[2],
     }}>
-      {/* Header row */}
+      {/* Header row: name + score dots + toggle (dots always near top) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{
           fontSize: theme.size.xs,
@@ -74,6 +74,7 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
           textTransform: "uppercase",
           letterSpacing: 1,
         }}>{name}</span>
+        <ScoreDots score={score} color={color} />
       </div>
 
       {/* Value row */}
@@ -107,24 +108,23 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
       {/* Extra content */}
       {children}
 
-      {/* Score dots */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: theme.space[1] }}>
-        <ScoreDots score={score} color={color} />
-        <button
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            background: "none",
-            border: "none",
-            color: theme.text.subtle,
-            fontSize: theme.size.xs,
-            fontFamily: theme.font.mono,
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          {expanded ? "▴" : "▾"} Why this matters
-        </button>
-      </div>
+      {/* Explanation toggle */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          background: "none",
+          border: "none",
+          color: theme.text.subtle,
+          fontSize: theme.size.xs,
+          fontFamily: theme.font.mono,
+          cursor: "pointer",
+          padding: 0,
+          textAlign: "left",
+          alignSelf: "flex-start",
+        }}
+      >
+        {expanded ? "▴" : "▾"} Why this matters
+      </button>
 
       {/* Explanation */}
       {expanded && explanation && (
@@ -135,9 +135,74 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
           lineHeight: 1.5,
           borderTop: `1px solid ${theme.border.default}`,
           paddingTop: theme.space[2],
-          marginTop: theme.space[1],
         }}>{explanation}</div>
       )}
+    </div>
+  );
+}
+
+// Intentional hardcoded hex — group/legend chrome colors (same role as POSTURE_COLORS)
+function SignalGroup({ label, children }) {
+  return (
+    <div style={{
+      border: "1px solid #30363d",
+      borderRadius: theme.radius.md,
+      padding: theme.space[4],
+    }}>
+      <div style={{
+        fontSize: theme.size.xs,
+        fontWeight: 600,
+        letterSpacing: "0.8px",
+        textTransform: "uppercase",
+        color: "#6e7681",
+        marginBottom: theme.space[3],
+      }}>{label}</div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+        gap: theme.space[3],
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const RELATIONSHIPS = [
+  { emoji: "🛢", text: "Oil rising → rate cuts less likely → hawkish pressure on Rate Expectations" },
+  { emoji: "📈", text: "10-yr yield rising → growth stocks pressured → watch SPY vs ATH for confirmation" },
+  { emoji: "⚠️", text: "VIX & Fear/Greed usually move together — divergence between them is a warning signal" },
+];
+
+function RelationshipLegend() {
+  return (
+    <div style={{
+      padding: `${theme.space[3]}px ${theme.space[4]}px`,
+      background: "#161b22",
+      border: "1px solid #21262d",
+      borderRadius: theme.radius.sm,
+    }}>
+      <div style={{
+        fontSize: theme.size.xs,
+        fontWeight: 600,
+        letterSpacing: "0.8px",
+        textTransform: "uppercase",
+        color: "#6e7681",
+        marginBottom: theme.space[2],
+      }}>Signal Relationships</div>
+      {RELATIONSHIPS.map((r, i) => (
+        <div key={i} style={{
+          display: "flex",
+          gap: theme.space[2],
+          marginBottom: i < RELATIONSHIPS.length - 1 ? theme.space[2] : 0,
+          fontSize: theme.size.sm,
+          color: "#8b949e",
+          lineHeight: 1.5,
+        }}>
+          <span style={{ flexShrink: 0 }}>{r.emoji}</span>
+          <span>{r.text}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -286,53 +351,20 @@ export function MacroTab() {
         )}
       </div>
 
-      {/* ── Signal Cards Grid ───────────────────────────────── */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)",
-        gap: theme.space[3],
-      }}>
-        {/* VIX */}
+      {/* ── Rate Environment group ──────────────────────────── */}
+      <SignalGroup label="Rate Environment">
+        {/* Crude Oil */}
         <SignalCard
-          name="VIX"
-          value={vix?.value?.toFixed(2)}
-          label={vix?.label}
-          color={vix?.color}
-          direction={vixDirection}
-          score={vix?.score}
-          explanation={vix?.explanation}
-        >
-          {vix?.cashTarget && (
-            <div style={childStyle}>Cash target: {vix.cashTarget}</div>
-          )}
-        </SignalCard>
-
-        {/* S5FI */}
-        <SignalCard
-          name="S5FI"
-          value={s5fi?.value != null ? `${s5fi.value.toFixed(0)}%` : null}
-          label={s5fi?.label}
-          color={s5fi?.color}
-          direction="Daily close"
-          score={s5fi?.score}
-          explanation={s5fi?.explanation}
+          name="CRUDE OIL (WTI)"
+          value={crudeOil?.price != null ? `$${crudeOil.price.toFixed(2)}` : null}
+          label={crudeOil?.label}
+          color={crudeOil?.color}
+          direction={crudeOil?.change != null
+            ? `${crudeOil.change >= 0 ? "▲" : "▼"} ${crudeOil.change >= 0 ? "+" : ""}$${crudeOil.change.toFixed(2)} (${(crudeOil.changePct * 100).toFixed(1)}%) today`
+            : null}
+          score={crudeOil?.score}
+          explanation={crudeOil?.explanation}
         />
-
-        {/* Fear & Greed */}
-        <SignalCard
-          name="Fear & Greed"
-          value={fearGreed?.value?.toFixed(1)}
-          label={fearGreed?.label}
-          color={fearGreed?.color}
-          score={fearGreed?.score}
-          explanation={fearGreed?.explanation}
-        >
-          {fearGreed && (
-            <div style={childStyle}>
-              1w: {fearGreed.prev1w?.toFixed(1) ?? "—"} · 1m: {fearGreed.prev1m?.toFixed(1) ?? "—"}
-            </div>
-          )}
-        </SignalCard>
 
         {/* FedWatch / Rate Expectations */}
         <SignalCard
@@ -377,39 +409,6 @@ export function MacroTab() {
           )}
         </SignalCard>
 
-        {/* SPY vs ATH */}
-        <SignalCard
-          name="SPY vs ATH"
-          value={spyVsAth?.pctFromHigh != null ? `${(spyVsAth.pctFromHigh * 100).toFixed(1)}%` : null}
-          label={spyVsAth?.label}
-          color={spyVsAth?.color}
-          score={spyVsAth?.score}
-          explanation={spyVsAth?.explanation}
-        >
-          {spyVsAth && (
-            <div style={childStyle}>
-              ${spyVsAth.value?.toFixed(2) ?? "—"} / ${spyVsAth.high?.toFixed(2) ?? "—"} high
-            </div>
-          )}
-        </SignalCard>
-
-        {/* Crude Oil */}
-        <SignalCard
-          name="CRUDE OIL (WTI)"
-          value={crudeOil?.price != null ? `$${crudeOil.price.toFixed(2)}` : null}
-          label={crudeOil?.label}
-          color={crudeOil?.color}
-          direction={crudeOil?.change != null
-            ? `${crudeOil.change >= 0 ? "▲" : "▼"} ${crudeOil.change >= 0 ? "+" : ""}$${crudeOil.change.toFixed(2)} (${(crudeOil.changePct * 100).toFixed(1)}%) today`
-            : null}
-          score={crudeOil?.score}
-          explanation={crudeOil?.explanation}
-        >
-          <div style={{ ...childStyle, marginTop: theme.space[1] }}>
-            Oil is the primary variable that shifts rate cut expectations. Watch Crude Oil and Rate Expectations together — when oil rises, FedWatch tends to shift hawkish.
-          </div>
-        </SignalCard>
-
         {/* 10-Year Yield */}
         <SignalCard
           name="10-YEAR YIELD"
@@ -427,11 +426,72 @@ export function MacroTab() {
               52w: {tenYearYield.fiftyTwoWeekLow.toFixed(2)}% – {tenYearYield.fiftyTwoWeekHigh.toFixed(2)}%
             </div>
           )}
-          <div style={{ ...childStyle, marginTop: theme.space[1] }}>
-            The 10-year yield reflects long-term rate expectations while FedWatch captures short-term Fed policy. When both signals are bullish, the rate environment is strongly favorable. When they diverge, the 10-year usually leads.
-          </div>
         </SignalCard>
-      </div>
+      </SignalGroup>
+
+      {/* ── Market Sentiment group ───────────────────────────── */}
+      <SignalGroup label="Market Sentiment">
+        {/* VIX */}
+        <SignalCard
+          name="VIX"
+          value={vix?.value?.toFixed(2)}
+          label={vix?.label}
+          color={vix?.color}
+          direction={vixDirection}
+          score={vix?.score}
+          explanation={vix?.explanation}
+        >
+          {vix?.cashTarget && (
+            <div style={childStyle}>Cash target: {vix.cashTarget}</div>
+          )}
+        </SignalCard>
+
+        {/* Fear & Greed */}
+        <SignalCard
+          name="Fear & Greed"
+          value={fearGreed?.value?.toFixed(1)}
+          label={fearGreed?.label}
+          color={fearGreed?.color}
+          score={fearGreed?.score}
+          explanation={fearGreed?.explanation}
+        >
+          {fearGreed && (
+            <div style={childStyle}>
+              1w: {fearGreed.prev1w?.toFixed(1) ?? "—"} · 1m: {fearGreed.prev1m?.toFixed(1) ?? "—"}
+            </div>
+          )}
+        </SignalCard>
+
+        {/* S5FI */}
+        <SignalCard
+          name="S5FI"
+          value={s5fi?.value != null ? `${s5fi.value.toFixed(0)}%` : null}
+          label={s5fi?.label}
+          color={s5fi?.color}
+          direction="Daily close"
+          score={s5fi?.score}
+          explanation={s5fi?.explanation}
+        />
+
+        {/* SPY vs ATH */}
+        <SignalCard
+          name="SPY vs ATH"
+          value={spyVsAth?.pctFromHigh != null ? `${(spyVsAth.pctFromHigh * 100).toFixed(1)}%` : null}
+          label={spyVsAth?.label}
+          color={spyVsAth?.color}
+          score={spyVsAth?.score}
+          explanation={spyVsAth?.explanation}
+        >
+          {spyVsAth && (
+            <div style={childStyle}>
+              ${spyVsAth.value?.toFixed(2) ?? "—"} / ${spyVsAth.high?.toFixed(2) ?? "—"} high
+            </div>
+          )}
+        </SignalCard>
+      </SignalGroup>
+
+      {/* ── Signal Relationships legend ──────────────────────── */}
+      <RelationshipLegend />
     </div>
   );
 }
