@@ -472,7 +472,7 @@ export function MacroTab() {
         </div>
 
         {/* Posture + score */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{
             fontSize: 28,
             fontWeight: 700,
@@ -481,7 +481,7 @@ export function MacroTab() {
             letterSpacing: 1,
           }}>{posture?.posture ?? "—"}</span>
           <span style={{
-            fontSize: theme.size.md,
+            fontSize: theme.size.sm,
             color: theme.text.secondary,
             fontFamily: theme.font.mono,
           }}>Score: {posture?.avg?.toFixed(1) ?? "—"} / 5.0</span>
