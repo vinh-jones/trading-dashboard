@@ -310,10 +310,17 @@ function labelTenYearYield(yld) {
 
 // ─── Signal fetchers ─────────────────────────────────────────────────
 
+function fetchWithTimeout(url, options = {}, ms = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timeout));
+}
+
 async function fetchYahooChart(symbol, range = "1d") {
   const encoded = encodeURIComponent(symbol);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=${range}`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       Accept: "application/json",
@@ -329,7 +336,7 @@ async function fetchYahooChart(symbol, range = "1d") {
 async function fetchVix() {
   const encoded = encodeURIComponent("^VIX");
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=5d`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       Accept: "application/json",
@@ -378,7 +385,7 @@ async function fetchFearGreed() {
   const today = new Date().toISOString().split("T")[0];
   const url = `https://production.dataviz.cnn.io/index/fearandgreed/graphdata/${today}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: {
       "User-Agent": UA,
       Referer: "https://www.cnn.com/markets/fear-and-greed",
@@ -405,13 +412,8 @@ async function fetchS5fi() {
   const headers = { "User-Agent": UA };
 
   const [totalRes, aboveRes] = await Promise.all([
-    fetch("https://finviz.com/screener.ashx?v=111&f=idx_sp500&ft=4", {
-      headers,
-    }),
-    fetch(
-      "https://finviz.com/screener.ashx?v=111&f=idx_sp500,ta_sma50_pa&ft=4",
-      { headers }
-    ),
+    fetchWithTimeout("https://finviz.com/screener.ashx?v=111&f=idx_sp500&ft=4", { headers }, 12000),
+    fetchWithTimeout("https://finviz.com/screener.ashx?v=111&f=idx_sp500,ta_sma50_pa&ft=4", { headers }, 12000),
   ]);
 
   if (!totalRes.ok) throw new Error(`Finviz total returned ${totalRes.status}`);
@@ -436,7 +438,7 @@ async function fetchS5fi() {
 }
 
 async function fetchFedWatch() {
-  const res = await fetch("https://rateprobability.com/api/latest", {
+  const res = await fetchWithTimeout("https://rateprobability.com/api/latest", {
     headers: { "User-Agent": UA },
   });
 

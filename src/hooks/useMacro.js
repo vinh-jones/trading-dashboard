@@ -8,8 +8,10 @@ export function useMacro() {
   const fetchMacro = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s max
     try {
-      const res = await fetch("/api/macro");
+      const res = await fetch("/api/macro", { signal: controller.signal });
       const json = await res.json();
       if (!json.ok) {
         setError(json.error || "Failed to load macro data");
@@ -17,8 +19,13 @@ export function useMacro() {
         setData(json);
       }
     } catch (err) {
-      setError(err.message);
+      if (err.name === "AbortError") {
+        setError("Macro signals timed out — one data source may be slow. Try refreshing.");
+      } else {
+        setError(err.message);
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, []);
