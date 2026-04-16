@@ -151,7 +151,7 @@ function RyanSummaryCard() {
         letterSpacing: "0.08em",
         marginBottom: theme.space[3],
       }}>
-        RYAN'S READ
+        MARKET SUMMARY
       </div>
 
       {loading && (
