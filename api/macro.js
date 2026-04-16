@@ -635,7 +635,12 @@ function buildAiContext(posture, signals, asOf) {
   const { vix, s5fi, fearGreed, fedWatch, spyVsAth, crudeOil, tenYearYield } = signals;
 
   lines.push(`VIX: ${vix.value} (${vix.label}, score ${vix.score}/5)`);
-  if (vix.change != null) lines.push(`  Change: ${vix.change > 0 ? "+" : ""}${vix.change}`);
+  if (vix.change != null) lines.push(`  Change: ${vix.change > 0 ? "+" : ""}${vix.change} today`);
+  if (vix.vixTrend) {
+    const t = vix.vixTrend;
+    const sign = t.changePts >= 0 ? "+" : "";
+    lines.push(`  Trend: ${t.label} (${sign}${t.changePts.toFixed(1)} pts over 5 days) — fear is ${t.direction === "falling" || t.direction === "easing" ? "subsiding, market recovering" : t.direction === "stable" ? "stable" : "rising, caution warranted"}`);
+  }
   lines.push(`  ${vix.explanation}`);
   lines.push("");
 
