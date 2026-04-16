@@ -270,6 +270,14 @@ export function MacroTab() {
     ? `${vix.change >= 0 ? "▲" : "▼"} ${vix.change >= 0 ? "+" : ""}${vix.change.toFixed(1)} today`
     : null;
 
+  const vixTrendLine = (() => {
+    const t = vix?.vixTrend;
+    if (!t) return null;
+    const arrow = t.direction === "falling" || t.direction === "easing" ? "▼" : t.direction === "spiking" || t.direction === "rising" ? "▲" : "—";
+    const sign = t.changePts >= 0 ? "+" : "";
+    return `${arrow} ${t.label} (${sign}${t.changePts.toFixed(1)} pts over 5 days)`;
+  })();
+
   const childStyle = {
     fontSize: theme.size.xs,
     color: theme.text.muted,
@@ -440,6 +448,11 @@ export function MacroTab() {
           score={vix?.score}
           explanation={vix?.explanation}
         >
+          {vixTrendLine && (
+            <div style={{ ...childStyle, color: vix?.vixTrend?.color === "green" ? theme.green : vix?.vixTrend?.color === "red" ? theme.red : theme.amber }}>
+              {vixTrendLine}
+            </div>
+          )}
           {vix?.cashTarget && (
             <div style={childStyle}>Cash target: {vix.cashTarget}</div>
           )}

@@ -327,11 +327,43 @@ async function fetchYahooChart(symbol, range = "1d") {
 }
 
 async function fetchVix() {
-  const meta = await fetchYahooChart("^VIX");
+  const encoded = encodeURIComponent("^VIX");
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=5d`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) throw new Error(`Yahoo ^VIX returned ${res.status}`);
+  const data = await res.json();
+  const result = data?.chart?.result?.[0];
+  if (!result) throw new Error("Missing chart result for ^VIX");
+  const meta = result.meta;
+  const closes = result.indicators?.quote?.[0]?.close ?? [];
   return {
     vixPrice: meta.regularMarketPrice,
     vixPrevClose: meta.chartPreviousClose,
+    closes,
   };
+}
+
+function computeVixTrend(closes) {
+  if (!closes || closes.length < 2) return null;
+  const validCloses = closes.filter((c) => c != null);
+  if (validCloses.length < 2) return null;
+  const recent = validCloses[validCloses.length - 1];
+  const fiveDago = validCloses[0];
+  const change = Math.round((recent - fiveDago) * 100) / 100;
+
+  let direction, label, color;
+  if (change < -2)              { direction = "falling"; label = "Falling"; color = "green"; }
+  else if (change < -0.5)      { direction = "easing";  label = "Easing";  color = "green"; }
+  else if (Math.abs(change) <= 0.5) { direction = "stable"; label = "Stable"; color = "amber"; }
+  else if (change < 2)         { direction = "rising";  label = "Rising";  color = "amber"; }
+  else                         { direction = "spiking"; label = "Spiking"; color = "red"; }
+
+  return { direction, label, color, changePts: change };
 }
 
 async function fetchSpy() {
@@ -696,11 +728,12 @@ export default async function handler(req, res) {
   // ─── VIX ───
   let vixSignal;
   if (vixResult.status === "fulfilled") {
-    const { vixPrice, vixPrevClose } = vixResult.value;
+    const { vixPrice, vixPrevClose, closes } = vixResult.value;
     const change =
       Math.round((vixPrice - vixPrevClose) * 100) / 100;
     const labeled = labelVix(vixPrice);
-    vixSignal = { value: vixPrice, change, ...labeled };
+    const vixTrend = computeVixTrend(closes);
+    vixSignal = { value: vixPrice, change, vixTrend, ...labeled };
   } else {
     console.error("[api/macro] VIX fetch failed:", vixResult.reason?.message);
     vixSignal = {
