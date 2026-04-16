@@ -328,13 +328,13 @@ async function fetchFedWatch() {
   if (!res.ok) throw new Error(`rateprobability returned ${res.status}`);
 
   const data = await res.json();
-  const todayRows = data?.data?.today?.rows;
-  const weekAgoRows = data?.data?.ago_1w?.rows;
+  const todayRows = data?.today?.rows;
+  const weekAgoRows = data?.ago_1w?.rows;
 
   if (!todayRows || !todayRows.length)
     throw new Error("Missing FedWatch rows");
 
-  const currentRate = data.data.today.midpoint;
+  const currentRate = data.today.midpoint;
   const nextMeetingDate = todayRows[0].meeting_iso;
 
   // Find current year December meeting
@@ -404,41 +404,41 @@ const POSTURE_MAP = [
     min: 4.2,
     posture: "BULLISH",
     description:
-      "Multiple indicators signal strong risk-on conditions. Broad market participation, low fear, and supportive monetary policy create a favorable environment for premium selling.",
+      "All signals aligned positively. Strong conditions for premium selling.",
     deploymentGuidance:
-      "Deploy aggressively. Target 85-95% capital utilization. Use tighter strikes for higher premium capture. Consider adding positions in high-beta names.",
+      "Deploy aggressively. Chase stocks higher with tighter strikes. VIX permitting, push toward lower cash floor.",
   },
   {
     min: 3.4,
     posture: "CONSTRUCTIVE",
     description:
-      "Most indicators are positive with minor caution flags. The overall environment supports the wheel strategy with normal position sizing.",
+      "Most signals positive with minor headwinds. Good environment for the wheel strategy.",
     deploymentGuidance:
-      "Normal deployment posture. Target 70-85% capital utilization. Standard strike selection. Maintain watchlist for opportunistic entries on dips.",
+      "Normal deployment. Follow Ryan signals. Stay within VIX cash bands. Let winning positions run.",
   },
   {
     min: 2.6,
     posture: "NEUTRAL",
     description:
-      "Mixed signals across indicators. Some positive, some cautionary. No strong directional bias from macro conditions.",
+      "Mixed signals — some positive, some negative. Proceed with caution.",
     deploymentGuidance:
-      "Moderate deployment. Target 60-75% capital utilization. Be selective with new entries. Maintain 15-20% cash buffer. Favor quality over quantity.",
+      "Selective deployment only. Higher-quality names, wider strikes. Hold 20-25% cash. Wait for clearer signals.",
   },
   {
     min: 1.8,
     posture: "DEFENSIVE",
     description:
-      "Multiple indicators signal elevated risk. Market conditions warrant caution and reduced exposure.",
+      "Majority of signals negative. Elevated risk environment.",
     deploymentGuidance:
-      "Reduce exposure. Target 40-60% capital utilization. Focus only on highest-conviction names. Maintain 25%+ cash. Consider protective positions.",
+      "Minimal new deployment. Focus on managing existing positions. 25-35% cash. Consider bear call spreads as hedge.",
   },
   {
     min: -Infinity,
     posture: "BEARISH",
     description:
-      "Broad risk-off signals across most indicators. Market conditions are hostile to premium selling strategies.",
+      "Signals aligned negatively. Capital preservation mode.",
     deploymentGuidance:
-      "Minimum deployment. Target under 40% capital utilization. Close speculative positions. Prioritize capital preservation. Wait for clear reversal signals across multiple indicators before re-deploying.",
+      "No new CSPs. Manage assignments defensively. Maximum cash position. Watch for S5FI single-digit readings as a bottom signal.",
   },
 ];
 
