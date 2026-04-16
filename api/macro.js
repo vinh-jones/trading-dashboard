@@ -225,38 +225,36 @@ function labelSpyVsAth(pctFromHigh) {
 
 // ─── Signal fetchers ─────────────────────────────────────────────────
 
-async function fetchVixAndSpy() {
-  const headers = { "User-Agent": UA, Accept: "application/json" };
+async function fetchYahooChart(symbol) {
+  const encoded = symbol.startsWith("^") ? symbol.replace("^", "%5E") : symbol;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=1d`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) throw new Error(`Yahoo ${symbol} returned ${res.status}`);
+  const data = await res.json();
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta) throw new Error(`Missing chart meta for ${symbol}`);
+  return meta;
+}
 
-  const [vixRes, spyRes] = await Promise.all([
-    fetch(
-      "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d",
-      { headers }
-    ),
-    fetch(
-      "https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d",
-      { headers }
-    ),
-  ]);
+async function fetchVix() {
+  const meta = await fetchYahooChart("^VIX");
+  return {
+    vixPrice: meta.regularMarketPrice,
+    vixPrevClose: meta.chartPreviousClose,
+  };
+}
 
-  if (!vixRes.ok) throw new Error(`Yahoo VIX returned ${vixRes.status}`);
-  if (!spyRes.ok) throw new Error(`Yahoo SPY returned ${spyRes.status}`);
-
-  const vixData = await vixRes.json();
-  const spyData = await spyRes.json();
-
-  const vixMeta = vixData?.chart?.result?.[0]?.meta;
-  const spyMeta = spyData?.chart?.result?.[0]?.meta;
-
-  if (!vixMeta || !spyMeta) throw new Error("Missing chart meta from Yahoo");
-
-  const vixPrice = vixMeta.regularMarketPrice;
-  const vixPrevClose = vixMeta.chartPreviousClose;
-
-  const spyPrice = spyMeta.regularMarketPrice;
-  const spyHigh = spyMeta.fiftyTwoWeekHigh;
-
-  return { vixPrice, vixPrevClose, spyPrice, spyHigh };
+async function fetchSpy() {
+  const meta = await fetchYahooChart("SPY");
+  return {
+    spyPrice: meta.regularMarketPrice,
+    spyHigh: meta.fiftyTwoWeekHigh,
+  };
 }
 
 async function fetchFearGreed() {
@@ -529,9 +527,10 @@ export default async function handler(req, res) {
   const asOf = new Date().toISOString();
 
   // Fetch all signals in parallel — one failure doesn't break others
-  const [vixSpyResult, fgResult, s5fiResult, fedResult] =
+  const [vixResult, spyResult, fgResult, s5fiResult, fedResult] =
     await Promise.allSettled([
-      fetchVixAndSpy(),
+      fetchVix(),
+      fetchSpy(),
       fetchFearGreed(),
       fetchS5fi(),
       fetchFedWatch(),
@@ -539,27 +538,28 @@ export default async function handler(req, res) {
 
   // ─── VIX ───
   let vixSignal;
-  if (vixSpyResult.status === "fulfilled") {
-    const { vixPrice, vixPrevClose } = vixSpyResult.value;
+  if (vixResult.status === "fulfilled") {
+    const { vixPrice, vixPrevClose } = vixResult.value;
     const change =
       Math.round((vixPrice - vixPrevClose) * 100) / 100;
     const labeled = labelVix(vixPrice);
     vixSignal = { value: vixPrice, change, ...labeled };
   } else {
+    console.error("[api/macro] VIX fetch failed:", vixResult.reason?.message);
     vixSignal = {
       value: null,
       change: null,
       score: 3,
       label: "Unavailable",
       color: "amber",
-      explanation: `VIX data unavailable: ${vixSpyResult.reason?.message || "fetch failed"}`,
+      explanation: `VIX data unavailable: ${vixResult.reason?.message || "fetch failed"}`,
     };
   }
 
   // ─── SPY vs ATH ───
   let spySignal;
-  if (vixSpyResult.status === "fulfilled") {
-    const { spyPrice, spyHigh } = vixSpyResult.value;
+  if (spyResult.status === "fulfilled") {
+    const { spyPrice, spyHigh } = spyResult.value;
     const pctFromHigh = (spyPrice - spyHigh) / spyHigh;
     const labeled = labelSpyVsAth(pctFromHigh);
     spySignal = {
@@ -569,6 +569,7 @@ export default async function handler(req, res) {
       ...labeled,
     };
   } else {
+    console.error("[api/macro] SPY fetch failed:", spyResult.reason?.message);
     spySignal = {
       value: null,
       high: null,
@@ -576,7 +577,7 @@ export default async function handler(req, res) {
       score: 3,
       label: "Unavailable",
       color: "amber",
-      explanation: `SPY data unavailable: ${vixSpyResult.reason?.message || "fetch failed"}`,
+      explanation: `SPY data unavailable: ${spyResult.reason?.message || "fetch failed"}`,
     };
   }
 
