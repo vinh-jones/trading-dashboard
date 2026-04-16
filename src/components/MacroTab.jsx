@@ -18,6 +18,25 @@ const COLOR_MAP = {
   red:   theme.red,
 };
 
+// Intentional hardcoded hex — arrow colors for rate direction indicator
+const ARROW_COLORS = {
+  "↑": "#3fb950",   // dovish = green
+  "↓": "#f85149",   // hawkish = red
+  "↔": "#8b949e",   // unchanged = gray
+};
+
+function buildDirectionExplanation(weeklyChangeBps) {
+  if (weeklyChangeBps == null) return "";
+  const absBps = Math.abs(weeklyChangeBps);
+  if (weeklyChangeBps < -5) {
+    return `\n\nOver the past week, the bond market has shifted toward expecting ${absBps} basis points more in rate cuts — a dovish move. This typically happens when economic data disappoints, inflation cools, or risk-off sentiment drives demand for safe assets. More cuts priced in generally supports risk assets and benefits the wheel strategy.`;
+  }
+  if (weeklyChangeBps > 5) {
+    return `\n\nOver the past week, the bond market has shifted toward expecting ${absBps} basis points fewer rate cuts — a hawkish move. This typically happens when economic data comes in strong, inflation stays sticky, or the Fed signals a "higher for longer" stance. Fewer cuts priced in can pressure growth stocks and reduce the tailwind for the wheel strategy.`;
+  }
+  return `\n\nRate expectations have been stable this week (${weeklyChangeBps > 0 ? "+" : ""}${weeklyChangeBps} bps), suggesting the bond market sees no new information that materially changes the rate outlook. Watch for FOMC commentary, CPI, or jobs data that could shift this.`;
+}
+
 function ScoreDots({ score, max = 5, color }) {
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
   return (
@@ -32,7 +51,7 @@ function ScoreDots({ score, max = 5, color }) {
   );
 }
 
-function SignalCard({ name, value, label, color, direction, score, explanation, children }) {
+function SignalCard({ name, value, label, color, direction, score, explanation, children, labelSuffix }) {
   const [expanded, setExpanded] = useState(false);
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
 
@@ -69,7 +88,11 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
           fontSize: theme.size.sm,
           color: resolved,
           fontFamily: theme.font.mono,
-        }}>{label ?? "—"}</span>
+          display: "flex", alignItems: "center", gap: 4,
+        }}>
+          {label ?? "—"}
+          {labelSuffix}
+        </span>
       </div>
 
       {/* Direction */}
@@ -313,9 +336,12 @@ export function MacroTab() {
           value={fedWatch?.cutsPricedIn != null ? `${fedWatch.cutsPricedIn.toFixed(1)} cuts` : null}
           label={fedWatch?.label}
           color={fedWatch?.color}
-          direction={fedWatch?.direction ? `↓ ${fedWatch.direction}` : null}
+          direction={fedWatch?.directionLabel ? `${fedWatch.directionArrow} ${fedWatch.directionLabel}${fedWatch.weeklyChangeBps != null ? ` (${fedWatch.weeklyChangeBps > 0 ? "+" : ""}${fedWatch.weeklyChangeBps} bps vs last week)` : ""}` : null}
           score={fedWatch?.score}
-          explanation={fedWatch?.explanation}
+          explanation={(fedWatch?.explanation ?? "") + buildDirectionExplanation(fedWatch?.weeklyChangeBps)}
+          labelSuffix={fedWatch?.directionArrow && fedWatch.directionArrow !== "—" ? (
+            <span style={{ color: ARROW_COLORS[fedWatch.directionArrow] ?? theme.text.muted }}>{fedWatch.directionArrow}</span>
+          ) : null}
         >
           {fedWatch && (
             <>

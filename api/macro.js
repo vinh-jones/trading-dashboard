@@ -182,18 +182,37 @@ function labelFedWatch(cutsPricedIn, weeklyChangeBps) {
     score = 1;
     label = "Hawkish";
   }
-  const color = score >= 4 ? "green" : score >= 3 ? "amber" : "red";
 
-  let direction;
-  if (weeklyChangeBps < -5) direction = "more dovish this week";
-  else if (weeklyChangeBps > 5) direction = "more hawkish this week";
-  else direction = "unchanged this week";
+  // Directional modifier — weekly change in end-of-horizon implied rate
+  // Negative bps = rates declining = more cuts = dovish = bullish modifier
+  // Positive bps = rates rising = fewer cuts = hawkish = bearish modifier
+  let directionLabel, directionArrow;
+  if (weeklyChangeBps === null) {
+    directionLabel = "direction unknown";
+    directionArrow = "—";
+  } else if (weeklyChangeBps < -5) {
+    score += 0.5;
+    directionLabel = "becoming more dovish";
+    directionArrow = "↑";
+  } else if (weeklyChangeBps > 5) {
+    score -= 0.5;
+    directionLabel = "becoming more hawkish";
+    directionArrow = "↓";
+  } else {
+    directionLabel = "unchanged this week";
+    directionArrow = "↔";
+  }
+
+  score = Math.max(1, Math.min(5, score));
+  const color = score >= 4 ? "green" : score >= 3 ? "amber" : "red";
 
   return {
     score,
     label,
     color,
-    direction,
+    directionLabel,
+    directionArrow,
+    weeklyChangeBps,
     explanation: FEDWATCH_EXPLANATIONS[label],
   };
 }
@@ -649,7 +668,8 @@ export default async function handler(req, res) {
       score: 2,
       label: "Unavailable",
       color: "amber",
-      direction: null,
+      directionLabel: null,
+      directionArrow: null,
       explanation: `FedWatch data unavailable: ${fedResult.reason?.message || "fetch failed"}`,
     };
   }
