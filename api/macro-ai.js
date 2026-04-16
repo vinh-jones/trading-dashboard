@@ -109,7 +109,7 @@ export default async function handler(req, res) {
   let summary;
   try {
     const result = await generateText({
-      model: google("gemini-1.5-flash"),
+      model: google("gemini-2.0-flash-lite"),
       system: RYAN_SYSTEM_PROMPT,
       prompt: `Here is today's macro market context. Write your coaching summary:\n\n${macroData.ai_context}`,
       maxTokens: 500,
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     as_of: macroData.as_of,
     posture: macroData.posture?.posture,
     summary,
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash-lite",
     usage: {
       prompt_tokens: null, // @ai-sdk/google doesn't always expose this
     },
