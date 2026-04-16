@@ -203,7 +203,42 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message });
   }
 
-  // 10. Evaluate Focus Engine and send Pushover pushes for push-worthy rules.
+  // 10. Fetch macro signals and write to macro_snapshots
+  // Wrapped in try/catch — a macro failure must NOT fail the portfolio snapshot.
+  try {
+    const protocol = req.headers["x-forwarded-proto"] || "https";
+    const host = req.headers.host;
+    const macroRes = await fetch(`${protocol}://${host}/api/macro`, {
+      headers: { "User-Agent": "internal-snapshot-cron" },
+    });
+    const macroData = await macroRes.json();
+
+    if (macroData.ok) {
+      const macroSnapshot = {
+        snapshot_date: today,
+        vix: macroData.signals.vix.value,
+        s5fi_pct: macroData.signals.s5fi.value,
+        fear_greed_score: macroData.signals.fearGreed.value,
+        fed_cuts_priced_in: macroData.signals.fedWatch.cutsPricedIn,
+        spy_pct_from_ath: macroData.signals.spyVsAth.pctFromHigh,
+        posture: macroData.posture.posture,
+        posture_score: macroData.posture.avg,
+        ai_context: macroData.ai_context,
+      };
+
+      const { error: macroError } = await supabase
+        .from("macro_snapshots")
+        .upsert(macroSnapshot, { onConflict: "snapshot_date" });
+
+      if (macroError) {
+        console.error("[api/snapshot] Macro snapshot write failed:", macroError);
+      }
+    }
+  } catch (macroErr) {
+    console.error("[api/snapshot] Macro fetch/write failed:", macroErr.message);
+  }
+
+  // 11. Evaluate Focus Engine and send Pushover pushes for push-worthy rules.
   // Transition-based dedup via alert_state (shared helper with /api/alert-check).
   // Wrapped in try/catch — a notification failure must NOT fail the snapshot.
   let notifications = { sent: [], skipped: [], resolved: [], errors: [] };

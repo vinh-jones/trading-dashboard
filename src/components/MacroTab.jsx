@@ -187,7 +187,7 @@ export function MacroTab() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: theme.space[4], padding: theme.space[4] }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: theme.space[4] }}>
       {/* ── Posture Header ──────────────────────────────────── */}
       <div style={{
         background: postureColors.bg,
@@ -239,7 +239,7 @@ export function MacroTab() {
         {/* Posture + score */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <span style={{
-            fontSize: theme.size.xl,
+            fontSize: 28,
             fontWeight: 700,
             color: postureColors.text,
             fontFamily: theme.font.mono,
