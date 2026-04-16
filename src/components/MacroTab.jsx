@@ -118,9 +118,9 @@ function TypewriterSummary({ text }) {
     const id = setInterval(() => {
       setCount((c) => {
         if (c >= text.length) { clearInterval(id); return c; }
-        return c + 1; // 1 char/tick at 100ms ≈ 10 chars/sec
+        return c + 1; // 1 char/tick at 40ms ≈ 25 chars/sec
       });
-    }, 100);
+    }, 40);
     return () => clearInterval(id);
   }, [text]);
 
