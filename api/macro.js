@@ -14,18 +14,18 @@ const UA =
 // ─── Explanation maps ────────────────────────────────────────────────
 
 const VIX_EXPLANATIONS = {
-  "Very Low":
-    "VIX below 12 indicates extreme complacency. Options are historically cheap — premium sellers get less compensation per contract. Deploy aggressively but watch for vol spikes.",
-  Low: "VIX below 15 signals a calm, trending market. Ryan typically deploys aggressively at this level. Consider freeing up positions to capture remaining premium and redeploying at tighter strikes.",
-  Moderate:
-    "VIX in the 15-20 range is the sweet spot for the wheel strategy — enough premium to make positions worthwhile, not enough fear to signal elevated risk. Normal deployment posture.",
-  Elevated:
-    "VIX in the 20-25 range signals market uncertainty. Maintain 10-15% free cash per framework. Be selective with new entries. Watch for VIX spikes that create better entry opportunities.",
-  High: "VIX in the 25-30 range indicates significant market stress. Maintain 15-20% free cash minimum. Focus on high-quality names only. Bear call spreads may be appropriate as a hedge.",
-  "Very High":
-    "VIX above 30 signals fear-driven selling. This is historically a zone where put premium is richest. Deploy carefully in tranches — do not go all-in. Keep 20%+ cash as buffer.",
-  Extreme:
-    "VIX above 40 indicates a market crisis. Prioritize capital preservation. Do not open new CSPs until VIX shows a clear downward trend. Watch for S5FI single-digit readings as a bottom signal.",
+  "Extreme Greed":
+    `VIX below 12 — the market is at peak complacency. Options premiums are historically thin, meaning you're getting paid very little for the risk you're taking. Ryan's framework calls for 40–50% cash at this level. This is counterintuitive: low fear = hold more cash, not less. Wait patiently for the next volatility spike.`,
+  Greed:
+    `VIX 12–15 — market participants are confident and greedy. Premiums are weak relative to historical averages. Ryan targets 30–40% cash here. Premium selling still works but you're not getting paid as well. Be selective — focus on higher-IV names from your approved list.`,
+  "Slight Fear":
+    `VIX 15–20 — the Goldilocks zone for the wheel strategy. Enough fear to generate meaningful premiums, not so much fear that assignment risk spikes. Ryan targets 20–25% cash and deploys aggressively here. This is the environment where the wheel strategy performs best. Follow Ryan signals, stay within allocation limits.`,
+  Fear:
+    `VIX 20–25 — elevated fear creates elevated premiums. Ryan targets 10–15% cash — deploy aggressively. Put premiums are rich, creating better risk/reward for CSPs. High-quality names that have sold off present the best entries. This is when Ryan has historically generated the most premium income.`,
+  "Very Fearful":
+    `VIX 25–30 — significant market fear. Ryan targets 5–10% cash — nearly all-in. Premiums are very elevated. Be selective about quality (stick to Tier 1 names), but do not hesitate to deploy. The temptation to hold cash "until things calm down" is the exact mistake to avoid at this VIX level.`,
+  "Extreme Fear":
+    `VIX above 30 — market crisis conditions. Ryan targets 0–5% cash and has historically injected new capital from outside the account at this level. This is maximum opportunity for premium sellers willing to take on short-term volatility. Watch S5FI for confirmation (single digits = major bottom). Not the time to panic — it's the time to deploy.`,
 };
 
 const S5FI_EXPLANATIONS = {
@@ -115,31 +115,22 @@ const YIELD_EXPLANATIONS = {
 // ─── Labeling functions ──────────────────────────────────────────────
 
 function labelVix(value) {
-  let score, label;
-  if (value < 12) {
-    score = 5;
-    label = "Very Low";
-  } else if (value < 15) {
-    score = 5;
-    label = "Low";
-  } else if (value < 20) {
-    score = 4;
-    label = "Moderate";
-  } else if (value < 25) {
-    score = 3;
-    label = "Elevated";
-  } else if (value < 30) {
-    score = 2;
-    label = "High";
-  } else if (value < 40) {
-    score = 1;
-    label = "Very High";
+  let score, label, cashTarget, investedTarget;
+  if (value <= 12) {
+    score = 2; label = "Extreme Greed"; cashTarget = "40–50%"; investedTarget = "50–60%";
+  } else if (value <= 15) {
+    score = 3; label = "Greed"; cashTarget = "30–40%"; investedTarget = "60–70%";
+  } else if (value <= 20) {
+    score = 5; label = "Slight Fear"; cashTarget = "20–25%"; investedTarget = "75–80%";
+  } else if (value <= 25) {
+    score = 5; label = "Fear"; cashTarget = "10–15%"; investedTarget = "85–90%";
+  } else if (value <= 30) {
+    score = 4; label = "Very Fearful"; cashTarget = "5–10%"; investedTarget = "90–95%";
   } else {
-    score = 1;
-    label = "Extreme";
+    score = 3; label = "Extreme Fear"; cashTarget = "0–5% + new cash"; investedTarget = "95–100%";
   }
   const color = score >= 4 ? "green" : score >= 3 ? "amber" : "red";
-  return { score, label, color, explanation: VIX_EXPLANATIONS[label] };
+  return { score, label, cashTarget, investedTarget, color, explanation: VIX_EXPLANATIONS[label] };
 }
 
 function labelS5fi(value) {
@@ -428,6 +419,8 @@ async function fetchFedWatch() {
 
   const currentRate = data.today.midpoint;
   const nextMeetingDate = todayRows[0].meeting_iso;
+  const probMovePct = todayRows[0].prob_move_pct ?? null;
+  const probIsCut = todayRows[0].prob_is_cut ?? false;
 
   // Find current year December meeting
   const currentYear = new Date().getFullYear();
@@ -479,6 +472,14 @@ async function fetchFedWatch() {
   else if (lastImplied > firstImplied) curveDirection = "rising";
   else curveDirection = "flat";
 
+  // 55% threshold check — Ryan's historical rule: 55%+ cut probability within 7 days = cut is coming
+  const today = new Date();
+  const nextMeetingDateObj = new Date(nextMeetingDate);
+  const daysToNextMeeting = Math.ceil((nextMeetingDateObj - today) / (1000 * 60 * 60 * 24));
+  const probCut = probIsCut ? (probMovePct ?? 0) : 0;
+  const isWithinWeek = daysToNextMeeting <= 7;
+  const threshold55Met = isWithinWeek && probCut >= 55;
+
   return {
     cutsPricedIn,
     endOfYearImplied,
@@ -486,6 +487,10 @@ async function fetchFedWatch() {
     nextMeetingDate,
     weeklyChangeBps,
     curveDirection,
+    probCut,
+    daysToNextMeeting,
+    isWithinWeek,
+    threshold55Met,
   };
 }
 
@@ -781,6 +786,8 @@ export default async function handler(req, res) {
   if (fedResult.status === "fulfilled") {
     const fed = fedResult.value;
     const labeled = labelFedWatch(fed.cutsPricedIn, fed.weeklyChangeBps);
+    // Apply +0.5 score boost when 55% threshold is met (historically reliable cut signal)
+    if (fed.threshold55Met) labeled.score = Math.min(5, labeled.score + 0.5);
     fedSignal = {
       cutsPricedIn: fed.cutsPricedIn,
       endOfYearImplied: fed.endOfYearImplied,
@@ -788,6 +795,10 @@ export default async function handler(req, res) {
       nextMeetingDate: fed.nextMeetingDate,
       weeklyChangeBps: fed.weeklyChangeBps,
       curveDirection: fed.curveDirection,
+      probCut: fed.probCut,
+      daysToNextMeeting: fed.daysToNextMeeting,
+      isWithinWeek: fed.isWithinWeek,
+      threshold55Met: fed.threshold55Met,
       ...labeled,
     };
   } else {
@@ -798,6 +809,10 @@ export default async function handler(req, res) {
       nextMeetingDate: null,
       weeklyChangeBps: null,
       curveDirection: null,
+      probCut: null,
+      daysToNextMeeting: null,
+      isWithinWeek: false,
+      threshold55Met: false,
       score: 2,
       label: "Unavailable",
       color: "amber",

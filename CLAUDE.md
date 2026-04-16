@@ -14,6 +14,16 @@ Increment from that number. Never use the local file's version as the baseline.
 - Patch bump (`x.y.Z`) for fixes
 - Bump `package.json` AND `const VERSION` in `src/lib/constants.js` in the same commit
 
+## Commit workflow
+
+After committing directly to main, always push immediately:
+
+```bash
+git push origin main
+```
+
+Never consider a change "done" or report it to the user until the push has completed successfully.
+
 ## PR workflow
 
 After creating a PR, merge it immediately (no need to ask).
@@ -45,6 +55,21 @@ Key token categories:
 - `theme.radius.sm/md/pill` (4/8/20px) — border radius
 - `theme.font.mono` — monospace font stack
 - `theme.chart.shares/leaps` — chart-specific colors
+
+## VIX-Based Cash Targets (Ryan's verified framework)
+
+Deployment posture is contrarian — high VIX = deploy more, low VIX = hold more cash.
+
+| VIX | Sentiment | Cash Target | Invested |
+|-----|-----------|-------------|---------|
+| ≤12 | Extreme Greed | 40–50% | 50–60% |
+| 12–15 | Greed | 30–40% | 60–70% |
+| 15–20 | Slight Fear | 20–25% | 75–80% |
+| 20–25 | Fear | 10–15% | 85–90% |
+| 25–30 | Very Fearful | 5–10% | 90–95% |
+| ≥30 | Extreme Fear | 0–5% + new cash | 95–100% |
+
+15–25 VIX is the sweet spot (score 5). ≥30 VIX is opportunity, not pure risk-off (score 3, not 1).
 
 **Intentional exceptions** (hardcoded hex is correct, do not replace):
 - `TYPE_COLORS` in `src/lib/constants.js` — CSP/CC/LEAPS/Spread/Shares badge colors

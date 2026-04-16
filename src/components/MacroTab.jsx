@@ -301,7 +301,11 @@ export function MacroTab() {
           direction={vixDirection}
           score={vix?.score}
           explanation={vix?.explanation}
-        />
+        >
+          {vix?.cashTarget && (
+            <div style={childStyle}>Cash target: {vix.cashTarget}</div>
+          )}
+        </SignalCard>
 
         {/* S5FI */}
         <SignalCard
@@ -351,6 +355,22 @@ export function MacroTab() {
               {fedWatch.nextMeetingDate && (
                 <div style={childStyle}>
                   Next FOMC: {new Date(fedWatch.nextMeetingDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {fedWatch.probCut != null ? ` — ${fedWatch.probCut.toFixed(0)}% probability of cut` : ""}
+                </div>
+              )}
+              {fedWatch.threshold55Met && (
+                <div style={{
+                  marginTop: theme.space[2],
+                  padding: `${theme.space[2]}px ${theme.space[3]}px`,
+                  background: "#1c2d1c",
+                  border: "1px solid #238636",
+                  borderRadius: theme.radius.sm,
+                  fontSize: theme.size.xs,
+                  color: "#3fb950",
+                  fontFamily: theme.font.mono,
+                  lineHeight: 1.5,
+                }}>
+                  ⚡ 55% Rule: ACTIVE — {fedWatch.probCut.toFixed(0)}% cut probability with {fedWatch.daysToNextMeeting} day{fedWatch.daysToNextMeeting === 1 ? "" : "s"} to FOMC. Historically predicted a cut with 100% accuracy since 1998.
                 </div>
               )}
             </>
