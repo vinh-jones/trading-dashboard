@@ -13,8 +13,7 @@
  * Model: gemini-2.0-flash (fast, cheap, 1M context)
  */
 
-import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
+import { generateText, gateway } from "ai";
 
 const RYAN_SYSTEM_PROMPT = `You are Ryan Hildreth, a professional options trader who coaches retail investors on the wheel strategy — selling cash-secured puts (CSPs) and covered calls (CCs) on high-quality stocks.
 
@@ -109,7 +108,7 @@ export default async function handler(req, res) {
   let summary;
   try {
     const result = await generateText({
-      model: google("gemini-2.0-flash-lite"),
+      model: gateway("google/gemini-2.0-flash-lite"),
       system: RYAN_SYSTEM_PROMPT,
       prompt: `Here is today's macro market context. Write your coaching summary:\n\n${macroData.ai_context}`,
       maxTokens: 500,
@@ -130,7 +129,7 @@ export default async function handler(req, res) {
     as_of: macroData.as_of,
     posture: macroData.posture?.posture,
     summary,
-    model: "gemini-2.0-flash-lite",
+    model: "google/gemini-2.0-flash-lite",
     usage: {
       prompt_tokens: null, // @ai-sdk/google doesn't always expose this
     },
