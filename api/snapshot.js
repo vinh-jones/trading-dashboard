@@ -154,9 +154,9 @@ export default async function handler(req, res) {
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
-  const withinBand   = band && freeCashPct !== null ? freeCashPct >= band.floor && freeCashPct <= band.ceiling : null;
-  const overdeployed = band && freeCashPct !== null ? freeCashPct < band.floor   : null;
-  const underdeployed= band && freeCashPct !== null ? freeCashPct > band.ceiling : null;
+  const withinBand   = band && freeCashPct !== null ? freeCashPct >= band.floorPct && freeCashPct <= band.ceilingPct : null;
+  const overdeployed = band && freeCashPct !== null ? freeCashPct < band.floorPct   : null;
+  const underdeployed= band && freeCashPct !== null ? freeCashPct > band.ceilingPct : null;
 
   const allocValues  = Object.values(tickerAllocations);
   const anyAbove10   = allocValues.some(v => v >= 0.10);
