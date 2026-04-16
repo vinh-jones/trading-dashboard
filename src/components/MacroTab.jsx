@@ -52,7 +52,7 @@ function ScoreDots({ score, max = 5, color }) {
 }
 
 function SignalCard({ name, value, label, color, direction, score, explanation, children, labelSuffix }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
 
   return (
@@ -133,6 +133,7 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
           color: theme.text.muted,
           fontFamily: theme.font.mono,
           lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
           borderTop: `1px solid ${theme.border.default}`,
           paddingTop: theme.space[2],
         }}>{explanation}</div>
@@ -367,32 +368,29 @@ export function MacroTab() {
         />
 
         {/* FedWatch / Rate Expectations */}
-        <SignalCard
-          name="Rate Expectations"
-          value={fedWatch?.cutsPricedIn != null ? `${fedWatch.cutsPricedIn.toFixed(1)} cuts` : null}
-          label={fedWatch?.label}
-          color={fedWatch?.color}
-          direction={fedWatch?.directionLabel ? `${fedWatch.directionArrow} ${fedWatch.directionLabel}${fedWatch.weeklyChangeBps != null ? ` (${fedWatch.weeklyChangeBps > 0 ? "+" : ""}${fedWatch.weeklyChangeBps} bps vs last week)` : ""}` : null}
-          score={fedWatch?.score}
-          explanation={(fedWatch?.explanation ?? "") + buildDirectionExplanation(fedWatch?.weeklyChangeBps)}
-          labelSuffix={fedWatch?.directionArrow && fedWatch.directionArrow !== "—" ? (
-            <span style={{ color: ARROW_COLORS[fedWatch.directionArrow] ?? theme.text.muted }}>{fedWatch.directionArrow}</span>
-          ) : null}
-        >
-          {fedWatch && (
-            <>
-              <div style={childStyle}>
-                Dec 2026 implied: {fedWatch.endOfYearImplied?.toFixed(3) ?? "—"}% (current: {fedWatch.currentRate?.toFixed(3) ?? "—"}%)
-              </div>
-              {fedWatch.nextMeetingDate && (
-                <div style={childStyle}>
-                  Next FOMC: {new Date(fedWatch.nextMeetingDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  {fedWatch.probCut != null ? ` — ${fedWatch.probCut.toFixed(0)}% probability of cut` : ""}
-                </div>
-              )}
-              {fedWatch.threshold55Met && (
+        {(() => {
+          const fomc = fedWatch?.nextMeetingDate
+            ? `\n\nNext FOMC: ${new Date(fedWatch.nextMeetingDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}${fedWatch.probCut != null ? ` — ${fedWatch.probCut.toFixed(0)}% probability of cut` : ""}`
+            : "";
+          const implied = fedWatch?.endOfYearImplied != null
+            ? `\nDec 2026 implied: ${fedWatch.endOfYearImplied.toFixed(3)}% (current: ${fedWatch.currentRate?.toFixed(3) ?? "—"}%)`
+            : "";
+          const fedExplanation = (fedWatch?.explanation ?? "") + buildDirectionExplanation(fedWatch?.weeklyChangeBps) + fomc + implied;
+          return (
+            <SignalCard
+              name="Rate Expectations"
+              value={fedWatch?.cutsPricedIn != null ? `${fedWatch.cutsPricedIn.toFixed(1)} cuts` : null}
+              label={fedWatch?.label}
+              color={fedWatch?.color}
+              direction={fedWatch?.directionLabel ? `${fedWatch.directionArrow} ${fedWatch.directionLabel}${fedWatch.weeklyChangeBps != null ? ` (${fedWatch.weeklyChangeBps > 0 ? "+" : ""}${fedWatch.weeklyChangeBps} bps vs last week)` : ""}` : null}
+              score={fedWatch?.score}
+              explanation={fedExplanation}
+              labelSuffix={fedWatch?.directionArrow && fedWatch.directionArrow !== "—" ? (
+                <span style={{ color: ARROW_COLORS[fedWatch.directionArrow] ?? theme.text.muted }}>{fedWatch.directionArrow}</span>
+              ) : null}
+            >
+              {fedWatch?.threshold55Met && (
                 <div style={{
-                  marginTop: theme.space[2],
                   padding: `${theme.space[2]}px ${theme.space[3]}px`,
                   background: "#1c2d1c",
                   border: "1px solid #238636",
@@ -405,9 +403,9 @@ export function MacroTab() {
                   ⚡ 55% Rule: ACTIVE — {fedWatch.probCut.toFixed(0)}% cut probability with {fedWatch.daysToNextMeeting} day{fedWatch.daysToNextMeeting === 1 ? "" : "s"} to FOMC. Historically predicted a cut with 100% accuracy since 1998.
                 </div>
               )}
-            </>
-          )}
-        </SignalCard>
+            </SignalCard>
+          );
+        })()}
 
         {/* 10-Year Yield */}
         <SignalCard
