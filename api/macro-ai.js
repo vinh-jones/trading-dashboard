@@ -3,17 +3,27 @@
  *
  * GET /api/macro-ai
  *
- * Fetches the current macro context from /api/macro, then passes it to
- * Gemini Flash (via @ai-sdk/google) with a Ryan-style system prompt.
- * Returns a short, actionable coaching summary in Ryan's voice.
+ * Returns a cached AI summary (Supabase ai_summary_cache table).
+ * If cache is older than 30 minutes, fetches fresh macro context,
+ * calls Gemini Flash via Vercel AI Gateway, and writes the new summary.
  *
  * Env vars required:
- *   GOOGLE_GENERATIVE_AI_API_KEY — Google AI API key (for @ai-sdk/google)
- *
- * Model: gemini-2.0-flash (fast, cheap, 1M context)
+ *   AI_GATEWAY_API_KEY      — Vercel AI Gateway key
+ *   SUPABASE_URL            — Supabase project URL
+ *   SUPABASE_ANON_KEY       — Supabase anon key
  */
 
 import { generateText, gateway } from "ai";
+import { createClient } from "@supabase/supabase-js";
+
+const CACHE_TTL_MINUTES = 30;
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
+}
 
 const RYAN_SYSTEM_PROMPT = `You are Ryan Hildreth, a professional options trader who coaches retail investors on the wheel strategy — selling cash-secured puts (CSPs) and covered calls (CCs) on high-quality stocks.
 
@@ -76,11 +86,34 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ── Step 1: Fetch macro data ────────────────────────────────────────
+  const supabase = getSupabase();
+
+  // ── Step 1: Check Supabase cache ───────────────────────────────────
+  const { data: cached } = await supabase
+    .from("ai_summary_cache")
+    .select("summary, posture, model, generated_at")
+    .eq("id", "macro")
+    .single();
+
+  if (cached) {
+    const ageMinutes = (Date.now() - new Date(cached.generated_at).getTime()) / 60000;
+    if (ageMinutes < CACHE_TTL_MINUTES) {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json({
+        ok: true,
+        posture: cached.posture,
+        summary: cached.summary,
+        model: cached.model,
+        generated_at: cached.generated_at,
+        cached: true,
+      });
+      return;
+    }
+  }
+
+  // ── Step 2: Fetch fresh macro data ─────────────────────────────────
   let macroData;
   try {
-    // VERCEL_PROJECT_PRODUCTION_URL = stable production alias (no auth protection)
-    // VERCEL_URL = deployment-specific URL (has preview auth protection — don't use)
     const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : "http://localhost:3000";
@@ -89,13 +122,23 @@ export default async function handler(req, res) {
       headers: { "User-Agent": "internal/macro-ai" },
     });
 
-    if (!macroRes.ok) {
-      throw new Error(`/api/macro returned ${macroRes.status}`);
-    }
-
+    if (!macroRes.ok) throw new Error(`/api/macro returned ${macroRes.status}`);
     macroData = await macroRes.json();
   } catch (err) {
-    console.error("[api/macro-ai] Failed to fetch macro data:", err.message);
+    console.error("[api/macro-ai] Macro fetch failed:", err.message);
+    // If we have a stale cache, return it rather than failing
+    if (cached) {
+      res.status(200).json({
+        ok: true,
+        posture: cached.posture,
+        summary: cached.summary,
+        model: cached.model,
+        generated_at: cached.generated_at,
+        cached: true,
+        stale: true,
+      });
+      return;
+    }
     res.status(502).json({ ok: false, error: `Macro fetch failed: ${err.message}` });
     return;
   }
@@ -105,34 +148,53 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ── Step 2: Generate Ryan-style summary ────────────────────────────
+  // ── Step 3: Generate summary ───────────────────────────────────────
   let summary;
+  const model = "google/gemini-2.0-flash-lite";
   try {
     const result = await generateText({
-      model: gateway("google/gemini-2.0-flash-lite"),
+      model: gateway(model),
       system: RYAN_SYSTEM_PROMPT,
       prompt: `Here is today's macro market context. Write your coaching summary:\n\n${macroData.ai_context}`,
       maxTokens: 500,
-      temperature: 0.4, // Low temp = more consistent, less creative
+      temperature: 0.4,
     });
-
     summary = result.text.trim();
   } catch (err) {
     console.error("[api/macro-ai] LLM call failed:", err.message);
+    if (cached) {
+      res.status(200).json({
+        ok: true,
+        posture: cached.posture,
+        summary: cached.summary,
+        model: cached.model,
+        generated_at: cached.generated_at,
+        cached: true,
+        stale: true,
+      });
+      return;
+    }
     res.status(500).json({ ok: false, error: `LLM call failed: ${err.message}` });
     return;
   }
 
-  // ── Step 3: Return ─────────────────────────────────────────────────
-  res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=300");
+  // ── Step 4: Write to cache ─────────────────────────────────────────
+  const posture = macroData.posture?.posture ?? null;
+  await supabase.from("ai_summary_cache").upsert({
+    id: "macro",
+    summary,
+    posture,
+    model,
+    generated_at: new Date().toISOString(),
+  });
+
+  res.setHeader("Cache-Control", "no-store");
   res.status(200).json({
     ok: true,
-    as_of: macroData.as_of,
-    posture: macroData.posture?.posture,
+    posture,
     summary,
-    model: "google/gemini-2.0-flash-lite",
-    usage: {
-      prompt_tokens: null, // @ai-sdk/google doesn't always expose this
-    },
+    model,
+    generated_at: new Date().toISOString(),
+    cached: false,
   });
 }
