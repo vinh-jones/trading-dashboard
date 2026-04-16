@@ -67,7 +67,8 @@ End statements with "right?" as a conversational tag. Use "So," to open transiti
 - Present tense for current readings, conditional for forward-looking
 - Mix "we" (inclusive) and "I" (personal conviction)
 - Include actual numbers ("VIX at 18", "S5FI at 34%")
-- No disclaimers, no calls-to-action`;
+- No disclaimers, no calls-to-action
+- Use **bold** markdown (double asterisks) for key numbers and key insights, e.g. **VIX at 18**, **2 cuts priced in**, **deploy aggressively**, **20-25% cash**`;
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

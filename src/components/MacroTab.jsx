@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { theme } from "../lib/theme";
 import { useMacro } from "../hooks/useMacro";
 import { useWindowWidth } from "../hooks/useWindowWidth";
@@ -47,6 +47,143 @@ function ScoreDots({ score, max = 5, color }) {
           background: i < score ? resolved : theme.border.default,
         }} />
       ))}
+    </div>
+  );
+}
+
+// ─── Ryan AI Summary ──────────────────────────────────────────────────────────
+
+function useMacroAiSummary() {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/macro-ai")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) setSummary(d.summary);
+        else setError(d.error);
+        setLoading(false);
+      })
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
+  }, []);
+
+  return { summary, loading, error };
+}
+
+function BlinkingCursor() {
+  const [on, setOn] = useState(true);
+  useEffect(() => {
+    const id = setInterval(() => setOn((v) => !v), 530);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span style={{ opacity: on ? 1 : 0, color: theme.text.muted, fontWeight: 300 }}>|</span>
+  );
+}
+
+function renderSummaryText(text) {
+  // Split on **bold** markers and \n\n paragraph breaks
+  const paragraphs = text.split("\n\n");
+  return paragraphs.map((para, pi) => {
+    const parts = para.split(/(\*\*[^*]+\*\*)/);
+    return (
+      <p key={pi} style={{ margin: 0, marginTop: pi > 0 ? theme.space[3] : 0 }}>
+        {parts.map((part, i) => {
+          if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+            return (
+              <strong key={i} style={{ color: theme.text.primary, fontWeight: 600 }}>
+                {part.slice(2, -2)}
+              </strong>
+            );
+          }
+          return <span key={i}>{part}</span>;
+        })}
+      </p>
+    );
+  });
+}
+
+function TypewriterSummary({ text }) {
+  const [count, setCount] = useState(0);
+  const done = count >= text.length;
+
+  useEffect(() => {
+    setCount(0);
+    if (!text) return;
+    const id = setInterval(() => {
+      setCount((c) => {
+        if (c >= text.length) { clearInterval(id); return c; }
+        return c + 3; // ~3 chars/tick at 16ms ≈ 180 chars/sec
+      });
+    }, 16);
+    return () => clearInterval(id);
+  }, [text]);
+
+  const visible = text.slice(0, count);
+
+  return (
+    <span>
+      {renderSummaryText(visible)}
+      {!done && <BlinkingCursor />}
+    </span>
+  );
+}
+
+function RyanSummaryCard() {
+  const { summary, loading } = useMacroAiSummary();
+
+  return (
+    <div style={{
+      border: `1px solid ${theme.border.default}`,
+      borderRadius: theme.radius.md,
+      padding: theme.space[4],
+      background: theme.bg.surface,
+    }}>
+      <div style={{
+        fontSize: theme.size.xs,
+        color: theme.text.muted,
+        fontFamily: theme.font.mono,
+        letterSpacing: "0.08em",
+        marginBottom: theme.space[3],
+      }}>
+        RYAN'S READ
+      </div>
+
+      {loading && (
+        <div style={{
+          color: theme.text.muted,
+          fontSize: theme.size.sm,
+          fontFamily: theme.font.mono,
+          display: "flex",
+          alignItems: "center",
+          gap: theme.space[2],
+        }}>
+          <BlinkingCursor />
+          <span>Generating summary...</span>
+        </div>
+      )}
+
+      {!loading && summary && (
+        <div style={{
+          color: theme.text.secondary,
+          fontSize: theme.size.sm,
+          fontFamily: theme.font.mono,
+          lineHeight: 1.7,
+        }}>
+          <TypewriterSummary text={summary} />
+        </div>
+      )}
+
+      {!loading && !summary && (
+        <div style={{ color: theme.text.muted, fontSize: theme.size.sm, fontFamily: theme.font.mono }}>
+          Summary unavailable
+        </div>
+      )}
     </div>
   );
 }
@@ -360,6 +497,9 @@ export function MacroTab() {
           }}>{posture.deploymentGuidance}</div>
         )}
       </div>
+
+      {/* ── Ryan AI Summary ────────────────────────────────── */}
+      <RyanSummaryCard />
 
       {/* ── Rate Environment group ──────────────────────────── */}
       <SignalGroup label="Rate Environment">
