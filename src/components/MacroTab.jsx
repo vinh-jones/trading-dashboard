@@ -197,7 +197,7 @@ export function MacroTab() {
     ? asOfDate.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : "—";
 
-  const { vix, s5fi, fearGreed, fedWatch, spyVsAth } = signals ?? {};
+  const { vix, s5fi, fearGreed, fedWatch, spyVsAth, crudeOil, tenYearYield } = signals ?? {};
 
   const vixDirection = vix?.change != null
     ? `${vix.change >= 0 ? "▲" : "▼"} ${vix.change >= 0 ? "+" : ""}${vix.change.toFixed(1)} today`
@@ -371,6 +371,45 @@ export function MacroTab() {
               ${spyVsAth.value?.toFixed(2) ?? "—"} / ${spyVsAth.high?.toFixed(2) ?? "—"} high
             </div>
           )}
+        </SignalCard>
+
+        {/* Crude Oil */}
+        <SignalCard
+          name="CRUDE OIL (WTI)"
+          value={crudeOil?.price != null ? `$${crudeOil.price.toFixed(2)}` : null}
+          label={crudeOil?.label}
+          color={crudeOil?.color}
+          direction={crudeOil?.change != null
+            ? `${crudeOil.change >= 0 ? "▲" : "▼"} ${crudeOil.change >= 0 ? "+" : ""}$${crudeOil.change.toFixed(2)} (${(crudeOil.changePct * 100).toFixed(1)}%) today`
+            : null}
+          score={crudeOil?.score}
+          explanation={crudeOil?.explanation}
+        >
+          <div style={{ ...childStyle, marginTop: theme.space[1] }}>
+            Oil is the primary variable that shifts rate cut expectations. Watch Crude Oil and Rate Expectations together — when oil rises, FedWatch tends to shift hawkish.
+          </div>
+        </SignalCard>
+
+        {/* 10-Year Yield */}
+        <SignalCard
+          name="10-YEAR YIELD"
+          value={tenYearYield?.yield != null ? `${tenYearYield.yield.toFixed(2)}%` : null}
+          label={tenYearYield?.label}
+          color={tenYearYield?.color}
+          direction={tenYearYield?.change != null
+            ? `${tenYearYield.change >= 0 ? "▲" : "▼"} ${tenYearYield.change >= 0 ? "+" : ""}${Math.round(tenYearYield.change * 100)} bps today`
+            : null}
+          score={tenYearYield?.score}
+          explanation={tenYearYield?.explanation}
+        >
+          {tenYearYield?.fiftyTwoWeekLow != null && (
+            <div style={childStyle}>
+              52w: {tenYearYield.fiftyTwoWeekLow.toFixed(2)}% – {tenYearYield.fiftyTwoWeekHigh.toFixed(2)}%
+            </div>
+          )}
+          <div style={{ ...childStyle, marginTop: theme.space[1] }}>
+            The 10-year yield reflects long-term rate expectations while FedWatch captures short-term Fed policy. When both signals are bullish, the rate environment is strongly favorable. When they diverge, the 10-year usually leads.
+          </div>
         </SignalCard>
       </div>
     </div>

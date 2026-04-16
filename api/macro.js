@@ -3,7 +3,7 @@
  *
  * GET /api/macro
  *
- * Fetches 5 macro signals in parallel (VIX, SPY, S5FI, Fear & Greed, FedWatch),
+ * Fetches 7 macro signals in parallel (VIX, SPY, S5FI, Fear & Greed, FedWatch, Crude Oil, 10-Year Yield),
  * computes deterministic labels/scores, builds composite posture, and returns
  * a combined JSON response with an ai_context field for future LLM synthesis.
  */
@@ -82,6 +82,34 @@ const SPY_EXPLANATIONS = {
     "SPY 15-25% below ATH. Significant drawdown. Watch S5FI and Fear & Greed for bottom signals before deploying aggressively. Focus on capital preservation.",
   "Deep Bear":
     "SPY more than 25% below ATH. Bear market conditions. Minimum deployment until clear reversal signals appear across multiple indicators.",
+};
+
+const OIL_EXPLANATIONS = {
+  "Very Bullish":
+    `WTI crude below $70 is a significant tailwind for the market. Low oil prices reduce inflation pressure across the economy, keeping rate cut expectations alive. Ryan has noted that oil dropping into the $70s "marks a bottom for the overall market." Strong conditions for the wheel strategy.`,
+  Bullish:
+    `WTI crude in the $70-80 range is the sweet spot. Inflation pressure from energy is manageable, rate cuts remain on the table, and the economy isn't being strangled by high energy costs. Ryan considers this range healthy for risk assets. Normal to aggressive deployment posture.`,
+  Manageable:
+    `WTI crude in the $80-90 range is a yellow flag. Oil is elevated but hasn't yet triggered significant inflation concerns. Watch the FedWatch signal — if oil stays in this range, rate cut probabilities may start drifting lower. Be selective with new positions.`,
+  Concerning:
+    `WTI crude above $90 is a meaningful risk. At this level, energy costs start feeding into broader inflation, making it harder for the Fed to justify rate cuts. Ryan has described this zone as "not good." Watch for FedWatch probabilities shifting hawkish — if both signals are negative, reduce deployment.`,
+  Bearish:
+    `WTI crude above $100 is a serious threat. Ryan: "Going to lead to global inflation." At this level, rate cuts get pushed out or cancelled, consumer spending weakens, and high-growth stocks (PLTR, HOOD, etc.) face multiple compression. Shift to defensive posture — increase cash, focus on lower-beta names.`,
+  Crisis:
+    `WTI crude above $120 has historically preceded recessions. At this level the inflation/rate dynamic becomes very unfavorable for equities. Ryan considers this worst-case. Capital preservation mode — maximum cash, minimal new deployment, monitor for policy response.`,
+};
+
+const YIELD_EXPLANATIONS = {
+  "Very Bullish":
+    `10-year yields below 3.5% — money is flowing into equities because bonds offer minimal real return. At this level, the opportunity cost of owning stocks vs. bonds is very low, supporting elevated valuations. Historically strong tailwind for high-growth names in the wheel universe (PLTR, HOOD, etc.).`,
+  Bullish:
+    `10-year yields in the 3.5-4% range are equity-friendly. Ryan's threshold: yields "in the 3s" means money rotates from bonds to equities because Treasury returns barely beat inflation. Risk assets benefit from this rotation. Good environment for the wheel strategy.`,
+  Neutral:
+    `10-year yields in the 4-4.5% range are the current equilibrium zone. Bonds offer a meaningful risk-free return but equities can still compete. Neither a strong headwind nor tailwind. Watch the direction of change — rising yields in this range are a warning sign.`,
+  Restrictive:
+    `10-year yields above 4.5% are a headwind for equities. Ryan: "Not good for interest rates long term." At this level, bonds become a competitive alternative to stocks, compressing equity valuations. High-multiple growth stocks (PLTR at 200x PE) are most exposed. Reduce speculative names.`,
+  "Very Restrictive":
+    `10-year yields above 5% are significantly restrictive. The last time yields stayed above 5% for an extended period was 2007. At this level, credit costs rise, corporate margins compress, and equity valuations face structural pressure. Shift to high-quality, low-multiple names only.`,
 };
 
 // ─── Labeling functions ──────────────────────────────────────────────
@@ -242,11 +270,58 @@ function labelSpyVsAth(pctFromHigh) {
   return { score, label, color, explanation: SPY_EXPLANATIONS[label] };
 }
 
+function labelCrudeOil(price) {
+  let score, label;
+  if (price < 70) {
+    score = 5;
+    label = "Very Bullish";
+  } else if (price < 80) {
+    score = 5;
+    label = "Bullish";
+  } else if (price < 90) {
+    score = 3;
+    label = "Manageable";
+  } else if (price < 100) {
+    score = 2;
+    label = "Concerning";
+  } else if (price < 120) {
+    score = 1;
+    label = "Bearish";
+  } else {
+    score = 1;
+    label = "Crisis";
+  }
+  const color = score >= 4 ? "green" : score >= 3 ? "amber" : "red";
+  return { score, label, color, explanation: OIL_EXPLANATIONS[label] };
+}
+
+function labelTenYearYield(yld) {
+  let score, label;
+  if (yld < 3.5) {
+    score = 5;
+    label = "Very Bullish";
+  } else if (yld < 4.0) {
+    score = 4;
+    label = "Bullish";
+  } else if (yld < 4.5) {
+    score = 3;
+    label = "Neutral";
+  } else if (yld < 5.0) {
+    score = 2;
+    label = "Restrictive";
+  } else {
+    score = 1;
+    label = "Very Restrictive";
+  }
+  const color = score >= 4 ? "green" : score >= 3 ? "amber" : "red";
+  return { score, label, color, explanation: YIELD_EXPLANATIONS[label] };
+}
+
 // ─── Signal fetchers ─────────────────────────────────────────────────
 
-async function fetchYahooChart(symbol) {
-  const encoded = symbol.startsWith("^") ? symbol.replace("^", "%5E") : symbol;
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=1d`;
+async function fetchYahooChart(symbol, range = "1d") {
+  const encoded = encodeURIComponent(symbol);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=${range}`;
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -414,6 +489,35 @@ async function fetchFedWatch() {
   };
 }
 
+async function fetchCrudeOil() {
+  const meta = await fetchYahooChart("CL=F", "5d");
+  const price = meta.regularMarketPrice;
+  const previousClose = meta.chartPreviousClose;
+  return {
+    price,
+    previousClose,
+    change: Math.round((price - previousClose) * 100) / 100,
+    changePct: (price - previousClose) / previousClose,
+    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+  };
+}
+
+async function fetchTenYearYield() {
+  // ^TNX returns yield directly as a number (e.g. 4.32 = 4.32%)
+  const meta = await fetchYahooChart("^TNX", "5d");
+  const yld = meta.regularMarketPrice;
+  const previousClose = meta.chartPreviousClose;
+  return {
+    yield: yld,
+    previousClose,
+    change: Math.round((yld - previousClose) * 10000) / 10000,
+    changePct: (yld - previousClose) / previousClose,
+    fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow: meta.fiftyTwoWeekLow,
+  };
+}
+
 // ─── Composite posture ──────────────────────────────────────────────
 
 const POSTURE_MAP = [
@@ -491,7 +595,7 @@ function buildAiContext(posture, signals, asOf) {
     "",
   ];
 
-  const { vix, s5fi, fearGreed, fedWatch, spyVsAth } = signals;
+  const { vix, s5fi, fearGreed, fedWatch, spyVsAth, crudeOil, tenYearYield } = signals;
 
   lines.push(`VIX: ${vix.value} (${vix.label}, score ${vix.score}/5)`);
   if (vix.change != null) lines.push(`  Change: ${vix.change > 0 ? "+" : ""}${vix.change}`);
@@ -531,6 +635,33 @@ function buildAiContext(posture, signals, asOf) {
       `  52-week high: ${spyVsAth.high} | ${(spyVsAth.pctFromHigh * 100).toFixed(2)}% from high`
     );
   lines.push(`  ${spyVsAth.explanation}`);
+  lines.push("");
+
+  if (crudeOil.price != null) {
+    const oilDir = crudeOil.change > 0
+      ? `Rising +$${crudeOil.change.toFixed(2)} (bearish)`
+      : `Falling $${crudeOil.change.toFixed(2)} (bullish)`;
+    lines.push(`Crude Oil (WTI): $${crudeOil.price.toFixed(2)}/bbl — ${crudeOil.label} (score: ${crudeOil.score}/5)`);
+    lines.push(`  ${crudeOil.explanation}`);
+    lines.push(`  Direction: ${oilDir}`);
+    lines.push(`  Note: Oil is the primary variable influencing rate cut timing. Watch with Rate Expectations.`);
+  } else {
+    lines.push(`Crude Oil (WTI): Unavailable`);
+  }
+  lines.push("");
+
+  if (tenYearYield.yield != null) {
+    const bps = Math.round(tenYearYield.change * 100);
+    const yldDir = tenYearYield.change > 0
+      ? `Rising +${bps} bps (bearish)`
+      : `Falling ${bps} bps (bullish)`;
+    lines.push(`10-Year Treasury Yield: ${tenYearYield.yield.toFixed(2)}% — ${tenYearYield.label} (score: ${tenYearYield.score}/5)`);
+    lines.push(`  ${tenYearYield.explanation}`);
+    lines.push(`  Direction: ${yldDir}`);
+    lines.push(`  52-week range: ${tenYearYield.fiftyTwoWeekLow}% – ${tenYearYield.fiftyTwoWeekHigh}%`);
+  } else {
+    lines.push(`10-Year Treasury Yield: Unavailable`);
+  }
 
   return lines.join("\n");
 }
@@ -546,13 +677,15 @@ export default async function handler(req, res) {
   const asOf = new Date().toISOString();
 
   // Fetch all signals in parallel — one failure doesn't break others
-  const [vixResult, spyResult, fgResult, s5fiResult, fedResult] =
+  const [vixResult, spyResult, fgResult, s5fiResult, fedResult, crudeOilResult, tenYearYieldResult] =
     await Promise.allSettled([
       fetchVix(),
       fetchSpy(),
       fetchFearGreed(),
       fetchS5fi(),
       fetchFedWatch(),
+      fetchCrudeOil(),
+      fetchTenYearYield(),
     ]);
 
   // ─── VIX ───
@@ -674,6 +807,48 @@ export default async function handler(req, res) {
     };
   }
 
+  // ─── Crude Oil ───
+  let crudeOilSignal;
+  if (crudeOilResult.status === "fulfilled") {
+    const oil = crudeOilResult.value;
+    const labeled = labelCrudeOil(oil.price);
+    crudeOilSignal = { ...oil, ...labeled };
+  } else {
+    console.error("[api/macro] Crude Oil fetch failed:", crudeOilResult.reason?.message);
+    crudeOilSignal = {
+      price: null,
+      change: null,
+      changePct: null,
+      fiftyTwoWeekHigh: null,
+      fiftyTwoWeekLow: null,
+      score: 3,
+      label: "Unavailable",
+      color: "amber",
+      explanation: `Crude Oil data unavailable: ${crudeOilResult.reason?.message || "fetch failed"}`,
+    };
+  }
+
+  // ─── 10-Year Treasury Yield ───
+  let tenYearYieldSignal;
+  if (tenYearYieldResult.status === "fulfilled") {
+    const yld = tenYearYieldResult.value;
+    const labeled = labelTenYearYield(yld.yield);
+    tenYearYieldSignal = { ...yld, ...labeled };
+  } else {
+    console.error("[api/macro] 10-Year Yield fetch failed:", tenYearYieldResult.reason?.message);
+    tenYearYieldSignal = {
+      yield: null,
+      change: null,
+      changePct: null,
+      fiftyTwoWeekHigh: null,
+      fiftyTwoWeekLow: null,
+      score: 3,
+      label: "Unavailable",
+      color: "amber",
+      explanation: `10-Year Yield data unavailable: ${tenYearYieldResult.reason?.message || "fetch failed"}`,
+    };
+  }
+
   // ─── Composite posture ───
   const scores = [
     vixSignal.score,
@@ -681,6 +856,8 @@ export default async function handler(req, res) {
     fgSignal.score,
     fedSignal.score,
     spySignal.score,
+    crudeOilSignal.score,
+    tenYearYieldSignal.score,
   ];
   const posture = computePosture(scores);
 
@@ -690,6 +867,8 @@ export default async function handler(req, res) {
     fearGreed: fgSignal,
     fedWatch: fedSignal,
     spyVsAth: spySignal,
+    crudeOil: crudeOilSignal,
+    tenYearYield: tenYearYieldSignal,
   };
 
   const aiContext = buildAiContext(posture, signals, asOf);
