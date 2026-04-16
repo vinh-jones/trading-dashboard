@@ -160,7 +160,8 @@ function SignalGroup({ label, children }) {
       }}>{label}</div>
       <div style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 320px))",
+        justifyContent: "center",
         gap: theme.space[3],
       }}>
         {children}
