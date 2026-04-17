@@ -3,13 +3,12 @@ import { theme } from "../lib/theme";
 import { useMacro } from "../hooks/useMacro";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 
-// Intentional hardcoded hex — semantic data colors (same pattern as TYPE_COLORS)
 const POSTURE_COLORS = {
-  BULLISH:      { text: "#3fb950", bg: "#0d1f0d" },
-  CONSTRUCTIVE: { text: "#3fb950", bg: "#0d1f0d" },
-  NEUTRAL:      { text: "#e3b341", bg: "#1f1a0d" },
-  DEFENSIVE:    { text: "#e3b341", bg: "#1f1a0d" },
-  BEARISH:      { text: "#f85149", bg: "#1f0d0d" },
+  BULLISH:      { text: theme.green,  bg: theme.alert.successBg },
+  CONSTRUCTIVE: { text: theme.green,  bg: theme.alert.successBg },
+  NEUTRAL:      { text: theme.amber,  bg: theme.bg.surface },
+  DEFENSIVE:    { text: theme.amber,  bg: theme.bg.surface },
+  BEARISH:      { text: theme.red,    bg: theme.alert.dangerBg },
 };
 
 const COLOR_MAP = {
@@ -18,11 +17,10 @@ const COLOR_MAP = {
   red:   theme.red,
 };
 
-// Intentional hardcoded hex — arrow colors for rate direction indicator
 const ARROW_COLORS = {
-  "↑": "#3fb950",   // dovish = green
-  "↓": "#f85149",   // hawkish = red
-  "↔": "#8b949e",   // unchanged = gray
+  "↑": theme.green,        // dovish = green
+  "↓": theme.red,          // hawkish = red
+  "↔": theme.text.muted,   // unchanged = gray
 };
 
 function buildDirectionExplanation(weeklyChangeBps) {
@@ -40,7 +38,7 @@ function buildDirectionExplanation(weeklyChangeBps) {
 function ScoreDots({ score, max = 5, color }) {
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
   return (
-    <div style={{ display: "flex", gap: 3 }}>
+    <div style={{ display: "flex", gap: theme.space[1] }}>
       {Array.from({ length: max }, (_, i) => (
         <div key={i} style={{
           width: 8, height: 8, borderRadius: "50%",
@@ -141,7 +139,7 @@ function RyanSummaryCard() {
     <div style={{
       border: `1px solid ${theme.border.default}`,
       borderRadius: theme.radius.md,
-      padding: theme.space[4],
+      padding: theme.space[5],
       background: theme.bg.surface,
     }}>
       <div style={{
@@ -190,6 +188,7 @@ function RyanSummaryCard() {
 
 function SignalCard({ name, value, label, color, direction, score, explanation, children, labelSuffix }) {
   const [expanded, setExpanded] = useState(false);
+  const [whyHover, setWhyHover] = useState(false);
   const resolved = COLOR_MAP[color] ?? theme.text.muted;
 
   return (
@@ -226,7 +225,7 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
           fontSize: theme.size.sm,
           color: resolved,
           fontFamily: theme.font.mono,
-          display: "flex", alignItems: "center", gap: 4,
+          display: "flex", alignItems: "center", gap: theme.space[1],
         }}>
           {label ?? "—"}
           {labelSuffix}
@@ -248,16 +247,19 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
       {/* Explanation toggle */}
       <button
         onClick={() => setExpanded(!expanded)}
+        onMouseEnter={() => setWhyHover(true)}
+        onMouseLeave={() => setWhyHover(false)}
         style={{
-          background: "none",
+          background: whyHover ? "rgba(58,130,246,0.06)" : "none",
           border: "none",
-          color: theme.text.subtle,
+          color: whyHover ? theme.text.secondary : theme.text.subtle,
           fontSize: theme.size.xs,
           fontFamily: theme.font.mono,
           cursor: "pointer",
-          padding: 0,
+          padding: `${theme.space[1]}px ${theme.space[1]}px`,
           textAlign: "left",
           alignSelf: "flex-start",
+          borderRadius: theme.radius.sm,
         }}
       >
         {expanded ? "▴" : "▾"} Why this matters
@@ -279,11 +281,10 @@ function SignalCard({ name, value, label, color, direction, score, explanation, 
   );
 }
 
-// Intentional hardcoded hex — group/legend chrome colors (same role as POSTURE_COLORS)
 function SignalGroup({ label, children }) {
   return (
     <div style={{
-      border: "1px solid #30363d",
+      border: `1px solid ${theme.border.strong}`,
       borderRadius: theme.radius.md,
       padding: theme.space[4],
     }}>
@@ -292,7 +293,7 @@ function SignalGroup({ label, children }) {
         fontWeight: 600,
         letterSpacing: "0.8px",
         textTransform: "uppercase",
-        color: "#6e7681",
+        color: theme.text.subtle,
         marginBottom: theme.space[3],
       }}>{label}</div>
       <div style={{
@@ -317,8 +318,8 @@ function RelationshipLegend() {
   return (
     <div style={{
       padding: `${theme.space[3]}px ${theme.space[4]}px`,
-      background: "#161b22",
-      border: "1px solid #21262d",
+      background: theme.bg.surface,
+      border: `1px solid ${theme.border.default}`,
       borderRadius: theme.radius.sm,
     }}>
       <div style={{
@@ -326,7 +327,7 @@ function RelationshipLegend() {
         fontWeight: 600,
         letterSpacing: "0.8px",
         textTransform: "uppercase",
-        color: "#6e7681",
+        color: theme.text.subtle,
         marginBottom: theme.space[2],
       }}>Signal Relationships</div>
       {RELATIONSHIPS.map((r, i) => (
@@ -335,7 +336,7 @@ function RelationshipLegend() {
           gap: theme.space[2],
           marginBottom: i < RELATIONSHIPS.length - 1 ? theme.space[2] : 0,
           fontSize: theme.size.sm,
-          color: "#8b949e",
+          color: theme.text.muted,
           lineHeight: 1.5,
         }}>
           <span style={{ flexShrink: 0 }}>{r.emoji}</span>
@@ -350,6 +351,8 @@ export function MacroTab() {
   const { data, loading, error, refresh } = useMacro();
   const width = useWindowWidth();
   const isMobile = width < 768;
+  const [retryHover, setRetryHover] = useState(false);
+  const [refreshHover, setRefreshHover] = useState(false);
 
   if (loading) {
     return (
@@ -374,11 +377,13 @@ export function MacroTab() {
         </span>
         <button
           onClick={refresh}
+          onMouseEnter={() => setRetryHover(true)}
+          onMouseLeave={() => setRetryHover(false)}
           style={{
-            background: theme.bg.elevated,
+            background: retryHover ? "rgba(58,130,246,0.06)" : theme.bg.elevated,
             border: `1px solid ${theme.border.strong}`,
             borderRadius: theme.radius.sm,
-            color: theme.text.secondary,
+            color: retryHover ? theme.text.primary : theme.text.secondary,
             fontFamily: theme.font.mono,
             fontSize: theme.size.sm,
             padding: `${theme.space[2]}px ${theme.space[4]}px`,
@@ -440,7 +445,7 @@ export function MacroTab() {
             color: theme.text.subtle,
             fontFamily: theme.font.mono,
             textTransform: "uppercase",
-            letterSpacing: 1,
+            letterSpacing: "1px",
           }}>MACRO OUTLOOK</span>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
             {isStale && (
@@ -457,11 +462,13 @@ export function MacroTab() {
             }}>as of {formattedDate}</span>
             <button
               onClick={refresh}
+              onMouseEnter={() => setRefreshHover(true)}
+              onMouseLeave={() => setRefreshHover(false)}
               style={{
-                background: theme.bg.elevated,
+                background: refreshHover ? "rgba(58,130,246,0.06)" : theme.bg.elevated,
                 border: `1px solid ${theme.border.strong}`,
                 borderRadius: theme.radius.sm,
-                color: theme.text.secondary,
+                color: refreshHover ? theme.text.primary : theme.text.secondary,
                 fontFamily: theme.font.mono,
                 fontSize: theme.size.xs,
                 padding: `${theme.space[1]}px ${theme.space[2]}px`,
@@ -474,11 +481,11 @@ export function MacroTab() {
         {/* Posture + score */}
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{
-            fontSize: 28,
+            fontSize: theme.size.xxl,
             fontWeight: 700,
             color: postureColors.text,
             fontFamily: theme.font.mono,
-            letterSpacing: 1,
+            letterSpacing: "1px",
           }}>{posture?.posture ?? "—"}</span>
           <span style={{
             fontSize: theme.size.sm,
@@ -541,11 +548,11 @@ export function MacroTab() {
               {fedWatch?.threshold55Met && (
                 <div style={{
                   padding: `${theme.space[2]}px ${theme.space[3]}px`,
-                  background: "#1c2d1c",
-                  border: "1px solid #238636",
+                  background: theme.alert.successBg,
+                  border: `1px solid ${theme.alert.successBorder}`,
                   borderRadius: theme.radius.sm,
                   fontSize: theme.size.xs,
-                  color: "#3fb950",
+                  color: theme.green,
                   fontFamily: theme.font.mono,
                   lineHeight: 1.5,
                 }}>
