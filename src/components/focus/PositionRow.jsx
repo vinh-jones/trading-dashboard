@@ -24,16 +24,20 @@ function proximityBarColor(fraction) {
 function AlertTag({ tag }) {
   const isP1 = tag.priority === "P1";
   return (
-    <span style={{
-      fontSize:      theme.size.xs,
-      padding:       "1px 6px",
-      borderRadius:  theme.radius.pill,
-      background:    isP1 ? "rgba(248,81,73,0.15)" : theme.bg.elevated,
-      color:         isP1 ? theme.red : theme.amber,
-      border:        `1px solid ${isP1 ? theme.red : theme.border.strong}`,
-      fontWeight:    600,
-      letterSpacing: "0.03em",
-    }}>
+    <span
+      title={tag.title}
+      style={{
+        fontSize:      theme.size.xs,
+        padding:       "1px 6px",
+        borderRadius:  theme.radius.pill,
+        background:    isP1 ? "rgba(248,81,73,0.15)" : theme.bg.elevated,
+        color:         isP1 ? theme.red : theme.amber,
+        border:        `1px solid ${isP1 ? theme.red : theme.border.strong}`,
+        fontWeight:    600,
+        letterSpacing: "0.03em",
+        cursor:        "help",
+      }}
+    >
       {tag.priority}
     </span>
   );

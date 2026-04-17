@@ -37,8 +37,11 @@ export function PositionsFeed({ rows }) {
       }}>
         Positions · by urgency
       </div>
-      {rows.map(row => (
-        <PositionRow key={`${row.ticker}-${row.type}-${row.strike}-${row.dte}`} row={row} />
+      {rows.map((row, i) => (
+        <PositionRow
+          key={row.position?.id ?? `${row.ticker}-${row.type}-${row.strike}-${row.position?.expiry_date}-${row.position?.contracts}-${i}`}
+          row={row}
+        />
       ))}
     </div>
   );
