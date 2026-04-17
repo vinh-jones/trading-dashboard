@@ -98,21 +98,20 @@ export function PositionRow({ row }) {
           {dte != null && <>{dte}d</>}
           {dtePct != null && <> · {dtePct.toFixed(0)}% DTE left</>}
         </div>
-        {topAlert && (
-          <div style={{
-            fontSize:   theme.size.sm,
-            color:      priorityStripColor(topAlert.priority),
-            marginTop:  3,
-            overflow:   "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>
-            {trimTickerPrefix(topAlert.title, ticker)}
-            {alertTags.length > 1 && (
-              <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, marginLeft: theme.space[2] }}>
-                +{alertTags.length - 1} more
-              </span>
-            )}
+        {alertTags.length > 0 && (
+          <div style={{ marginTop: 3 }}>
+            {alertTags.map(t => (
+              <div
+                key={t.id}
+                style={{
+                  fontSize:   theme.size.sm,
+                  color:      priorityStripColor(t.priority),
+                  lineHeight: 1.35,
+                }}
+              >
+                {trimTickerPrefix(t.title, ticker)}
+              </div>
+            ))}
           </div>
         )}
       </div>

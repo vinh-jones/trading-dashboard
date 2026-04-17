@@ -72,21 +72,39 @@ function RulesPanel() {
   );
 }
 
-// Dedupes macro events by eventType and keeps only the soonest upcoming one
-// per type. Preserves the pre-Layer-2 rendering.
+// Dedupes macro events by eventType. Prefers upcoming events; if none are
+// future-dated, falls back to the most recent past release so the panel still
+// renders something useful. Events missing dateTime sort last with a dash.
 function MacroCalendar({ macroEvents }) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const byType = {};
   for (const evt of macroEvents) {
-    if (!evt.dateTime) continue;
-    const d = evt.dateTime.slice(0, 10);
-    if (d < todayStr) continue;
-    if (!byType[evt.eventType] || d < byType[evt.eventType]._date) {
+    const d = evt.dateTime ? evt.dateTime.slice(0, 10) : null;
+    const prev = byType[evt.eventType];
+
+    // Prefer: upcoming > most-recent-past > undated
+    // For each eventType, keep the soonest future date. If none, keep the latest past date.
+    if (!prev) {
+      byType[evt.eventType] = { ...evt, _date: d };
+      continue;
+    }
+    const prevIsFuture = prev._date && prev._date >= todayStr;
+    const thisIsFuture = d && d >= todayStr;
+    if (thisIsFuture && prevIsFuture) {
+      if (d < prev._date) byType[evt.eventType] = { ...evt, _date: d };
+    } else if (thisIsFuture && !prevIsFuture) {
+      byType[evt.eventType] = { ...evt, _date: d };
+    } else if (!thisIsFuture && !prevIsFuture && d && (!prev._date || d > prev._date)) {
       byType[evt.eventType] = { ...evt, _date: d };
     }
   }
-  const upcoming = Object.values(byType).sort((a, b) => a._date.localeCompare(b._date));
-  if (!upcoming.length) return null;
+  const events = Object.values(byType).sort((a, b) => {
+    if (a._date && b._date) return a._date.localeCompare(b._date);
+    if (a._date) return -1;
+    if (b._date) return 1;
+    return 0;
+  });
+  if (!events.length) return null;
 
   const colStyle = { fontSize: theme.size.sm, padding: "5px 10px", textAlign: "left" };
 
@@ -119,7 +137,7 @@ function MacroCalendar({ macroEvents }) {
           </tr>
         </thead>
         <tbody>
-          {upcoming.map((evt, i) => {
+          {events.map((evt, i) => {
             const label  = evt.eventType === "FOMC_RATE_DECISION" ? "FOMC Rate" : evt.eventType;
             const isPast = evt.actual != null;
             return (
