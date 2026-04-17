@@ -17,7 +17,7 @@ export function CalendarDetailPanel({
   if (!hasDisplay) return null;
 
   return (
-    <div style={{ marginTop: theme.space[4], padding: `${theme.space[4]}px ${theme.space[5]}px`, background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
+    <div style={{ marginTop: theme.space[4], padding: `${theme.space[5]}px`, background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[3] }}>
         <div style={{ fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary }}>
           {selectedDay
@@ -51,7 +51,7 @@ export function CalendarDetailPanel({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[1] }}>
                   <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
                     <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{t.ticker}</span>
-                    <span style={{ background: tc.bg, color: tc.text, padding: "2px 6px", borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{t.type}</span>
+                    <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{t.type}</span>
                     <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</span>
                   </div>
                   <span style={{ fontWeight: 600, color: isLoss ? theme.red : theme.green, fontSize: theme.size.md }}>{formatDollarsFull(t.premium)}</span>
@@ -66,7 +66,7 @@ export function CalendarDetailPanel({
             );
           })}
           {displayClosed.length > 0 && displayExpiring.length > 0 && (
-            <div style={{ textAlign: "center", fontSize: theme.size.sm, color: theme.text.subtle, padding: "6px 0" }}>── Open positions expiring ──</div>
+            <div style={{ textAlign: "center", fontSize: theme.size.sm, color: theme.text.subtle, padding: `${theme.space[1]}px 0` }}>── Open positions expiring ──</div>
           )}
           {displayExpiring.map((p, i) => {
             const tc = TYPE_COLORS[p.type] || {};
@@ -75,7 +75,7 @@ export function CalendarDetailPanel({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[1] }}>
                   <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
                     <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{p.ticker}</span>
-                    <span style={{ background: tc.bg, color: tc.text, padding: "2px 6px", borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{p.type}</span>
+                    <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{p.type}</span>
                     <span style={{ color: theme.blue, fontSize: theme.size.sm }}>Expires {formatExpiry(p.expiry_date)}</span>
                   </div>
                   <span style={{ fontWeight: 600, color: theme.green, fontSize: theme.size.md }}>{formatDollarsFull(p.premium_collected)}</span>
@@ -106,30 +106,30 @@ export function CalendarDetailPanel({
                 const isLoss = t.premium < 0;
                 return (
                   <tr key={`closed-${i}`} style={{ borderBottom: `1px solid ${theme.bg.surface}` }}>
-                    <td style={{ padding: "7px 8px", fontWeight: 600, color: theme.text.primary }}>{t.ticker}</td>
-                    <td style={{ padding: "7px 8px" }}>
-                      <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{t.ticker}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}>
+                      <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
                         {t.type}
                       </span>
                     </td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted, fontSize: theme.size.sm }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.secondary }}>{t.strike ? `$${t.strike}` : "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.contracts || "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.open}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.close}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.expiry !== "—" ? t.expiry : "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.days != null ? `${t.days}d` : "—"}</td>
-                    <td style={{ padding: "7px 8px", fontWeight: 600, color: isLoss ? theme.red : theme.green }}>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted, fontSize: theme.size.sm }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.secondary }}>{t.strike ? `$${t.strike}` : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.contracts || "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.open}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.close}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.expiry !== "—" ? t.expiry : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.days != null ? `${t.days}d` : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: isLoss ? theme.red : theme.green }}>
                       {formatDollarsFull(t.premium)}
                     </td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{t.kept}</td>
-                    <td style={{ padding: "7px 4px" }}>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{t.kept}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[1]}px` }}>
                       <button
                         onClick={() => {
                           if (window.confirm(`Delete ${t.ticker} ${t.type} closed ${t.close}?`)) deleteTrade(t);
                         }}
                         title="Delete trade"
-                        style={{ background: "none", border: "none", cursor: "pointer", color: theme.text.subtle, fontSize: theme.size.md, padding: "2px 4px", lineHeight: 1, borderRadius: theme.radius.sm }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: theme.text.subtle, fontSize: theme.size.md, padding: `${theme.space[1]}px ${theme.space[1]}px`, lineHeight: 1, borderRadius: theme.radius.sm }}
                         onMouseEnter={e => e.currentTarget.style.color = theme.red}
                         onMouseLeave={e => e.currentTarget.style.color = theme.text.subtle}
                       >×</button>
@@ -148,22 +148,22 @@ export function CalendarDetailPanel({
                 const tc = TYPE_COLORS[p.type] || {};
                 return (
                   <tr key={`expiry-${i}`} style={{ borderBottom: `1px solid ${theme.bg.surface}`, background: theme.bg.elevated }}>
-                    <td style={{ padding: "7px 8px", fontWeight: 600, color: theme.text.primary }}>{p.ticker}</td>
-                    <td style={{ padding: "7px 8px" }}>
-                      <span style={{ background: tc.bg, color: tc.text, padding: "2px 7px", borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{p.ticker}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}>
+                      <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
                         {p.type}
                       </span>
                     </td>
-                    <td style={{ padding: "7px 8px", fontSize: theme.size.sm, color: theme.blue }}>Expires {formatExpiry(p.expiry_date)}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.secondary }}>{p.strike ? `$${p.strike}` : "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{p.contracts || "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>—</td>
-                    <td style={{ padding: "7px 8px", color: theme.blue }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>—</td>
-                    <td style={{ padding: "7px 8px", fontWeight: 600, color: theme.green }}>{formatDollarsFull(p.premium_collected)}</td>
-                    <td style={{ padding: "7px 8px", color: theme.text.muted }}>—</td>
-                    <td style={{ padding: "7px 8px" }}></td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, color: theme.blue }}>Expires {formatExpiry(p.expiry_date)}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.secondary }}>{p.strike ? `$${p.strike}` : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{p.contracts || "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>{p.open_date ? p.open_date.slice(5).replace("-", "/") : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>—</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.blue }}>{p.expiry_date ? p.expiry_date.slice(5).replace("-", "/") : "—"}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>—</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.green }}>{formatDollarsFull(p.premium_collected)}</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted }}>—</td>
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}></td>
                   </tr>
                 );
               })}

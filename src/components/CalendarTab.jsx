@@ -230,7 +230,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 background: "transparent", border: "none",
                 color: calMonth === 0 ? theme.text.faint : theme.text.secondary,
                 fontSize: theme.size.xl, cursor: calMonth === 0 ? "default" : "pointer",
-                padding: "2px 6px", fontFamily: "inherit", lineHeight: 1,
+                padding: `${theme.space[1]}px ${theme.space[1]}px`, fontFamily: "inherit", lineHeight: 1,
               }}
               aria-label="Previous month"
             >‹</button>
@@ -244,7 +244,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 background: "transparent", border: "none",
                 color: calMonth === MONTHS.length - 1 ? theme.text.faint : theme.text.secondary,
                 fontSize: theme.size.xl, cursor: calMonth === MONTHS.length - 1 ? "default" : "pointer",
-                padding: "2px 6px", fontFamily: "inherit", lineHeight: 1,
+                padding: `${theme.space[1]}px ${theme.space[1]}px`, fontFamily: "inherit", lineHeight: 1,
               }}
               aria-label="Next month"
             >›</button>
@@ -255,7 +255,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <button
             onClick={() => setFiltersOpen(v => !v)}
             style={{
-              padding: "4px 10px", borderRadius: theme.radius.sm, fontSize: theme.size.sm,
+              padding: `${theme.space[1]}px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm,
               background: (filtersOpen || selectedType) ? theme.bg.elevated : "transparent",
               color: selectedType ? (TYPE_COLORS[selectedType]?.text || theme.text.secondary) : theme.text.muted,
               border: `1px solid ${selectedType ? (TYPE_COLORS[selectedType]?.border || theme.border.strong) : theme.border.strong}`,
@@ -271,8 +271,10 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <div style={{ display: "flex", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[3], padding: theme.space[2], background: theme.bg.surface, borderRadius: theme.radius.sm }}>
             <button
               onClick={() => { setSelectedType(null); setFiltersOpen(false); }}
+              onMouseEnter={e => { e.currentTarget.style.background = !selectedType ? theme.bg.elevated : "rgba(58,130,246,0.06)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = !selectedType ? theme.bg.elevated : "transparent"; }}
               style={{
-                padding: "4px 10px", borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
+                padding: `${theme.space[1]}px ${theme.space[2]}px`, borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
                 cursor: "pointer", border: "none",
                 background: !selectedType ? theme.bg.elevated : "transparent",
                 color: !selectedType ? theme.text.primary : theme.text.muted,
@@ -284,8 +286,10 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
               <button
                 key={ts.type}
                 onClick={() => { setSelectedType(selectedType === ts.type ? null : ts.type); setFiltersOpen(false); }}
+                onMouseEnter={e => { if (selectedType !== ts.type) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                onMouseLeave={e => { if (selectedType !== ts.type) e.currentTarget.style.background = "transparent"; }}
                 style={{
-                  padding: "4px 10px", borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
+                  padding: `${theme.space[1]}px ${theme.space[2]}px`, borderRadius: theme.radius.pill, fontSize: theme.size.sm, fontFamily: "inherit",
                   cursor: "pointer",
                   border: `1px solid ${TYPE_COLORS[ts.type]?.border || theme.border.strong}`,
                   background: selectedType === ts.type ? (TYPE_COLORS[ts.type]?.bg || theme.bg.elevated) : "transparent",
@@ -347,6 +351,8 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 {/* Week header row */}
                 <div
                   onClick={() => setExpandedWeek(isExpanded ? null : wi)}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = bg; }}
                   style={{
                     display: "flex", alignItems: "center", gap: theme.space[2],
                     padding: `${theme.space[3]}px ${theme.space[3]}px`,
@@ -397,6 +403,8 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                         <div
                           key={di}
                           onClick={() => { if (isClickable) { setSelectedDay(isSelected ? null : key); setSelectedWeek(null); } }}
+                          onMouseEnter={e => { if (isClickable && !isSelected) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                          onMouseLeave={e => { if (isClickable && !isSelected) e.currentTarget.style.background = inMonth && isWeekend ? theme.bg.weekend : "transparent"; }}
                           style={{
                             display: "flex", alignItems: "center", gap: theme.space[2],
                             padding: `${theme.space[2]}px ${theme.space[3]}px`,
@@ -467,11 +475,14 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
       <div style={{ display: "flex", gap: theme.space[2], marginBottom: theme.space[4], flexWrap: "wrap" }}>
         <button
           onClick={() => setSelectedType(null)}
+          onMouseEnter={e => { if (selectedType) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+          onMouseLeave={e => { if (selectedType) e.currentTarget.style.background = "transparent"; }}
           style={{
-            padding: "6px 14px", borderRadius: theme.radius.pill, fontSize: theme.size.md, fontFamily: "inherit",
+            padding: `${theme.space[1]}px ${theme.space[3]}px`, borderRadius: theme.radius.pill, fontSize: theme.size.md, fontFamily: "inherit",
             cursor: "pointer", border: "none",
             background: !selectedType ? theme.bg.elevated : "transparent",
             color: !selectedType ? theme.text.primary : theme.text.muted,
+            transition: "background 0.15s",
           }}
         >
           ALL ({TRADES.length})
@@ -480,12 +491,15 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <button
             key={ts.type}
             onClick={() => setSelectedType(selectedType === ts.type ? null : ts.type)}
+            onMouseEnter={e => { if (selectedType !== ts.type) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+            onMouseLeave={e => { if (selectedType !== ts.type) e.currentTarget.style.background = "transparent"; }}
             style={{
-              padding: "6px 14px", borderRadius: theme.radius.pill, fontSize: theme.size.md, fontFamily: "inherit",
+              padding: `${theme.space[1]}px ${theme.space[3]}px`, borderRadius: theme.radius.pill, fontSize: theme.size.md, fontFamily: "inherit",
               cursor: "pointer",
               border: `1px solid ${TYPE_COLORS[ts.type]?.border || theme.border.strong}`,
               background: selectedType === ts.type ? TYPE_COLORS[ts.type]?.bg || theme.bg.elevated : "transparent",
               color: TYPE_COLORS[ts.type]?.text || theme.text.secondary,
+              transition: "background 0.15s",
             }}
           >
             {ts.type} ({ts.count}) · {formatDollars(ts.premium)}
@@ -494,7 +508,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
       </div>
 
       {/* Pipeline planning panel */}
-      <div style={{ padding: `${theme.space[3]}px ${theme.space[4]}px`, background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: theme.space[4] }}>
+      <div style={{ padding: `${theme.space[5]}px`, background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: theme.space[4] }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[3] }}>
           <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
             Premium Pipeline
@@ -504,7 +518,9 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
             <select
               value={captureRate}
               onChange={e => setCaptureRate(parseFloat(e.target.value))}
-              style={{ background: theme.bg.base, border: `1px solid ${theme.border.strong}`, color: theme.text.primary, borderRadius: theme.radius.sm, padding: "3px 6px", fontSize: theme.size.sm, fontFamily: "inherit", cursor: "pointer" }}
+              onFocus={e => { e.currentTarget.style.outline = `2px solid ${theme.blue}`; e.currentTarget.style.outlineOffset = "2px"; }}
+              onBlur={e => { e.currentTarget.style.outline = "none"; }}
+              style={{ background: theme.bg.base, border: `1px solid ${theme.border.strong}`, color: theme.text.primary, borderRadius: theme.radius.sm, padding: `${theme.space[1]}px ${theme.space[1]}px`, fontSize: theme.size.sm, fontFamily: "inherit", cursor: "pointer" }}
             >
               <option value={0.50}>50%</option>
               <option value={0.60}>60%</option>
@@ -549,8 +565,10 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
             <button
               key={m.label}
               onClick={() => { setCalMonth(i); setSelectedDay(null); setSelectedWeek(null); }}
+              onMouseEnter={e => { if (calMonth !== i) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+              onMouseLeave={e => { if (calMonth !== i) e.currentTarget.style.background = "transparent"; }}
               style={{
-                padding: "6px 16px", fontSize: theme.size.md, fontFamily: "inherit", cursor: "pointer",
+                padding: `${theme.space[1]}px ${theme.space[4]}px`, fontSize: theme.size.md, fontFamily: "inherit", cursor: "pointer",
                 fontWeight: calMonth === i ? 600 : 400,
                 background: "transparent",
                 color: calMonth === i ? theme.text.primary : theme.text.muted,
@@ -612,8 +630,8 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                     border: isSelected ? `1px solid ${theme.blue}` : "1px solid transparent",
                     borderBottomColor: wi < weeks.length - 1 ? theme.border.default : "transparent",
                   }}
-                  onMouseEnter={(e) => { if (hasTrades && !isSelected) e.currentTarget.style.outline = `1px solid ${theme.border.strong}`; }}
-                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.outline = "none"; }}
+                  onMouseEnter={(e) => { if (isClickable && !isSelected) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = hasTrades ? getCellBg(data.premium) : (isWeekend && inMonth ? theme.bg.weekend : theme.bg.base); }}
                 >
                   <div style={{ fontSize: theme.size.xs, fontWeight: 500, color: inMonth ? theme.text.subtle : theme.border.strong, marginBottom: theme.space[1] }}>
                     {day.getDate()}
@@ -623,7 +641,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                       <div style={{ fontSize: theme.size.md, fontWeight: 600, color: data.premium >= 0 ? theme.green : theme.red, lineHeight: 1.3 }}>
                         {formatDollarsFull(data.premium)}
                       </div>
-                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 2 }}>
+                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: theme.space[1] }}>
                         {data.count} trade{data.count !== 1 ? "s" : ""}
                       </div>
                     </>
@@ -636,7 +654,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                     const shown = tickers.slice(0, 3);
                     const extra = tickers.length - shown.length;
                     return (
-                      <div style={{ marginTop: hasTrades ? theme.space[1] : 0, fontSize: theme.size.xs, color: theme.blue, background: "rgba(88,166,255,0.08)", borderRadius: theme.radius.sm, padding: "2px 4px", lineHeight: 1.5 }}>
+                      <div style={{ marginTop: hasTrades ? theme.space[1] : 0, fontSize: theme.size.xs, color: theme.blue, background: "rgba(88,166,255,0.08)", borderRadius: theme.radius.sm, padding: `${theme.space[1]}px ${theme.space[1]}px`, lineHeight: 1.5 }}>
                         ⚑ {shown.join(" · ")}{extra > 0 ? ` +${extra}` : ""}{" "}
                         <span style={{ color: theme.text.subtle }}>${totalPremium.toLocaleString()} gross</span>
                       </div>
@@ -670,7 +688,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                       <div style={{ fontSize: theme.size.md, fontWeight: 600, color: weeklyTotals[wi].total >= 0 ? theme.green : theme.red }}>
                         {formatDollarsFull(weeklyTotals[wi].total)}
                       </div>
-                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 2 }}>
+                      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: theme.space[1] }}>
                         {weeklyTotals[wi].count} trades
                       </div>
                     </>
