@@ -35,7 +35,7 @@ function SlotLabel({ children }) {
   );
 }
 
-export function PersistentHeader({ captureRate }) {
+export function PersistentHeader({ captureRate, p1Count = 0 }) {
   const { account, positions } = useData();
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
@@ -133,11 +133,28 @@ export function PersistentHeader({ captureRate }) {
         </div>
       </Slot>
 
-      {/* ── Slot 3: P1 alert count (placeholder for layer 1) ─────────────── */}
+      {/* ── Slot 3: P1 alert count ───────────────────────────────────────── */}
       <Slot>
         <SlotLabel>Alerts</SlotLabel>
-        <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.subtle }}>—</div>
-        <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 2 }}>wired in Layer 2</div>
+        {p1Count > 0 ? (
+          <>
+            <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.red }}>
+              P1 · {p1Count}
+            </div>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: 2 }}>
+              needs action today
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.green }}>
+              ✓ clear
+            </div>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: 2 }}>
+              no P1 alerts
+            </div>
+          </>
+        )}
       </Slot>
 
       {/* ── Slot 4: MTD Premium + pipeline (hidden on mobile) ────────────── */}

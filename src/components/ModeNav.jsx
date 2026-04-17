@@ -2,7 +2,7 @@ import { MODES, MODE_LABELS } from "../lib/modes";
 import { theme } from "../lib/theme";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 
-export function ModeNav({ mode, onChange }) {
+export function ModeNav({ mode, onChange, p1Count = 0 }) {
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
 
@@ -19,7 +19,20 @@ export function ModeNav({ mode, onChange }) {
     transition:    "all 0.15s",
     letterSpacing: "0.3px",
     whiteSpace:    "nowrap",
+    display:       "inline-flex",
+    alignItems:    "center",
+    gap:           6,
   });
+
+  const badgeStyle = {
+    fontSize:      theme.size.xs,
+    fontWeight:    700,
+    padding:       "0 6px",
+    borderRadius:  theme.radius.pill,
+    background:    theme.red,
+    color:         theme.text.primary,
+    letterSpacing: "0.03em",
+  };
 
   return (
     <div
@@ -43,6 +56,9 @@ export function ModeNav({ mode, onChange }) {
           onClick={() => onChange(m)}
         >
           {MODE_LABELS[m]}
+          {m === "focus" && p1Count > 0 && (
+            <span style={badgeStyle}>{p1Count}</span>
+          )}
         </button>
       ))}
     </div>

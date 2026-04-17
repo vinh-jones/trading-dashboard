@@ -15,6 +15,7 @@ import { ModeNav } from "./components/ModeNav";
 import { FocusTab } from "./components/FocusTab";
 import { ExploreView } from "./components/ExploreView";
 import { ReviewView } from "./components/ReviewView";
+import { useFocusItems } from "./hooks/useFocusItems";
 
 export default function TradeDashboard() {
   const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
@@ -45,6 +46,9 @@ export default function TradeDashboard() {
       .then(data => { if (data.ok) refreshData(data); })
       .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
   }, []);
+
+  // ── Focus pipeline — hoisted so header / nav / tab all read from one source ──
+  const focus = useFocusItems();
 
   // ── Mode + sub-view state ─────────────────────────────────────────────────
   // Focus is the default home mode per spec.
@@ -100,8 +104,8 @@ export default function TradeDashboard() {
             <span style={{ fontSize: theme.size.xs, color: theme.border.strong }}>v{VERSION}</span>
           </div>
 
-          <PersistentHeader captureRate={captureRate} />
-          <ModeNav mode={mode} onChange={setMode} />
+          <PersistentHeader captureRate={captureRate} p1Count={focus.p1Count} />
+          <ModeNav mode={mode} onChange={setMode} p1Count={focus.p1Count} />
 
           {showFilterChips && (
             <div style={{
@@ -153,7 +157,15 @@ export default function TradeDashboard() {
             </div>
           )}
 
-          {mode === "focus"   && <FocusTab />}
+          {mode === "focus"   && (
+            <FocusTab
+              focusItems={focus.items}
+              categorized={focus.categorized}
+              quoteMap={focus.quoteMap}
+              quotesRefreshedAt={focus.quotesRefreshedAt}
+              marketContext={focus.marketContext}
+            />
+          )}
           {mode === "explore" && (
             <ExploreView
               subView={subView}
