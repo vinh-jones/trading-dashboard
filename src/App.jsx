@@ -54,8 +54,9 @@ export default function TradeDashboard() {
   const focus = useFocusItems({ positions, account });
 
   // ── Command palette state ────────────────────────────────────────────────
-  const [paletteOpen,   setPaletteOpen]   = useState(false);
-  const [journalIntent, setJournalIntent] = useState(null);
+  const [paletteOpen,     setPaletteOpen]     = useState(false);
+  const [journalIntent,   setJournalIntent]   = useState(null);
+  const [positionIntent,  setPositionIntent]  = useState(null);
 
   useHotkey("mod+k", (e) => {
     e.preventDefault();
@@ -103,6 +104,9 @@ export default function TradeDashboard() {
       case "open_position":
         setMode("explore");
         setSubViewRaw("positions");
+        if (item.payload?.type && item.payload?.ticker) {
+          setPositionIntent({ type: item.payload.type, ticker: item.payload.ticker });
+        }
         return;
       default:
         return;
@@ -217,6 +221,8 @@ export default function TradeDashboard() {
             <ExploreView
               subView={subView}
               onSubViewChange={setSubView}
+              positionIntent={positionIntent}
+              onPositionIntentConsumed={() => setPositionIntent(null)}
             />
           )}
           {mode === "review" && (

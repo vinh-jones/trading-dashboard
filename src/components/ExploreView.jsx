@@ -30,7 +30,7 @@ function Chip({ active, onClick, children }) {
   );
 }
 
-export function ExploreView({ subView, onSubViewChange }) {
+export function ExploreView({ subView, onSubViewChange, positionIntent, onPositionIntentConsumed }) {
   const { positions } = useData();
   const active = isValidSubView("explore", subView) ? subView : "positions";
 
@@ -50,7 +50,12 @@ export function ExploreView({ subView, onSubViewChange }) {
         ))}
       </div>
 
-      {active === "positions" && <OpenPositionsTab />}
+      {active === "positions" && (
+        <OpenPositionsTab
+          positionIntent={positionIntent}
+          onPositionIntentConsumed={onPositionIntentConsumed}
+        />
+      )}
       {active === "radar"     && <RadarTab positions={positions} />}
       {active === "macro"     && <MacroTab />}
     </div>

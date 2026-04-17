@@ -336,7 +336,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
+function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -479,10 +479,12 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
                     borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
                     borderLeft: rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
                     cursor: canExpand ? "pointer" : "default",
+                    background: highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
+                    transition: "background 0.4s",
                   }}
                   onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
-                  onMouseEnter={e => (e.currentTarget.style.background = `${TYPE_COLORS.CSP.bg}22`)}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.15)" : `${TYPE_COLORS.CSP.bg}22`)}
+                  onMouseLeave={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent")}
                 >
                   {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
                   {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
@@ -520,7 +522,9 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function OpenPositionsTab() {
+const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
+
+export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
   const { positions, account } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
@@ -529,6 +533,17 @@ export function OpenPositionsTab() {
   const { rollMap, rollLoading, lastCheckedAt, isStale, checkRolls, relativeTime } = useRollAnalysis();
 
   const [positionTab, setPositionTab] = useState("csps");
+  const [highlightedTicker, setHighlightedTicker] = useState(null);
+
+  useEffect(() => {
+    if (!positionIntent) return;
+    const tab = TYPE_TO_TAB[positionIntent.type];
+    if (tab) setPositionTab(tab);
+    setHighlightedTicker(positionIntent.ticker);
+    onPositionIntentConsumed?.();
+    const timer = setTimeout(() => setHighlightedTicker(null), 3000);
+    return () => clearTimeout(timer);
+  }, [positionIntent]); // eslint-disable-line react-hooks/exhaustive-deps
   const [threshold, setThreshold]     = useState(25);
   const [thresholdInput, setThresholdInput] = useState("25");
   const [thresholdError, setThresholdError] = useState(null);
@@ -689,6 +704,7 @@ export function OpenPositionsTab() {
             positionType={positionTab}
             quoteMap={quoteMap}
             isMobile={isMobile}
+            highlightedTicker={highlightedTicker}
           />
         </>
       )}
