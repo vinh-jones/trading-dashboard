@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MODES, MODE_LABELS } from "../lib/modes";
 import { theme } from "../lib/theme";
 import { useWindowWidth } from "../hooks/useWindowWidth";
@@ -5,15 +6,18 @@ import { useWindowWidth } from "../hooks/useWindowWidth";
 export function ModeNav({ mode, onChange, p1Count = 0 }) {
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
+  const [hovered, setHovered] = useState(null);
 
   const buttonStyle = (m) => ({
-    padding:       isMobile ? "10px 14px" : "10px 24px",
+    padding:       isMobile
+      ? `${theme.space[2]}px ${theme.space[3]}px`
+      : `${theme.space[2]}px ${theme.space[6]}px`,
     fontSize:      theme.size.md,
     fontFamily:    "inherit",
     cursor:        "pointer",
     fontWeight:    mode === m ? 600 : 400,
     color:         mode === m ? theme.text.primary : theme.text.muted,
-    background:    "transparent",
+    background:    hovered === m && mode !== m ? "rgba(255,255,255,0.04)" : "transparent",
     border:        "none",
     borderBottom:  mode === m ? `2px solid ${theme.blue}` : "2px solid transparent",
     transition:    "all 0.15s",
@@ -21,13 +25,13 @@ export function ModeNav({ mode, onChange, p1Count = 0 }) {
     whiteSpace:    "nowrap",
     display:       "inline-flex",
     alignItems:    "center",
-    gap:           6,
+    gap:           theme.space[1],
   });
 
   const badgeStyle = {
     fontSize:      theme.size.xs,
     fontWeight:    700,
-    padding:       "0 6px",
+    padding:       `0 ${theme.space[2]}px`,
     borderRadius:  theme.radius.pill,
     background:    theme.red,
     color:         theme.text.primary,
@@ -54,6 +58,8 @@ export function ModeNav({ mode, onChange, p1Count = 0 }) {
           aria-selected={mode === m}
           style={buttonStyle(m)}
           onClick={() => onChange(m)}
+          onMouseEnter={() => setHovered(m)}
+          onMouseLeave={() => setHovered(null)}
         >
           {MODE_LABELS[m]}
           {m === "focus" && p1Count > 0 && (
