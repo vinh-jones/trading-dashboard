@@ -36,7 +36,8 @@ const PUBLIC_COM_BASE = "https://api.public.com";
 const ACCOUNT_ID      = process.env.PUBLIC_COM_ACCOUNT_ID;
 
 const CACHE_TTL_MS      = 60 * 60 * 1000; // 1 hour
-const CONCURRENCY_LIMIT = 8;
+const CONCURRENCY_LIMIT = 3;              // Public.com rate-limits above this
+const RETRY_ONCE_DELAY_MS = 750;          // back off briefly on transient failure
 
 // Max put strikes to send to the greeks endpoint per ticker.
 // We only need the ~25–35δ range; capping avoids large query strings.
@@ -359,8 +360,15 @@ export default async function handler(req, res) {
     try {
       return await sampleOneTicker(token, ticker, todayISO);
     } catch (err) {
-      console.error(`[radar-sample] ${ticker} failed:`, err.message);
-      return { ticker, status: "fetch_failed", fetched_at: new Date().toISOString() };
+      // One retry with a brief backoff for transient failures (rate-limit, flaky upstream).
+      console.warn(`[radar-sample] ${ticker} first attempt failed (${err.message}); retrying after ${RETRY_ONCE_DELAY_MS}ms`);
+      await new Promise(r => setTimeout(r, RETRY_ONCE_DELAY_MS));
+      try {
+        return await sampleOneTicker(token, ticker, todayISO);
+      } catch (err2) {
+        console.error(`[radar-sample] ${ticker} failed after retry:`, err2.message);
+        return { ticker, status: "fetch_failed", fetched_at: new Date().toISOString() };
+      }
     }
   });
 
