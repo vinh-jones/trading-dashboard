@@ -8,9 +8,9 @@ import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate } from "./
 import { theme } from "../../lib/theme";
 import { useWindowWidth } from "../../hooks/useWindowWidth";
 
-export function JournalEntryCard({ entry, onEdit, onDelete }) {
+export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = false }) {
   const { trades, positions, account } = useData();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [cardHovered, setCardHovered] = useState(false);
   const [editHovered, setEditHovered] = useState(false);
   const [deleteHovered, setDeleteHovered] = useState(false);

@@ -13,9 +13,7 @@ export function EODBand({ entry, onEdit, onDelete }) {
   // Wrap in a click-to-collapse region.
   if (expanded) {
     return (
-      <div onClick={() => setExpanded(false)} style={{ cursor: "pointer" }}>
-        <JournalEntryCard entry={entry} onEdit={onEdit} onDelete={onDelete} />
-      </div>
+      <JournalEntryCard entry={entry} onEdit={onEdit} onDelete={onDelete} defaultExpanded={true} />
     );
   }
 
