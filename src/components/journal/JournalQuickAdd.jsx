@@ -315,7 +315,7 @@ export function JournalQuickAdd({
           padding: `2px ${theme.space[1]}px`,
           fontSize: theme.size.xs,
           color: theme.text.muted,
-        }}>⌘N</span>
+        }}>N</span>
       </button>
     );
   }

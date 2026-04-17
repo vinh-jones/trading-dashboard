@@ -67,8 +67,7 @@ export default function TradeDashboard() {
   useHotkey("e", () => setMode("explore"));
   useHotkey("r", () => setMode("review"));
 
-  useHotkey("mod+n", (e) => {
-    e.preventDefault();
+  useHotkey("n", () => {
     setMode("review");
     setSubViewRaw("journal");
     setJournalIntent("new_entry");
