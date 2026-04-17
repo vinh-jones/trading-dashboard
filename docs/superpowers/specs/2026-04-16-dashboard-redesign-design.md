@@ -2,7 +2,9 @@
 
 **Date:** 2026-04-16
 **Status:** Approved — ready for implementation plan
-**Revisions:** 2026-04-16 — added journal palette pins, confirmed Review sub-nav, Supabase schema in scope, resolved Gemini macro placement, confirmed Layer 1 feature safety
+**Revisions:**
+- 2026-04-16 — added journal palette pins, confirmed Review sub-nav, Supabase schema in scope, resolved Gemini macro placement, confirmed Layer 1 feature safety
+- 2026-04-16 (post-Layer-1) — Review sub-nav reordered to Journal · Monthly · YTD; Journal becomes the default sub-view. Reason: user pulls up Review primarily to log entries. Apply in Layer 2.
 **Design base:** Linear (primary) + Warp (monospace/terminal DNA accents)
 
 ---
@@ -131,7 +133,7 @@ On desktop, Explore can render as a three-panel split (left: chip nav, center: d
 
 Single-column layout, wider prose width than Focus/Explore. Calmer density. No persistent sidebar — the content itself is the focus of this mode.
 
-**Sub-navigation:** three chips/tabs within Review — **Monthly · YTD · Journal**. Single long-scroll is rejected; each sub-view has its own scroll context. Default sub-view on entering Review = Monthly.
+**Sub-navigation:** three chips/tabs within Review — **Journal · Monthly · YTD** (in that left-to-right order). Single long-scroll is rejected; each sub-view has its own scroll context. Default sub-view on entering Review = **Journal** (user pulls up Review primarily to log entries; Monthly/YTD are "curious-to-check" destinations).
 
 ## Desktop vs mobile
 
