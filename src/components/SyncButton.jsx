@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useData } from "../hooks/useData";
 import { theme } from "../lib/theme";
 
-export function SyncButton() {
+export function SyncButton({ iconOnly = false }) {
   const { refreshData } = useData();
   const [status, setStatus] = useState("idle"); // "idle" | "syncing" | "done" | "error"
   const [detail, setDetail] = useState("");
@@ -54,20 +54,22 @@ export function SyncButton() {
   }
 
   const label  = { idle: "⟳ Sync Sheet", syncing: "Syncing…", done: "✓ Synced", error: "✗ Error" }[status];
+  const icon   = { idle: "⟳", syncing: "⟳", done: "✓", error: "✗" }[status];
   const color  = { idle: theme.text.muted, syncing: theme.blue, done: theme.green, error: theme.red }[status];
   const spin   = status === "syncing";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: iconOnly ? "center" : "flex-end", gap: 4 }}>
       <button
         onClick={handleSync}
         disabled={spin}
+        title={iconOnly ? label : undefined}
         style={{
           background: "transparent",
           border: `1px solid ${color}`,
           color,
           borderRadius: theme.radius.sm,
-          padding: "6px 14px",
+          padding: iconOnly ? "6px 10px" : "6px 14px",
           fontSize: theme.size.md,
           fontFamily: "inherit",
           fontWeight: 500,
@@ -77,9 +79,9 @@ export function SyncButton() {
           animation: spin ? "pulse 1.2s ease-in-out infinite" : "none",
         }}
       >
-        {label}
+        {iconOnly ? icon : label}
       </button>
-      {detail && (
+      {!iconOnly && detail && (
         <div style={{ fontSize: theme.size.xs, color: status === "error" ? theme.red : theme.text.subtle, maxWidth: 260, textAlign: "right" }}>
           {detail}
         </div>

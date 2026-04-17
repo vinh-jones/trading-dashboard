@@ -66,16 +66,16 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
   // ── Pipeline ────────────────────────────────────────────────────────────────
   const { grossOpenPremium, expectedPipeline, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
 
-  // Mobile uses 3 compact slots; desktop uses 5-slot grid.
+  // Mobile uses 4 compact slots (buttons as icons in col 4); desktop uses 5-slot grid.
   const gridCols = isMobile
-    ? "1.3fr 0.9fr 0.8fr"
+    ? "1.2fr 0.8fr 0.7fr auto"
     : "1.4fr 1fr 0.9fr 1.4fr auto";
 
   return (
     <div style={{
       display:            "grid",
       gridTemplateColumns: gridCols,
-      gap:                theme.space[4],
+      gap:                isMobile ? theme.space[3] : theme.space[4],
       padding:            `${theme.space[3]}px ${theme.space[5]}px`,
       background:         theme.bg.surface,
       border:             `1px solid ${theme.border.default}`,
@@ -201,7 +201,7 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
             🔍
           </button>
         )}
-        <SyncButton />
+        <SyncButton iconOnly={isMobile} />
       </Slot>
 
     </div>
