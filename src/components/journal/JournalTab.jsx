@@ -10,6 +10,21 @@ import { JournalQuickAdd } from "./JournalQuickAdd";
 import { computeEodMetadata } from "../../lib/trading";
 import { useLiveVix } from "../../hooks/useLiveVix";
 import { theme } from "../../lib/theme";
+import { groupByWeek, weekLabel } from "../../lib/journalGrouping";
+import { WeekRail } from "./WeekRail";
+import { useWindowWidth } from "../../hooks/useWindowWidth";
+
+const MONTH_ABBR_LABEL = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function rangeLabel(weekStartISO, weekEndISO) {
+  const s = new Date(weekStartISO + "T00:00:00");
+  const e = new Date(weekEndISO + "T00:00:00");
+  const sameMonth = s.getMonth() === e.getMonth();
+  const sMonth = MONTH_ABBR_LABEL[s.getMonth()];
+  const eMonth = MONTH_ABBR_LABEL[e.getMonth()];
+  if (sameMonth) return `${sMonth} ${s.getDate()} – ${e.getDate()}`;
+  return `${sMonth} ${s.getDate()} – ${eMonth} ${e.getDate()}`;
+}
 
 export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
   const { trades, positions, account } = useData();
@@ -39,6 +54,8 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
 
   // Q5: focus states for filter selects
   const [focusedFilter, setFocusedFilter] = useState(null);
+
+  const isMobile = useWindowWidth() < 600;
 
   // Tickers seen in the feed (for filter dropdown)
   const feedTickers = useMemo(
@@ -217,23 +234,60 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
           Use the form above to add your first trade note or EOD update.
         </div>
       )}
-      {!loading && entries.map(entry =>
-        entry.id === inlineEditId
-          ? <JournalInlineEditForm
-              key={entry.id}
-              entry={entry}
-              title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
-              body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
-              tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
-              source={inlineSource}         onSourceChange={setInlineSource}
-              mood={inlineMood}             onMoodChange={setInlineMood}
-              onSave={() => handleInlineSave(entry.entry_type, entry)}
-              onCancel={handleInlineCancel}
-              saving={inlineSaving}
-              error={inlineError}
-            />
-          : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
-      )}
+      {!loading && entries.length > 0 && (() => {
+        const weeks = groupByWeek(entries);
+        const now = new Date();
+        const todayISOStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+
+        return weeks.map(week => {
+          const totalEntries = week.days.reduce((sum, d) => sum + d.entries.length, 0);
+          return (
+            <div key={week.weekStart} style={{
+              display: "flex",
+              flexDirection: isMobile ? "column" : "row",
+              gap: isMobile ? theme.space[2] : theme.space[4],
+              marginBottom: theme.space[5],
+              alignItems: "flex-start",
+            }}>
+              <WeekRail
+                label={weekLabel(week.weekStart, todayISOStr)}
+                rangeLabel={rangeLabel(week.weekStart, week.weekEnd)}
+                entryCount={totalEntries}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {week.days.map(day => (
+                  <div key={day.date} style={{ marginBottom: theme.space[3] }}>
+                    <div style={{
+                      fontSize: theme.size.sm, color: theme.text.subtle,
+                      textTransform: "uppercase", letterSpacing: "0.5px",
+                      marginBottom: theme.space[2],
+                    }}>
+                      {new Date(day.date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "long" })}
+                    </div>
+                    {day.entries.map(entry =>
+                      entry.id === inlineEditId
+                        ? <JournalInlineEditForm
+                            key={entry.id}
+                            entry={entry}
+                            title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
+                            body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
+                            tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
+                            source={inlineSource}         onSourceChange={setInlineSource}
+                            mood={inlineMood}             onMoodChange={setInlineMood}
+                            onSave={() => handleInlineSave(entry.entry_type, entry)}
+                            onCancel={handleInlineCancel}
+                            saving={inlineSaving}
+                            error={inlineError}
+                          />
+                        : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        });
+      })()}
 
     </div>
   );
