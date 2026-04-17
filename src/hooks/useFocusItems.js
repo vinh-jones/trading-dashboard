@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import marketContextDev from "../data/market-context.json";
-import { useData } from "./useData";
 import { useLiveVix } from "./useLiveVix";
 import { useQuotes } from "./useQuotes";
 import { useRollAnalysis } from "./useRollAnalysis";
@@ -8,8 +7,11 @@ import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
 
 // One-shot pipeline. Call at App.jsx level and pass results down to consumers
 // (FocusTab, PersistentHeader, ModeNav) so the fetch side-effects only happen once.
-export function useFocusItems() {
-  const { positions, account } = useData();
+//
+// NOTE: `positions` and `account` are passed as args rather than read from
+// DataContext because this hook is called inside the component that *provides*
+// DataContext — so useData() would return the default (null) value.
+export function useFocusItems({ positions, account }) {
   const { vix: liveVix } = useLiveVix(account?.vix_current);
   const { quoteMap, refreshedAt: quotesRefreshedAt } = useQuotes();
   const { rollMap } = useRollAnalysis();

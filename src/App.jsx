@@ -48,7 +48,7 @@ export default function TradeDashboard() {
   }, []);
 
   // ── Focus pipeline — hoisted so header / nav / tab all read from one source ──
-  const focus = useFocusItems();
+  const focus = useFocusItems({ positions, account });
 
   // ── Mode + sub-view state ─────────────────────────────────────────────────
   // Focus is the default home mode per spec.
