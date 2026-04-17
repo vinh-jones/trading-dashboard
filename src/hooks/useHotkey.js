@@ -14,12 +14,23 @@ function matches(event, combo) {
   return true;
 }
 
+function isEditableTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return false;
+}
+
 // Binds a global keydown handler. `handler` receives the event so callers can
 // preventDefault when they want to override a browser shortcut.
+// Bare-letter combos (no mod/shift) auto-skip when focus is in an editable field.
 export function useHotkey(combo, handler, { enabled = true } = {}) {
   useEffect(() => {
     if (!enabled) return;
+    const isBare = !combo.toLowerCase().includes("mod") && !combo.toLowerCase().includes("shift");
     const onKey = (event) => {
+      if (isBare && isEditableTarget(event.target)) return;
       if (matches(event, combo)) handler(event);
     };
     window.addEventListener("keydown", onKey);

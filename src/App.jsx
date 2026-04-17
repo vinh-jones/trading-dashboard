@@ -63,6 +63,10 @@ export default function TradeDashboard() {
     setPaletteOpen(true);
   });
 
+  useHotkey("f", () => setMode("focus"));
+  useHotkey("e", () => setMode("explore"));
+  useHotkey("r", () => setMode("review"));
+
   const paletteItems = useMemo(() => buildPaletteItems({ positions }), [positions]);
 
   // ── Mode + sub-view state ─────────────────────────────────────────────────
