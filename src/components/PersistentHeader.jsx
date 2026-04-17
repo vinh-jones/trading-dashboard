@@ -36,11 +36,10 @@ function SlotLabel({ children }) {
   );
 }
 
-export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
+export function PersistentHeader({ captureRate, p1Count = 0 }) {
   const { account, positions } = useData();
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
-  const [paletteHover, setPaletteHover] = useState(false);
 
   // ── Free cash + VIX band status ─────────────────────────────────────────────
   const freeCashEst    = account.free_cash_est ?? null;
@@ -66,16 +65,17 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
   // ── Pipeline ────────────────────────────────────────────────────────────────
   const { grossOpenPremium, expectedPipeline, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
 
-  // Mobile uses 4 compact slots (buttons as icons in col 4); desktop uses 5-slot grid.
+  // Mobile uses 3 compact slots; desktop uses 5-slot grid.
   const gridCols = isMobile
-    ? "1.2fr 0.8fr 0.7fr auto"
+    ? "1.3fr 0.9fr 0.8fr"
     : "1.4fr 1fr 0.9fr 1.4fr auto";
 
   return (
     <div style={{
+      position:           "relative",
       display:            "grid",
       gridTemplateColumns: gridCols,
-      gap:                isMobile ? theme.space[3] : theme.space[4],
+      gap:                theme.space[4],
       padding:            `${theme.space[3]}px ${theme.space[5]}px`,
       background:         theme.bg.surface,
       border:             `1px solid ${theme.border.default}`,
@@ -178,31 +178,19 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
         </Slot>
       )}
 
-      {/* ── Slot 5: Search (mobile) + Sync ───────────────────────────────── */}
-      <Slot divider={false} style={{ textAlign: "right", display: "flex", gap: theme.space[2], justifyContent: "flex-end", alignItems: "center" }}>
-        {isMobile && onOpenPalette && (
-          <button
-            onClick={onOpenPalette}
-            onMouseEnter={() => setPaletteHover(true)}
-            onMouseLeave={() => setPaletteHover(false)}
-            aria-label="Open command palette"
-            style={{
-              background:    paletteHover ? theme.bg.elevated : theme.bg.base,
-              border:        `1px solid ${theme.border.strong}`,
-              borderRadius:  theme.radius.sm,
-              color:         theme.text.secondary,
-              padding:       "6px 10px",
-              cursor:        "pointer",
-              fontSize:      theme.size.md,
-              fontFamily:    "inherit",
-              transition:    "background 0.15s",
-            }}
-          >
-            🔍
-          </button>
-        )}
-        <SyncButton iconOnly={isMobile} />
-      </Slot>
+      {/* ── Slot 5: Sync (desktop only — mobile uses corner button) ────────── */}
+      {!isMobile && (
+        <Slot divider={false} style={{ textAlign: "right", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+          <SyncButton />
+        </Slot>
+      )}
+
+      {/* ── Mobile sync corner button ─────────────────────────────────────── */}
+      {isMobile && (
+        <div style={{ position: "absolute", top: theme.space[2], right: theme.space[3] }}>
+          <SyncButton iconOnly />
+        </div>
+      )}
 
     </div>
   );
