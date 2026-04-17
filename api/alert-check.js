@@ -23,22 +23,13 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
+import { isMarketOpen } from "./_marketHours.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set");
   return createClient(url, key);
-}
-
-function isMarketOpen() {
-  const et   = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const day  = et.getDay();
-  const time = et.getHours() + et.getMinutes() / 60;
-  // Regular session only — 9:30 AM–4:00 PM ET Mon–Fri.
-  // We don't run pre-market because quote coverage is thinner and the
-  // signal-to-noise on alerts drops.
-  return day >= 1 && day <= 5 && time >= 9.5 && time <= 16;
 }
 
 export default async function handler(req, res) {

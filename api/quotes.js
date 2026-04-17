@@ -13,6 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildOccSymbol } from "./_lib/occ.js";
 import { sendOpsAlert } from "./_lib/notify.js";
+import { isMarketOpenExtended as isMarketOpen } from "./_marketHours.js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
@@ -25,19 +26,6 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
-}
-
-// ── Market hours (ET) ─────────────────────────────────────────────────────────
-
-function isMarketOpen() {
-  const et   = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-  const day  = et.getDay();                               // 0=Sun, 6=Sat
-  const time = et.getHours() + et.getMinutes() / 60;
-  // 8:30 AM–4:15 PM ET Mon–Fri. Lower bound covers the pre-market hour so
-  // the intraday cron can warm the cache before the regular session opens.
-  // Upper bound extends 15 min past close so the 4:15 PM ET cron captures
-  // final closing prices.
-  return day >= 1 && day <= 5 && time >= 8.5 && time <= 16.25;
 }
 
 // ── Public.com auth (token cached in Supabase, valid 24h) ────────────────────
