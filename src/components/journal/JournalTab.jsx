@@ -99,7 +99,7 @@ export function JournalTab() {
     account?.free_cash_pct_est != null ? +(account.free_cash_pct_est * 100).toFixed(1) : null,
   [account]);
 
-  // VIX — live from /api/vix (same source as AccountBar), falls back to last-synced snapshot value
+  // VIX — live from /api/vix (same source as PersistentHeader), falls back to last-synced snapshot value
   const { vix: eodAutoVix } = useLiveVix(account?.vix_current ?? null);
   const { quoteMap } = useQuotes();
 

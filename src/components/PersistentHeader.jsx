@@ -59,7 +59,6 @@ export function PersistentHeader({ captureRate }) {
   // ── MTD progress ────────────────────────────────────────────────────────────
   const mtd      = account.month_to_date_premium ?? 0;
   const baseline = account.monthly_targets?.baseline ?? 15000;
-  const stretch  = account.monthly_targets?.stretch  ?? 25000;
   const progress = Math.min((mtd / baseline) * 100, 100);
 
   // ── Pipeline ────────────────────────────────────────────────────────────────
