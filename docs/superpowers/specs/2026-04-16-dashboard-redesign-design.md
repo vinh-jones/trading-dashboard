@@ -1,7 +1,8 @@
 # Dashboard Redesign — Design Spec
 
 **Date:** 2026-04-16
-**Status:** Draft — pending user review
+**Status:** Approved — ready for implementation plan
+**Revisions:** 2026-04-16 — added journal palette pins, confirmed Review sub-nav, Supabase schema in scope, resolved Gemini macro placement, confirmed Layer 1 feature safety
 **Design base:** Linear (primary) + Warp (monospace/terminal DNA accents)
 
 ---
@@ -102,6 +103,16 @@ Visual: `54/80` numeric + small progress bar. This is the preemptive signal — 
 
 Alerts not tied to a specific position (Free cash below floor, macro posture change, P1 cash floor violation) surface as a **thin banner above the position list**. Dismissible or linkable to the relevant detail view. Does not dominate the screen.
 
+### Macro insights in Focus
+
+The persistent header's VIX posture pill (Greed / Slight Fear / Fear / etc.) is the condensed, always-visible macro signal. The full Gemini-generated macro summary stays in Explore → Macro.
+
+When the Gemini pipeline detects a **posture shift** (e.g. Neutral → Defensive) or surfaces an **action-oriented insight**, a P3 card appears in Focus below the P1/P2 banners and above the position list:
+
+> **Macro posture shifted: Constructive → Neutral** — review new-position sizing. Tap to read full summary in Explore.
+
+Focus does not render full Gemini narrative paragraphs. If the user wants that, they go to Explore → Macro.
+
 ### Filter chips
 
 The existing Open Positions type filters (CSPs · CCs · LEAPs) carry forward as chips at the top of the Focus list. Preserves muscle memory.
@@ -118,7 +129,9 @@ On desktop, Explore can render as a three-panel split (left: chip nav, center: d
 
 ## Review view
 
-Single-column layout, wider prose width than Focus/Explore. Contains Monthly Calendar, YTD Summary, and Journal as sub-sections (or sub-tabs within Review — decide during planning). Calmer density. No persistent sidebar — the content itself is the focus of this mode.
+Single-column layout, wider prose width than Focus/Explore. Calmer density. No persistent sidebar — the content itself is the focus of this mode.
+
+**Sub-navigation:** three chips/tabs within Review — **Monthly · YTD · Journal**. Single long-scroll is rejected; each sub-view has its own scroll context. Default sub-view on entering Review = Monthly.
 
 ## Desktop vs mobile
 
@@ -167,23 +180,43 @@ Ship in additive layers so each PR is independently valuable. If work stops afte
 
 1. **Layer 1 — Mode consolidation + persistent header** (the B-layout layer): collapse 7 tabs into 3 modes; build the persistent Tier-1 header; keep Focus/Explore/Review sub-content functionally identical to current tabs on first pass.
 2. **Layer 2 — Positions-first Focus view**: replace the current Focus tab content with the positions-first list, proximity-to-target indicators, alert tags inline.
-3. **Layer 3 — Command palette (⌘K)**: jump to any ticker, position, journal entry, macro widget.
+3. **Layer 3 — Command palette (⌘K)**: jump to any ticker, position, journal entry, macro widget. **Pinned at the top of the palette (not buried in search results):**
+   - `New EOD journal entry`
+   - `Open journal`
+   - Other high-frequency actions to be decided during planning (e.g. "Run Radar scan", "Open Macro summary")
+
+   Pinned items render above the search divider and are keyboard-accessible without typing.
 4. **Layer 4 — Focus mode (`F` keybind)**: full-screen any panel.
 5. **Layer 5 — Visual polish pass**: apply DESIGN.md tokens comprehensively (typography, spacing, surfaces), update remaining views to match.
 
 Each layer is its own PR. Each ships to main. Version bumps per project conventions.
 
+## In scope (explicitly)
+
+- **Supabase schema changes** are permitted if a new feature (palette pins, saved Focus state, dismissed-banner tracking) benefits from persistence. Don't let the schema be a blocker — migrate as needed.
+
 ## Out of scope for this spec
 
 - Real-time WebSocket price streaming
-- Any net-new analytics or computed fields
-- Changes to the Supabase schema or sync pipeline
-- Changes to the Google Sheets integration
+- Any net-new analytics or computed fields beyond simple derivations of existing data (e.g. proximity-to-target = G/L% / dynamic-target-from-%-DTE-left — OK; new Greeks model — not OK)
+- Changes to the Google Sheets sync / integration
 - Mobile PWA install / native app wrapping
 - Additional keyboard shortcuts beyond `⌘K` and `F`
 
-## Open questions (decide during planning)
+## Open questions (decide during planning, with guidance)
 
-- Review sub-navigation: three sub-tabs (Monthly / YTD / Journal) vs single long-scroll page — decide after seeing Review wireframe.
-- Command palette scope: positions + tickers only for Layer 3, or also include journal entries and macro widgets on first ship?
-- Focus view right panel on desktop: defaults to "most urgent position" detail, or stays empty until a position is selected?
+- **Command palette scope for Layer 3** — minimum for first ship: pinned actions (New EOD entry, Open journal) + position search + ticker search. Defer journal-entry body search and macro-widget jumps to a follow-up if complexity warrants.
+- **Focus view right panel default on desktop** — user wants to see it in-flesh before deciding. Ship Layer 2 with panel empty until a position is clicked; revisit after live use.
+
+## Layer 1 feature-safety confirmation
+
+Confirmed via code inspection (2026-04-16): Layer 1 touches only the app shell (`App.jsx` tab container → mode container) and replaces `AccountBar.jsx` with a `PersistentHeader` component consuming the same data hooks. The following remain untouched and continue to function:
+
+- `src/lib/focusEngine.js` — P1/P2/P3 alert logic
+- `src/hooks/useRollAnalysis.js` — roll analysis computation
+- `src/components/radar/RadarPresetBar.jsx` + Supabase preset persistence
+- Gemini macro pipeline
+- All tab component internals — they get rehomed into modes, not rebuilt
+- `src/lib/constants.js`, `theme.js`, `blackScholes.js`
+
+Layer 1 is a pure shell-reorganization. No feature can break.
