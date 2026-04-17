@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
+import { getVixBand } from "../lib/vixBand";
 
 // ── Score computation ─────────────────────────────────────────────────────────
 
@@ -114,61 +115,162 @@ function getEarningsDaysAway(ticker, marketContext) {
 // ── Plain-English explanations ────────────────────────────────────────────────
 
 const BB_EXPLANATIONS = {
-  below_band: (ticker, bbPos) =>
-    `${ticker} is trading below its lower Bollinger Band (position: ${bbPos.toFixed(2)}), ` +
-    `meaning price has moved statistically far to the downside relative to its recent 20-day range. ` +
-    `Historically this level acts as support. For CSP entry, this is a favorable price location — ` +
-    `you're selling puts at a point of statistical stress, with mean reversion likely to work in your favor.`,
+  below_band: (ticker, bbPos, vixSentiment, ivLabel) =>
+    `${ticker} is below its lower Bollinger Band (position: ${bbPos.toFixed(2)}) — ` +
+    `price has moved two standard deviations to the downside, which Ryan targets as the ` +
+    `primary CSP entry zone. 95% of the time, price reverts from here. ` +
+    `${ivLabel === 'Weak'
+      ? `IV is currently weak — wait for a vol spike or enter at reduced size.`
+      : `Combined with ${ivLabel.toLowerCase()} IV, this is a high-conviction setup.`} ` +
+    `Enter a CSP below the lower band strike, 20–30 delta, ~30 DTE. ` +
+    `Re-evaluate if price breaks further below and stays there for 3+ days (trend breakdown, not reversion).`,
 
-  near_lower: (ticker, bbPos) =>
+  near_lower: (ticker, bbPos, vixSentiment, ivLabel) =>
     `${ticker} is approaching its lower Bollinger Band (position: ${bbPos.toFixed(2)}). ` +
-    `Price is pulling back toward statistical support. ` +
-    `A good entry zone for CSPs — you're getting favorable price placement without waiting for a full breakdown.`,
+    `Price is pulling back toward statistical support but hasn't reached Ryan's preferred entry zone yet. ` +
+    `${ivLabel === 'Strong' || ivLabel === 'Moderate'
+      ? `IV conditions are favorable — a small starter position is reasonable here, with room to add if price reaches below the lower band.`
+      : `IV is weak — hold off and let price come to you. Enter below the lower band, not approaching it.`} ` +
+    `Watch for: BB position dropping below 0 (becomes high-conviction entry). ` +
+    `Skip if: price is bouncing off support and heading back toward mid-band.`,
 
-  mid_range: (ticker, bbPos) =>
-    `${ticker} is trading in the middle of its Bollinger Band range (position: ${bbPos.toFixed(2)}). ` +
-    `No strong directional signal from price alone. ` +
-    `IV conditions matter more here — check the premium quality section below.`,
+  mid_range: (ticker, bbPos, vixSentiment, ivLabel) =>
+    `${ticker} is in the middle of its Bollinger Band range (position: ${bbPos.toFixed(2)}). ` +
+    `No edge from price location — you're not buying fear or selling into extension. ` +
+    `${ivLabel === 'Strong'
+      ? `IV rank is elevated, which partially offsets the neutral price location. ` +
+        `Consider a small position if IV rank is above 70 and a catalyst explains the vol premium.`
+      : ivLabel === 'Weak'
+      ? `Combined with weak IV, there's no edge here on either dimension. Skip for now.`
+      : `IV is moderate — no strong case to enter. ` +
+        `This name becomes actionable when BB position drops below 0.20, or IV rank climbs above 70.`} ` +
+    `Next check: BB position < 0.20 OR IV rank > 70.`,
 
-  near_upper: (ticker, bbPos) =>
-    `${ticker} is approaching its upper Bollinger Band (position: ${bbPos.toFixed(2)}). ` +
-    `Price is extended to the upside relative to recent history. ` +
-    `Less favorable for new CSP entry — puts are further OTM and premium may be thinner. ` +
-    `Better to wait for a pullback.`,
+  near_upper: (ticker, bbPos, vixSentiment, ivLabel) =>
+    `${ticker} is near its upper Bollinger Band (position: ${bbPos.toFixed(2)}). ` +
+    `Price is extended to the upside — your strike would be far OTM and premium thins out significantly. ` +
+    `Do not open a new CSP here. The risk/reward is inverted: limited premium, elevated assignment risk if the extension reverses. ` +
+    `${ivLabel === 'Strong'
+      ? `IV rank is elevated (likely from recent volatility driving the move). ` +
+        `If you want exposure, wait for BB to pull back to mid-range (< 0.60) before entering.`
+      : `Wait for a pullback to mid-band or below before considering entry.`} ` +
+    `Next check: BB position drops below 0.60.`,
 
-  above_band: (ticker, bbPos) =>
-    `${ticker} is trading above its upper Bollinger Band (position: ${bbPos.toFixed(2)}). ` +
-    `Price is statistically extended to the upside. ` +
-    `Avoid new CSP entries here — you'd be selling puts far below a potentially unstable price level. ` +
-    `Watch for a pullback toward the midline before entering.`,
+  above_band: (ticker, bbPos, vixSentiment, ivLabel) =>
+    `${ticker} is above its upper Bollinger Band (position: ${bbPos.toFixed(2)}) — ` +
+    `statistically extended beyond two standard deviations to the upside. ` +
+    `Avoid new CSP entries. This is Ryan's signal to avoid, not enter — you'd be selling puts ` +
+    `far below an overextended price that could reverse sharply. ` +
+    `This zone is better suited for a bear call spread than a CSP. ` +
+    `Next check: BB position drops below 0.80 (near_upper) before re-evaluating for CSP entry.`,
 };
 
 const IV_EXPLANATIONS = {
-  Strong: (ticker, ivPct, ivRank, composite) =>
-    `IV rank of ${ivRank.toFixed(1)} puts ${ticker} in the elevated range — ` +
-    `options are priced in the upper tier of their 52-week history. ` +
-    `Raw IV of ${(ivPct * 100).toFixed(0)}% means premium is meaningful in absolute dollar terms. ` +
-    `Strong conditions to sell premium. Composite score: ${composite.toFixed(2)}.`,
+  Strong: (ticker, ivPct, ivRank, composite, vixSentiment) =>
+    `IV rank ${ivRank.toFixed(1)} — options are in the upper tier of their 52-week history. ` +
+    `Raw IV ${(ivPct * 100).toFixed(0)}% is meaningful in absolute dollar terms. ` +
+    `${vixSentiment
+      ? `At VIX ${vixSentiment}, elevated IV here is consistent with the broader fear environment — ` +
+        `this is exactly when Ryan deploys. `
+      : ``}` +
+    `Strong conditions to sell premium. Full-size position appropriate if BB location confirms. ` +
+    `Watch for IV compression after entry (normal) — don't close early just because IV drops. ` +
+    `Composite: ${composite.toFixed(2)}.`,
 
-  Moderate: (ticker, ivPct, ivRank, composite) =>
-    `IV rank of ${ivRank.toFixed(1)} puts ${ticker} around the midpoint of its historical range. ` +
-    `You're getting reasonable premium but not at a historically elevated level. ` +
-    `Raw IV of ${(ivPct * 100).toFixed(0)}% is ${ivPct > 0.60 ? "meaningful in absolute terms" : "moderate in absolute terms"}. ` +
-    `Acceptable conditions to sell premium. Composite score: ${composite.toFixed(2)}.`,
+  Moderate: (ticker, ivPct, ivRank, composite, vixSentiment) =>
+    `IV rank ${ivRank.toFixed(1)} — around the midpoint of historical range. ` +
+    `Raw IV ${(ivPct * 100).toFixed(0)}% is ${ivPct > 0.60 ? "meaningful" : "moderate"} in absolute terms. ` +
+    `${vixSentiment
+      ? `At VIX ${vixSentiment}, this IV level is acceptable for deployment. `
+      : ``}` +
+    `Acceptable to sell premium, but not a high-conviction IV setup. ` +
+    `Reduce size by 25–30% vs a Strong IV name. Enter only if BB location is favorable (near_lower or below_band). ` +
+    `Composite: ${composite.toFixed(2)}.`,
 
-  Neutral: (ticker, ivPct, ivRank, composite) =>
-    `IV rank of ${ivRank.toFixed(1)} puts ${ticker} in the middle of its historical range. ` +
-    `Options are priced near their median levels for the past year. ` +
-    `Raw IV of ${(ivPct * 100).toFixed(0)}% offers modest premium. ` +
-    `Acceptable conditions for premium selling, though not a high-conviction IV setup. ` +
-    `Composite score: ${composite.toFixed(2)}.`,
-
-  Weak: (ticker, ivPct, ivRank, composite) =>
-    `IV rank of ${ivRank.toFixed(1)} puts ${ticker} near its cheapest options levels of the past year. ` +
-    `Raw IV of ${(ivPct * 100).toFixed(0)}% means premium is thin. ` +
-    `Consider waiting for a volatility event before selling puts on this name. ` +
-    `Composite score: ${composite.toFixed(2)}.`,
+  Weak: (ticker, ivPct, ivRank, composite, vixSentiment) =>
+    `IV rank ${ivRank.toFixed(1)} — near the cheapest options levels of the past year. ` +
+    `Raw IV ${(ivPct * 100).toFixed(0)}% means premium is thin in absolute terms. ` +
+    `${vixSentiment
+      ? `Even with VIX ${vixSentiment}, this name's own IV isn't generating meaningful premium. `
+      : ``}` +
+    `Skip unless BB position is below the lower band AND you have a strong fundamental reason for the name. ` +
+    `Wait for a vol event (earnings, macro shock) to reprice IV before entering. ` +
+    `Composite: ${composite.toFixed(2)}.`,
 };
+
+// ── VIX context line (new, for ExpandedPanel top) ────────────────────────────
+function vixContextLine(vix, vixBand, ivRank) {
+  if (!vix || !vixBand) return null;
+  const deploymentVerb = vix >= 20
+    ? `deploy aggressively (${vixBand.floorPct * 100}–${vixBand.ceilingPct * 100}% cash target)`
+    : vix >= 15
+    ? `deploy selectively (${vixBand.floorPct * 100}–${vixBand.ceilingPct * 100}% cash target)`
+    : `hold patience — premiums are thin at this VIX level`;
+
+  return `At VIX ${vix.toFixed(2)} (${vixBand.sentiment}): ${deploymentVerb}. ` +
+    `IV rank ${ivRank != null ? ivRank.toFixed(1) : '—'} on this name is ` +
+    `${ivRank >= 60 ? 'consistent with the elevated vol environment' :
+      ivRank >= 40 ? 'moderate relative to the broader fear level' :
+      'below what the macro environment would suggest — idiosyncratic, not macro-driven'}.`;
+}
+
+// ── Concentration check (new) ────────────────────────────────────────────────
+function concentrationCheck(ticker, sharePos, cspPositions, allLeaps, accountValue) {
+  if (!accountValue) return null;
+
+  const sharesExposure = sharePos?.cost_basis_total ?? 0;
+  const cspExposure    = (cspPositions || []).reduce((sum, p) => sum + (p.capital_fronted ?? 0), 0);
+  const leapExposure   = (allLeaps || []).reduce((sum, l) => sum + (l.entry_cost ?? 0), 0);
+
+  const totalExposure     = sharesExposure + cspExposure + leapExposure;
+  const concentrationPct  = totalExposure / accountValue;
+
+  const WARNING_THRESHOLD = 0.10;
+  const HARD_CEILING      = 0.15;
+
+  const typicalNewCsp  = accountValue * 0.05;
+  const projectedPct   = (totalExposure + typicalNewCsp) / accountValue;
+
+  if (totalExposure === 0) {
+    return { status: 'none', concentrationPct: 0, message: null };
+  }
+
+  if (concentrationPct >= HARD_CEILING) {
+    return {
+      status: 'over_ceiling',
+      concentrationPct,
+      message: `${(concentrationPct * 100).toFixed(1)}% concentration — at hard ceiling (15%). ` +
+        `Do not add. Consider reducing before next entry.`,
+    };
+  }
+
+  if (projectedPct >= HARD_CEILING) {
+    return {
+      status: 'would_breach',
+      concentrationPct,
+      projectedPct,
+      message: `Currently ${(concentrationPct * 100).toFixed(1)}% — a new standard CSP would push to ` +
+        `~${(projectedPct * 100).toFixed(1)}%, approaching the 15% ceiling. ` +
+        `Reduce size if entering.`,
+    };
+  }
+
+  if (concentrationPct >= WARNING_THRESHOLD) {
+    return {
+      status: 'elevated',
+      concentrationPct,
+      message: `${(concentrationPct * 100).toFixed(1)}% concentration — above the 10% target. ` +
+        `New entry possible but keep size small.`,
+    };
+  }
+
+  return {
+    status: 'ok',
+    concentrationPct,
+    message: `${(concentrationPct * 100).toFixed(1)}% concentration — within limits. ` +
+        `Room for a standard position.`,
+  };
+}
 
 // ── Score bar ─────────────────────────────────────────────────────────────────
 
@@ -206,7 +308,7 @@ function ScoreBar({ score }) {
 
 // ── Compact row ───────────────────────────────────────────────────────────────
 
-function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy }) {
+function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy, account }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank);
@@ -353,6 +455,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
           marketContext={marketContext}
           bucket={bucket}
           score={score}
+          account={account}
         />
       )}
     </div>
@@ -361,7 +464,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, indicators, positions, marketContext, bucket, score }) {
+function ExpandedPanel({ row, indicators, positions, marketContext, bucket, score, account }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm } = row;
 
   // Detailed position data for this ticker
@@ -375,6 +478,10 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
   const ivComp    = compositeIv(iv, iv_rank);
   const label     = scoreLabel(score);
   const ivLabel   = scoreLabel(ivComp != null ? ivComp : null);
+  // For template selection, collapse Neutral → Moderate. Leave scoreLabel unchanged so
+  // the row-level visual pill still shows "Neutral" on the compact row.
+  const ivLabelForTemplate = ivLabel === "Neutral" ? "Moderate" : ivLabel;
+  const vixSentiment       = getVixBand(account?.vix_current)?.sentiment ?? null;
 
   // Earnings info
   const earningsDate = marketContext?.positions?.find(p => p.ticker === ticker)?.nextEarnings?.date ?? null;
@@ -429,6 +536,29 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
         )}
       </div>
 
+      {/* ── VIX context line ── */}
+      {(() => {
+        const vix     = account?.vix_current;
+        const vixBand = getVixBand(vix);
+        const line    = vixContextLine(vix, vixBand, iv_rank);
+        if (!line) return null;
+        return (
+          <div style={{
+            fontSize:     theme.size.sm,
+            color:        theme.text.secondary,
+            lineHeight:   1.6,
+            padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+            background:   theme.bg.surface,
+            borderLeft:   `3px solid ${theme.blue}`,
+            borderRadius: theme.radius.sm,
+            marginTop:    theme.space[3],
+            marginBottom: theme.space[3],
+          }}>
+            {line}
+          </div>
+        );
+      })()}
+
       {/* ── Bollinger Band section ── */}
       <div style={sectionLabelStyle}>Bollinger Band Position</div>
       <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
@@ -456,7 +586,7 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
           borderRadius: theme.radius.sm,
           border:     `1px solid ${theme.border.default}`,
         }}>
-          {BB_EXPLANATIONS[bucket](ticker, bb_position)}
+          {BB_EXPLANATIONS[bucket](ticker, bb_position, vixSentiment, ivLabelForTemplate)}
         </div>
       )}
 
@@ -469,7 +599,7 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
             {fieldRow("IV Rank", iv_rank.toFixed(1))}
             {fieldRow("Composite", `${ivLabel} (${ivComp.toFixed(2)})`)}
           </div>
-          {ivLabel && (IV_EXPLANATIONS[ivLabel] || IV_EXPLANATIONS.Moderate) && (
+          {ivLabel && IV_EXPLANATIONS[ivLabelForTemplate] && (
             <div style={{
               fontSize:     theme.size.sm,
               color:        theme.text.muted,
@@ -479,7 +609,7 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
               borderRadius: theme.radius.sm,
               border:       `1px solid ${theme.border.default}`,
             }}>
-              {(IV_EXPLANATIONS[ivLabel] ?? IV_EXPLANATIONS.Moderate)(ticker, iv, iv_rank, ivComp)}
+              {(IV_EXPLANATIONS[ivLabelForTemplate] ?? IV_EXPLANATIONS.Moderate)(ticker, iv, iv_rank, ivComp, vixSentiment)}
             </div>
           )}
         </>
@@ -489,6 +619,24 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
 
       {/* ── Current Positions section ── */}
       <div style={sectionLabelStyle}>Current Positions</div>
+      {(() => {
+        const concentration = concentrationCheck(ticker, sharePos, cspPositions, allLeaps, account?.account_value);
+        if (!concentration?.message) return null;
+        const color =
+          concentration.status === 'over_ceiling' ? theme.red :
+          concentration.status === 'ok'           ? theme.green :
+                                                    theme.amber;
+        return (
+          <div style={{
+            fontSize:     theme.size.sm,
+            color,
+            lineHeight:   1.5,
+            marginBottom: theme.space[2],
+          }}>
+            {concentration.message}
+          </div>
+        );
+      })()}
       {indicators.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: theme.space[2] }}>
 
@@ -666,7 +814,7 @@ function SortBtn({ id, label, sortBy, setSortBy }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function RadarTab({ positions = null }) {
+export function RadarTab({ positions = null, account = null }) {
   const { rows, loading, error } = useRadar();
 
   const [marketContext, setMarketContext]       = useState(null);
@@ -935,6 +1083,7 @@ export function RadarTab({ positions = null }) {
               expanded={expandedTicker === row.ticker}
               onToggle={() => handleRowToggle(row.ticker)}
               sortBy={sortBy}
+              account={account}
             />
           ))
         )}
