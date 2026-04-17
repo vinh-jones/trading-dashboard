@@ -67,6 +67,13 @@ export default function TradeDashboard() {
   useHotkey("e", () => setMode("explore"));
   useHotkey("r", () => setMode("review"));
 
+  useHotkey("mod+n", (e) => {
+    e.preventDefault();
+    setMode("review");
+    setSubViewRaw("journal");
+    setJournalIntent("new_entry");
+  });
+
   const paletteItems = useMemo(() => buildPaletteItems({ positions }), [positions]);
 
   // ── Mode + sub-view state ─────────────────────────────────────────────────
