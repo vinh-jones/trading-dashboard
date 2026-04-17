@@ -10,5 +10,8 @@ src/data/trades.json
 src/data/positions.json
 src/data/account.json
 
+# Runbooks with embedded secrets
+RUNBOOK_*.md
+
 # Git worktrees
 .worktrees/

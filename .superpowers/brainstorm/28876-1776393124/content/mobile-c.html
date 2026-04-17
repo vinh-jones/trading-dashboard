@@ -1,0 +1,256 @@
+<style>
+  .m-wrap { display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin-top:8px; }
+  .m-phone { width:300px; background:#0b0d12; border:8px solid #1a1f2b; border-radius:32px; padding:0; color:#cdd3df; font-family:"SF Mono","Menlo",monospace; font-size:11px; overflow:hidden; position:relative; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  .m-notch { height:22px; background:#000; border-radius:0 0 14px 14px; width:100px; margin:0 auto 0; }
+  .m-statusbar { display:flex; justify-content:space-between; padding:4px 16px 0; font-size:9px; color:#9aa4b6; }
+
+  /* Compact sticky header — always visible */
+  .m-header { background:linear-gradient(180deg,#161a24,#0f131b); border-bottom:1px solid #222838; padding:8px 12px; }
+  .m-row1 { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .m-brand { font-size:10px; color:#6b7280; letter-spacing:0.08em; text-transform:uppercase; }
+  .m-search { background:#1f2430; border:1px solid #2a3245; border-radius:4px; padding:3px 8px; font-size:10px; color:#9aa4b6; }
+  .m-strip { display:grid; grid-template-columns: 1.3fr 0.8fr 0.7fr; gap:8px; align-items:center; }
+  .m-slot { border-right:1px solid #1f2634; padding-right:8px; }
+  .m-slot:last-child { border-right:none; padding-right:0; text-align:right; }
+  .m-lbl { font-size:7px; color:#6b7280; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:1px; }
+  .m-val { font-size:12px; color:#e5e7eb; font-weight:600; }
+  .m-sub { font-size:8px; color:#9aa4b6; margin-top:1px; }
+  .m-bar { height:3px; background:#1f2430; border-radius:2px; margin-top:3px; overflow:hidden; }
+  .m-bar-fill { height:100%; border-radius:2px; }
+  .m-pill { padding:1px 6px; border-radius:10px; font-size:8px; display:inline-block; }
+  .m-pill.greed { background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.3); color:#4ade80; }
+  .m-pill.alert { background:rgba(248,113,113,0.15); border:1px solid rgba(248,113,113,0.5); color:#fca5a5; font-weight:700; animation:mpulse 2s infinite; }
+  .m-pill.under { background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.4); color:#fbbf24; }
+  @keyframes mpulse { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+
+  /* Content area */
+  .m-body { height:430px; overflow:hidden; padding:10px 12px; }
+  .m-h { color:#9aa4b6; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; margin:10px 0 6px; display:flex; align-items:center; gap:5px; }
+  .m-h:first-child { margin-top:0; }
+  .m-card { background:#12151c; border:1px solid #1f2430; border-left:3px solid transparent; border-radius:5px; padding:8px 10px; margin-bottom:6px; }
+  .m-card.p1 { border-left-color:#ef4444; background:rgba(239,68,68,0.04); }
+  .m-card.p2 { border-left-color:#fbbf24; }
+  .m-t { color:#e5e7eb; font-weight:600; font-size:10px; margin-bottom:2px; line-height:1.3; }
+  .m-d { color:#9aa4b6; font-size:9px; line-height:1.4; }
+
+  .m-pos { display:grid; grid-template-columns: 1fr auto auto; gap:6px; padding:7px 4px; border-bottom:1px solid #1a1f2b; font-size:10px; align-items:center; }
+  .m-pos:last-child { border-bottom:none; }
+  .m-tick { color:#e5e7eb; font-weight:600; font-size:11px; }
+  .m-meta { color:#6b7280; font-size:8px; margin-top:1px; }
+  .pct.on { color:#4ade80; font-weight:600; }
+  .pct.near { color:#fbbf24; font-weight:600; }
+  .pct.far { color:#6b7280; }
+  .tag { font-size:8px; padding:1px 5px; border-radius:8px; }
+  .tag.itm { background:rgba(239,68,68,0.15); color:#fca5a5; }
+  .tag.rule { background:rgba(74,222,128,0.1); color:#4ade80; }
+  .tag.er { background:rgba(251,191,36,0.12); color:#fbbf24; }
+
+  /* Bottom tab bar */
+  .m-tabbar { position:absolute; bottom:0; left:0; right:0; background:#0d1017; border-top:1px solid #1f2430; display:grid; grid-template-columns: 1fr 1fr 1fr; padding:6px 0 10px; }
+  .m-tab { text-align:center; padding:4px 0; color:#6b7280; font-size:9px; position:relative; }
+  .m-tab.on { color:#e5e7eb; }
+  .m-tab.on::before { content:''; position:absolute; top:0; left:25%; right:25%; height:2px; background:#60a5fa; border-radius:2px; }
+  .m-tab-icon { font-size:14px; margin-bottom:2px; }
+  .m-tab .ct { position:absolute; top:-2px; right:34%; background:#ef4444; color:white; border-radius:8px; padding:0 5px; font-size:8px; font-weight:700; }
+
+  .phone-label { text-align:center; font-family:-apple-system,sans-serif; font-size:11px; color:#9aa4b6; margin-top:10px; letter-spacing:0.08em; text-transform:uppercase; }
+
+  .ann-mob { font-size:10px; color:#9aa4b6; font-family:-apple-system,sans-serif; margin-top:20px; line-height:1.6; max-width:780px; margin-left:auto; margin-right:auto; }
+  .ann-mob strong { color:#e5e7eb; }
+  .ann-mob code { background:#1f2430; padding:1px 5px; border-radius:3px; color:#fbbf24; }
+
+  /* Expandable detail scroll card */
+  .m-scroll-row { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin:0 -12px; padding-left:12px; padding-right:12px; }
+  .m-mini { min-width:90px; background:#12151c; border:1px solid #1f2430; border-radius:5px; padding:6px 8px; font-size:9px; }
+  .m-mini-v { color:#e5e7eb; font-weight:600; font-size:11px; margin-top:2px; }
+</style>
+
+<h2>Mobile C — walking-mode optimized</h2>
+<p class="subtitle">Compact sticky header (Tier-1 only). Bottom tab bar for thumb reach. Focus is home.</p>
+
+<div class="m-wrap">
+
+  <!-- PHONE 1: FOCUS (home) -->
+  <div>
+    <div class="m-phone">
+      <div class="m-notch"></div>
+      <div class="m-statusbar"><span>9:41</span><span>●●● 5G</span></div>
+
+      <div class="m-header">
+        <div class="m-row1">
+          <span class="m-brand">FOCUS</span>
+          <span class="m-search">🔍</span>
+        </div>
+        <div class="m-strip">
+          <div class="m-slot">
+            <div class="m-lbl">Free Cash</div>
+            <div class="m-val">14.7%</div>
+            <div class="m-bar"><div class="m-bar-fill" style="width:45%; background:#fbbf24;"></div></div>
+            <div class="m-sub" style="color:#fbbf24;">−5.3% below</div>
+          </div>
+          <div class="m-slot">
+            <div class="m-lbl">VIX</div>
+            <div class="m-val">17.9</div>
+            <div class="m-sub"><span class="m-pill greed">Slight Fear</span></div>
+          </div>
+          <div class="m-slot">
+            <div class="m-lbl">Alerts</div>
+            <div class="m-val"><span class="m-pill alert">P1·2</span></div>
+            <div class="m-sub">P2·4</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="m-body">
+        <div class="m-h"><span style="color:#fca5a5;">●</span> P1 — ACT TODAY</div>
+        <div class="m-card p1">
+          <div class="m-t">Free cash below 20% floor</div>
+          <div class="m-d">VIX 17.9 band · free up ~$46.5k</div>
+        </div>
+        <div class="m-card p1">
+          <div class="m-t">NVDA CC $485 · ITM Fri</div>
+          <div class="m-d">Roll to $490 → +$0.28 net credit</div>
+        </div>
+
+        <div class="m-h"><span style="color:#fbbf24;">●</span> P2 — REVIEW</div>
+        <div class="m-card p2">
+          <div class="m-t">TSLA · 60/60 triggered</div>
+          <div class="m-d">CSP $210 · +68% @ 72% DTE left</div>
+        </div>
+        <div class="m-card p2">
+          <div class="m-t">AAPL earnings Thu AMC</div>
+          <div class="m-d">CSP $185 · 4 DTE · binary risk</div>
+        </div>
+
+        <div class="m-h">MTD · $3,347 / $15k</div>
+        <div class="m-bar"><div class="m-bar-fill" style="width:22%; background:#60a5fa;"></div></div>
+      </div>
+
+      <div class="m-tabbar">
+        <div class="m-tab on">
+          <div class="m-tab-icon">◎</div>
+          <div>Focus</div>
+          <span class="ct">2</span>
+        </div>
+        <div class="m-tab">
+          <div class="m-tab-icon">◇</div>
+          <div>Explore</div>
+        </div>
+        <div class="m-tab">
+          <div class="m-tab-icon">▦</div>
+          <div>Review</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">Focus (Home)</div>
+  </div>
+
+  <!-- PHONE 2: EXPLORE / POSITIONS -->
+  <div>
+    <div class="m-phone">
+      <div class="m-notch"></div>
+      <div class="m-statusbar"><span>9:41</span><span>●●● 5G</span></div>
+
+      <div class="m-header">
+        <div class="m-row1">
+          <span class="m-brand">EXPLORE · POSITIONS</span>
+          <span class="m-search">🔍</span>
+        </div>
+        <div class="m-strip">
+          <div class="m-slot">
+            <div class="m-lbl">Free Cash</div>
+            <div class="m-val">14.7%</div>
+            <div class="m-bar"><div class="m-bar-fill" style="width:45%; background:#fbbf24;"></div></div>
+            <div class="m-sub" style="color:#fbbf24;">−5.3% below</div>
+          </div>
+          <div class="m-slot">
+            <div class="m-lbl">VIX</div>
+            <div class="m-val">17.9</div>
+            <div class="m-sub"><span class="m-pill greed">Slight Fear</span></div>
+          </div>
+          <div class="m-slot">
+            <div class="m-lbl">Alerts</div>
+            <div class="m-val"><span class="m-pill alert">P1·2</span></div>
+            <div class="m-sub">P2·4</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="m-body">
+        <div class="m-scroll-row">
+          <div class="m-mini" style="border-color:#60a5fa;"><div style="color:#9aa4b6;">Positions</div><div class="m-mini-v">12</div></div>
+          <div class="m-mini"><div style="color:#9aa4b6;">Radar</div><div class="m-mini-v">8 hits</div></div>
+          <div class="m-mini"><div style="color:#9aa4b6;">Macro</div><div class="m-mini-v" style="color:#4ade80;">3.4</div></div>
+        </div>
+
+        <div class="m-h">OPEN · BY % DTE LEFT</div>
+        <div class="m-pos">
+          <div><div class="m-tick">NVDA</div><div class="m-meta">CC $485 · 3d</div></div>
+          <div class="pct on">+42%</div>
+          <span class="tag itm">ITM</span>
+        </div>
+        <div class="m-pos">
+          <div><div class="m-tick">TSLA</div><div class="m-meta">CSP $210 · 11d</div></div>
+          <div class="pct on">+68%</div>
+          <span class="tag rule">60/60</span>
+        </div>
+        <div class="m-pos">
+          <div><div class="m-tick">AAPL</div><div class="m-meta">CSP $185 · 4d</div></div>
+          <div class="pct near">+54%</div>
+          <span class="tag er">ER</span>
+        </div>
+        <div class="m-pos">
+          <div><div class="m-tick">SMCI</div><div class="m-meta">CSP $42 · 18d</div></div>
+          <div class="pct far">+22%</div>
+          <span style="font-size:8px;color:#6b7280;">—</span>
+        </div>
+        <div class="m-pos">
+          <div><div class="m-tick">AMD</div><div class="m-meta">CSP $155 · 24d</div></div>
+          <div class="pct far">+18%</div>
+          <span style="font-size:8px;color:#6b7280;">—</span>
+        </div>
+        <div class="m-pos">
+          <div><div class="m-tick">MSFT</div><div class="m-meta">CSP $380 · 32d</div></div>
+          <div class="pct far">+11%</div>
+          <span style="font-size:8px;color:#6b7280;">—</span>
+        </div>
+      </div>
+
+      <div class="m-tabbar">
+        <div class="m-tab">
+          <div class="m-tab-icon">◎</div>
+          <div>Focus</div>
+          <span class="ct">2</span>
+        </div>
+        <div class="m-tab on">
+          <div class="m-tab-icon">◇</div>
+          <div>Explore</div>
+        </div>
+        <div class="m-tab">
+          <div class="m-tab-icon">▦</div>
+          <div>Review</div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-label">Explore → Positions</div>
+  </div>
+
+</div>
+
+<div class="ann-mob">
+  <p><strong>What's on screen the moment you pull out your phone mid-walk:</strong> the three things that decide whether you need to do anything — Free cash vs floor, VIX posture, P1 alert count. Header is <~80px. Compact but readable.</p>
+
+  <p style="margin-top:10px;"><strong>Walking use case flow:</strong> Phone opens directly to <code>Focus</code>. P1 alerts at top — if zero, you close the app and keep walking. If there are P1s, each one is a single card with the decision context (roll price, strike, DTE). No drilling required to know if something's on fire.</p>
+
+  <p style="margin-top:10px;"><strong>Why this works on mobile specifically:</strong></p>
+  <ul style="padding-left:18px; margin-top:4px;">
+    <li><strong>Sticky header persists across modes.</strong> Switch to Explore and the same Tier-1 strip stays — you never lose context.</li>
+    <li><strong>Bottom tabs, not top tabs.</strong> Thumb-reachable while walking. 3 tabs, not 7.</li>
+    <li><strong>Dropped from header on mobile:</strong> MTD progress bar (moved to footer of Focus feed). ⌘K replaced with a 🔍 search tap. Trend arrow on VIX dropped — level + band is enough at this width.</li>
+    <li><strong>Explore is a launcher, not a tab.</strong> First row on Explore is Positions / Radar / Macro chip cards → tap to drill in. Matches how you actually use those views (as "I'm curious" destinations).</li>
+  </ul>
+
+  <p style="margin-top:10px;"><strong>What's NOT here on purpose:</strong> Ticker quotes. Journal tab hidden behind Review (rare on mobile per your 1-in-5 estimate). Dollar P&L.</p>
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Refresh http://localhost:52435 to see. Anything to change?</p>

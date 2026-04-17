@@ -25,7 +25,6 @@ function AlertTag({ tag }) {
   const isP1 = tag.priority === "P1";
   return (
     <span
-      title={tag.title}
       style={{
         fontSize:      theme.size.xs,
         padding:       "1px 6px",
@@ -35,7 +34,6 @@ function AlertTag({ tag }) {
         border:        `1px solid ${isP1 ? theme.red : theme.border.strong}`,
         fontWeight:    600,
         letterSpacing: "0.03em",
-        cursor:        "help",
       }}
     >
       {tag.priority}
@@ -43,10 +41,18 @@ function AlertTag({ tag }) {
   );
 }
 
+// Strip the leading "TICKER " off alert titles since the ticker is already
+// shown at the start of the row. Engine titles look like "NVDA CC $485 — …".
+function trimTickerPrefix(title, ticker) {
+  if (!title || !ticker) return title;
+  return title.startsWith(ticker + " ") ? title.slice(ticker.length + 1) : title;
+}
+
 export function PositionRow({ row }) {
   const { ticker, type, strike, dte, dtePct, glPct, targetPct, proximity, alertTags, priority } = row;
 
   const typeColor = TYPE_COLORS[type] ?? { text: theme.text.primary, bg: theme.bg.surface };
+  const topAlert  = alertTags[0];  // Already priority-sorted by the focus engine.
 
   return (
     <div style={{
@@ -92,6 +98,23 @@ export function PositionRow({ row }) {
           {dte != null && <>{dte}d</>}
           {dtePct != null && <> · {dtePct.toFixed(0)}% DTE left</>}
         </div>
+        {topAlert && (
+          <div style={{
+            fontSize:   theme.size.sm,
+            color:      priorityStripColor(topAlert.priority),
+            marginTop:  3,
+            overflow:   "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {trimTickerPrefix(topAlert.title, ticker)}
+            {alertTags.length > 1 && (
+              <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, marginLeft: theme.space[2] }}>
+                +{alertTags.length - 1} more
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Right: G/L% + proximity bar ─────────────────────────────── */}

@@ -1,0 +1,158 @@
+<style>
+  .tb-mockup { background:#0b0d12; border:1px solid #1f2430; border-radius:8px; padding:0; color:#cdd3df; font-family:"SF Mono","Menlo",monospace; font-size:11px; overflow:hidden; }
+  .tb-chrome { background:#12151c; padding:4px 10px; border-bottom:1px solid #1f2430; font-size:9px; color:#6b7280; letter-spacing:0.05em; }
+  .tb-row { display:flex; align-items:center; }
+  .tb-strip { background:linear-gradient(180deg,#161a24,#0f131b); border-bottom:1px solid #222838; padding:6px 10px; display:flex; gap:14px; align-items:center; font-size:10px; }
+  .tb-tape { display:flex; gap:10px; flex:1; overflow:hidden; }
+  .tb-tk { color:#9aa4b6; }
+  .tb-tk .up { color:#4ade80; }
+  .tb-tk .dn { color:#f87171; }
+  .tb-pill { padding:2px 8px; border-radius:12px; font-size:9px; background:#1b2230; border:1px solid #2a3245; color:#cdd3df; }
+  .tb-pill.greed { background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.3); color:#4ade80; }
+  .tb-pill.fear { background:rgba(248,113,113,0.08); border-color:rgba(248,113,113,0.3); color:#f87171; }
+  .tb-pnl { color:#4ade80; font-weight:600; }
+  .tb-kbd { background:#1f2430; border:1px solid #2a3245; border-radius:3px; padding:1px 5px; font-size:9px; color:#9aa4b6; margin-left:auto; }
+  .tb-tabs { background:#0f131b; border-bottom:1px solid #1f2430; padding:8px 10px; display:flex; gap:16px; font-size:11px; }
+  .tb-tab { color:#6b7280; padding:4px 8px; }
+  .tb-tab.on { color:#e5e7eb; border-bottom:2px solid #60a5fa; margin-bottom:-10px; padding-bottom:12px; }
+  .tb-body { display:flex; height:280px; }
+  .tb-rail { width:130px; background:#0d1017; border-right:1px solid #1a1f2b; padding:8px 6px; }
+  .tb-main { flex:1; padding:10px; border-right:1px solid #1a1f2b; }
+  .tb-right { width:140px; padding:10px; background:#0d1017; }
+  .tb-h { color:#6b7280; font-size:9px; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:6px; }
+  .tb-item { padding:4px 6px; border-radius:4px; margin-bottom:3px; display:flex; justify-content:space-between; font-size:10px; }
+  .tb-item.sel { background:#1b2230; color:#e5e7eb; }
+  .tb-ln { height:8px; background:#1a1f2b; border-radius:2px; margin:4px 0; }
+  .tb-ln.w60 { width:60%; } .tb-ln.w40 { width:40%; } .tb-ln.w80 { width:80%; }
+  .tb-card { background:#12151c; border:1px solid #1f2430; border-radius:4px; padding:8px; margin-bottom:8px; }
+  .tb-big { font-size:18px; color:#e5e7eb; font-weight:600; }
+  .tb-ann { font-size:10px; color:#9aa4b6; font-family:-apple-system,sans-serif; margin-top:8px; line-height:1.5; }
+  .tb-mark { color:#fbbf24; }
+  .opt-label { position:absolute; top:8px; right:12px; background:#1b2230; padding:2px 8px; border-radius:10px; font-size:10px; color:#9aa4b6; font-family:-apple-system,sans-serif; letter-spacing:0.05em; }
+  .option { position:relative; }
+</style>
+
+<h2>Desktop: B vs C</h2>
+<p class="subtitle">Both show "Trade" mode. The key difference is what stays visible always.</p>
+
+<div class="options" style="grid-template-columns:1fr 1fr;">
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Info Architecture Rethink</h3>
+      <p style="margin-bottom:10px; color:#9aa4b6;">7 tabs → 3 modes. Multi-panel Trade view. Conventional.</p>
+
+      <div class="tb-mockup">
+        <div class="tb-chrome">● ● ●   trading-dashboard</div>
+        <div class="tb-tabs">
+          <div class="tb-tab on">Trade</div>
+          <div class="tb-tab">Review</div>
+          <div class="tb-tab">Journal</div>
+        </div>
+        <div class="tb-strip" style="background:#0f131b;">
+          <span style="color:#9aa4b6;">Cash 22%</span>
+          <span style="color:#9aa4b6;">NLV $142,308</span>
+          <span class="tb-pnl">+$412 today</span>
+        </div>
+        <div class="tb-body">
+          <div class="tb-rail">
+            <div class="tb-h">Positions</div>
+            <div class="tb-item sel">NVDA <span style="color:#4ade80;">+2.1%</span></div>
+            <div class="tb-item">AAPL <span style="color:#4ade80;">+0.4%</span></div>
+            <div class="tb-item">TSLA <span style="color:#f87171;">-1.8%</span></div>
+            <div class="tb-item">SMCI <span style="color:#4ade80;">+3.2%</span></div>
+            <div class="tb-item">AMD <span style="color:#f87171;">-0.6%</span></div>
+          </div>
+          <div class="tb-main">
+            <div class="tb-h">NVDA · CSP $485 · 12 DTE</div>
+            <div class="tb-big">$2.15 <span style="font-size:11px;color:#4ade80;">+0.08</span></div>
+            <div class="tb-ln w80"></div>
+            <div class="tb-ln w60"></div>
+            <div class="tb-ln w40"></div>
+            <div class="tb-card" style="margin-top:10px;">
+              <div class="tb-h">Greeks</div>
+              <div class="tb-ln w60"></div>
+              <div class="tb-ln w80"></div>
+            </div>
+          </div>
+          <div class="tb-right">
+            <div class="tb-h">Macro</div>
+            <div class="tb-card"><span class="tb-pill greed">Greed · 14.2</span></div>
+            <div class="tb-h">Expiring</div>
+            <div class="tb-ln w80"></div>
+            <div class="tb-ln w60"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tb-ann">
+        <strong style="color:#e5e7eb;">How it feels:</strong> You open the app, land on Trade tab. Click Review → the whole screen swaps to a reporting page. Macro panel is only visible inside Trade. No keyboard-first nav.
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Full Reimagination</h3>
+      <p style="margin-bottom:10px; color:#9aa4b6;">B + persistent header, command palette, focus mode.</p>
+
+      <div class="tb-mockup">
+        <div class="tb-chrome">● ● ●   trading-dashboard</div>
+        <div class="tb-strip">
+          <div class="tb-tape">
+            <span class="tb-tk">SPY <span class="up">582.14 ▲</span></span>
+            <span class="tb-tk">QQQ <span class="up">498.22 ▲</span></span>
+            <span class="tb-tk">VIX <span class="dn">14.2 ▼</span></span>
+            <span class="tb-tk">DXY <span class="up">104.8</span></span>
+          </div>
+          <span class="tb-pill greed">● Greed</span>
+          <span class="tb-pnl">+$412</span>
+          <span class="tb-kbd">⌘K</span>
+        </div>
+        <div class="tb-tabs" style="padding:5px 10px; font-size:10px;">
+          <div class="tb-tab on" style="padding:2px 8px;">Trade</div>
+          <div class="tb-tab" style="padding:2px 8px;">Review</div>
+          <div class="tb-tab" style="padding:2px 8px;">Journal</div>
+        </div>
+        <div class="tb-body" style="height:245px;">
+          <div class="tb-rail">
+            <div class="tb-h">Positions</div>
+            <div class="tb-item sel">NVDA <span style="color:#4ade80;">+2.1%</span></div>
+            <div class="tb-item">AAPL <span style="color:#4ade80;">+0.4%</span></div>
+            <div class="tb-item">TSLA <span style="color:#f87171;">-1.8%</span></div>
+            <div class="tb-item">SMCI <span style="color:#4ade80;">+3.2%</span></div>
+            <div class="tb-item">AMD <span style="color:#f87171;">-0.6%</span></div>
+          </div>
+          <div class="tb-main">
+            <div class="tb-h">NVDA · CSP $485 · 12 DTE</div>
+            <div class="tb-big">$2.15 <span style="font-size:11px;color:#4ade80;">+0.08</span></div>
+            <div class="tb-ln w80"></div>
+            <div class="tb-ln w60"></div>
+            <div class="tb-ln w40"></div>
+            <div class="tb-card" style="margin-top:10px;">
+              <div class="tb-h">Greeks · <span class="tb-mark">press F to focus</span></div>
+              <div class="tb-ln w60"></div>
+              <div class="tb-ln w80"></div>
+            </div>
+          </div>
+          <div class="tb-right">
+            <div class="tb-h">Expiring this week</div>
+            <div class="tb-ln w80"></div>
+            <div class="tb-ln w60"></div>
+            <div class="tb-h" style="margin-top:8px;">Radar</div>
+            <div class="tb-ln w80"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tb-ann">
+        <strong style="color:#e5e7eb;">How it feels:</strong> Ticker + macro posture + P&L <em>always visible</em> — even when you switch to Review. <span class="tb-mark">⌘K</span> jumps anywhere. Press F to focus any panel. Macro moves out of Trade's right-rail (it's in the header now), freeing that rail for Radar signals.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Click a card to mark your pick. Or tell me what stands out — things to change, add, remove.</p>

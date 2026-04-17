@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "arch",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3099", "--directory", "/Users/vinhjones/trading-dashboard"],
+      "port": 3099
+    },
+    {
+      "name": "trading-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    }
+  ]
+}

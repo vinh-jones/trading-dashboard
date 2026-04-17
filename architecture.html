@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0d1117;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 32px;
+}
+
+/* ── Typography ─────────────────────────────── */
+.zone-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 6px;
+}
+.sub-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; opacity: 0.5; margin: 12px 0 8px 0;
+}
+.card-eyebrow {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; opacity: 0.55; margin-bottom: 4px;
+}
+.card-name  { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+.card-sub   { font-size: 11px; opacity: 0.55; line-height: 1.5; }
+
+/* ── Zone containers ────────────────────────── */
+.zone {
+  border-radius: 12px; border: 1.5px dashed; padding: 20px;
+  position: relative; z-index: 1;
+}
+.zone-blue   { border-color: rgba(59,130,246,0.35); }
+.zone-gray   { border-color: rgba(148,163,184,0.3); }
+.zone-orange { border-color: rgba(249,115,22,0.35); }
+.zone-green  { border-color: rgba(34,197,94,0.35);  }
+.zone-purple { border-color: rgba(168,85,247,0.35); }
+
+.zone-blue   .zone-title { color: #60a5fa; }
+.zone-gray   .zone-title { color: #94a3b8; }
+.zone-orange .zone-title { color: #fb923c; }
+.zone-green  .zone-title { color: #4ade80; }
+.zone-purple .zone-title { color: #c084fc; }
+
+/* ── Cards ──────────────────────────────────── */
+.card {
+  border-radius: 8px; border: 1.5px solid; padding: 12px 14px;
+}
+.card-blue   { border-color: rgba(59,130,246,0.5);  background: rgba(59,130,246,0.07);  color: #bfdbfe; }
+.card-gray   { border-color: rgba(148,163,184,0.4); background: rgba(148,163,184,0.06); color: #cbd5e1; }
+.card-orange { border-color: rgba(249,115,22,0.5);  background: rgba(249,115,22,0.07);  color: #fed7aa; }
+.card-green  { border-color: rgba(34,197,94,0.5);   background: rgba(34,197,94,0.07);   color: #bbf7d0; }
+.card-purple { border-color: rgba(168,85,247,0.5);  background: rgba(168,85,247,0.07);  color: #e9d5ff; }
+
+/* ── Top row layout ─────────────────────────── */
+.top-row {
+  display: grid;
+  grid-template-columns: 19% 1fr 22%;
+  gap: 20px;
+  margin-bottom: 0;
+  align-items: start;
+}
+
+.browser-cards { display: flex; flex-direction: column; gap: 10px; }
+.vercel-cards  { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.openclaw-cards { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Spacer between rows ─────────────────────── */
+.row-gap {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Bottom row — 3 columns ──────────────────── */
+.bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 22% 22%;
+  gap: 20px;
+  align-items: start;
+}
+
+.table-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ext-cards  { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Flow labels ───────────────────────────── */
+.flow-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  padding: 3px 8px; border-radius: 4px;
+  display: inline-flex; align-items: center; gap: 5px;
+  white-space: nowrap;
+}
+.fl-blue   { color: #60a5fa; background: rgba(59,130,246,0.1);   border: 1px solid rgba(59,130,246,0.25); }
+.fl-green  { color: #4ade80; background: rgba(34,197,94,0.1);    border: 1px solid rgba(34,197,94,0.25);  }
+.fl-orange { color: #fb923c; background: rgba(249,115,22,0.1);   border: 1px solid rgba(249,115,22,0.25); }
+.fl-purple { color: #c084fc; background: rgba(168,85,247,0.1);   border: 1px solid rgba(168,85,247,0.25); }
+
+/* ── Arrow SVG overlay ─────────────────────── */
+#arrow-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 10;
+}
+#diagram { position: relative; }
+</style>
+</head>
+<body>
+
+<div id="diagram">
+
+<svg id="arrow-svg"></svg>
+
+<!-- ══ TOP ROW ══════════════════════════════════════════════════════ -->
+<div class="top-row">
+
+  <!-- Browser -->
+  <div id="zone-browser" class="zone zone-blue">
+    <div class="zone-title">🖥️ Browser</div>
+    <div class="browser-cards">
+      <div class="card card-blue">
+        <div class="card-eyebrow">React SPA — Vercel CDN</div>
+        <div class="card-name">Focus / Trades / Journal</div>
+        <div class="card-sub">UI tabs rendered client-side</div>
+      </div>
+      <div class="card card-blue">
+        <div class="card-eyebrow">Client-side logic</div>
+        <div class="card-name">focusEngine.js</div>
+        <div class="card-sub">positions + quotes + context → focus items</div>
+      </div>
+      <div class="card card-blue">
+        <div class="card-eyebrow">Hook</div>
+        <div class="card-name">useQuotes()</div>
+        <div class="card-sub">30-min cache, lazy refresh on load</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vercel -->
+  <div id="zone-vercel" class="zone zone-gray">
+    <div class="zone-title">⚡ Vercel — Serverless Functions</div>
+    <div class="vercel-cards">
+      <div class="card card-gray">
+        <div class="card-eyebrow">Endpoint</div>
+        <div class="card-name">/api/quotes</div>
+        <div class="card-sub">Fetches prices from Public.com<br>Lazy — market hours only<br>30-min Supabase cache</div>
+      </div>
+      <div class="card card-gray">
+        <div class="card-eyebrow">Endpoint</div>
+        <div class="card-name">/api/data</div>
+        <div class="card-sub">Returns positions + trades<br>from Supabase</div>
+      </div>
+      <div class="card card-gray">
+        <div class="card-eyebrow">Endpoint</div>
+        <div class="card-name">/api/ingest-iv</div>
+        <div class="card-sub">Accepts iv + iv_rank<br>from OpenClaw<br>Writes to quotes table</div>
+      </div>
+      <div class="card card-gray">
+        <div class="card-eyebrow">Endpoint</div>
+        <div class="card-name">/api/ingest-market-context</div>
+        <div class="card-sub">Accepts macro payload<br>from OpenClaw<br>Writes to market_context</div>
+      </div>
+      <div class="card card-gray">
+        <div class="card-eyebrow">Endpoint</div>
+        <div class="card-name">/api/sync</div>
+        <div class="card-sub">Fetches Google Sheets CSV<br>Parses positions + trades<br>Upserts to Supabase</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OpenClaw -->
+  <div id="zone-openclaw" class="zone zone-orange">
+    <div class="zone-title">🤖 OpenClaw — Mac Mini</div>
+    <div class="openclaw-cards">
+      <div class="card card-orange">
+        <div class="card-eyebrow">Cron — 5:00 AM PT daily</div>
+        <div class="card-name">IV Refresh</div>
+        <div class="card-sub">
+          GET /api/iv-tickers<br>
+          → Tastytrade market-metrics<br>
+          → POST /api/ingest-iv
+        </div>
+      </div>
+      <div class="card card-orange">
+        <div class="card-eyebrow">Cron — 5:00 AM PT daily</div>
+        <div class="card-name">Market Context</div>
+        <div class="card-sub">
+          Finnhub → earnings calendar<br>
+          TradingView → macro events<br>
+          → POST /api/ingest-market-context
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ GAP ROW ══════════════════════════════════════════════════════ -->
+<div class="row-gap"></div>
+
+<!-- ══ BOTTOM ROW — 3 columns ════════════════════════════════════════ -->
+<div class="bottom-row">
+
+  <!-- Supabase -->
+  <div id="zone-supabase" class="zone zone-green">
+    <div class="zone-title">🗄️ Supabase — PostgreSQL (single source of truth)</div>
+    <div class="table-grid">
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">positions</div>
+        <div class="card-sub">Shares, CSPs<br>CCs, LEAPs</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">quotes</div>
+        <div class="card-sub">bid / ask / last / mid<br>iv, iv_rank</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">market_context</div>
+        <div class="card-sub">Macro events<br>VIX, as_of timestamp</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">trades</div>
+        <div class="card-sub">Trade history<br>P&L records</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">journal_entries</div>
+        <div class="card-sub">EOD notes<br>focus_snapshot (JSONB)</div>
+      </div>
+      <div class="card card-green">
+        <div class="card-eyebrow">Table</div>
+        <div class="card-name">app_cache</div>
+        <div class="card-sub">Public.com token TTL<br>(shared across functions)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- External APIs — called by Vercel -->
+  <div id="zone-ext-vercel" class="zone zone-purple">
+    <div class="zone-title">📊 Called by Vercel</div>
+    <div class="ext-cards">
+      <div class="card card-purple">
+        <div class="card-eyebrow">Public.com API</div>
+        <div class="card-name">quotes endpoint</div>
+        <div class="card-sub">
+          Equity + option prices<br>
+          bid / ask / last<br>
+          Lazy during market hours
+        </div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-eyebrow">Google Sheets</div>
+        <div class="card-name">Published CSV</div>
+        <div class="card-sub">
+          Source-of-truth positions<br>
+          Holdings + transactions<br>
+          On load + manual sync
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- External APIs — called by OpenClaw -->
+  <div id="zone-ext-openclaw" class="zone zone-purple">
+    <div class="zone-title">🌐 Called by OpenClaw</div>
+    <div class="ext-cards">
+      <div class="card card-purple">
+        <div class="card-eyebrow">Tastytrade API</div>
+        <div class="card-name">market-metrics</div>
+        <div class="card-sub">
+          IV + IV rank per ticker<br>
+          ⚠️ Blocks datacenter IPs<br>
+          ✅ Residential IP only
+        </div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-eyebrow">Finnhub API</div>
+        <div class="card-name">Earnings calendar</div>
+        <div class="card-sub">Upcoming earnings dates</div>
+      </div>
+      <div class="card card-purple">
+        <div class="card-eyebrow">TradingView</div>
+        <div class="card-name">Economic calendar</div>
+        <div class="card-sub">
+          FOMC, CPI, PPI, NFP<br>
+          JSON backend endpoint
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ BOTTOM LEGEND ═════════════════════════════════════════════════ -->
+<div style="margin-top:20px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap; position:relative; z-index:1;">
+  <span class="flow-label fl-blue">🔄 Browser ↔ Vercel on page load</span>
+  <span class="flow-label fl-green">🗄️ Vercel reads/writes Supabase</span>
+  <span class="flow-label fl-purple">📊 Vercel → Public.com during market hours</span>
+  <span class="flow-label fl-orange">⏰ OpenClaw → APIs → Vercel → Supabase at 5 AM PT</span>
+</div>
+
+</div><!-- end #diagram -->
+
+<script>
+(function () {
+  /* ── Auto-fit to viewport ─────────────────── */
+  function fit() {
+    var contentW = 1500;
+    var vw = document.documentElement.clientWidth;
+    var scale = Math.min(1, vw / contentW);
+    document.body.style.zoom = scale;
+  }
+  fit();
+  window.addEventListener('resize', function() { fit(); drawArrows(); });
+
+  /* ── SVG helpers ──────────────────────────── */
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function mkMarker(svg, id, color, reverse) {
+    var m = document.createElementNS(NS, 'marker');
+    m.setAttribute('id', id);
+    m.setAttribute('markerWidth', '8');
+    m.setAttribute('markerHeight', '8');
+    m.setAttribute('refX', reverse ? '1' : '7');
+    m.setAttribute('refY', '4');
+    m.setAttribute('orient', 'auto');
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', reverse ? 'M8,0 L0,4 L8,8 Z' : 'M0,0 L8,4 L0,8 Z');
+    p.setAttribute('fill', color);
+    m.appendChild(p);
+    svg.querySelector('defs').appendChild(m);
+  }
+
+  function mkLine(svg, x1, y1, x2, y2, stroke, mStart, mEnd, dash) {
+    var l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1);
+    l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    l.setAttribute('stroke', stroke);
+    l.setAttribute('stroke-width', '2');
+    if (dash) l.setAttribute('stroke-dasharray', dash);
+    if (mStart) l.setAttribute('marker-start', 'url(#' + mStart + ')');
+    if (mEnd)   l.setAttribute('marker-end',   'url(#' + mEnd + ')');
+    svg.appendChild(l);
+  }
+
+  function rel(el, base) {
+    var er = el.getBoundingClientRect();
+    var br = base.getBoundingClientRect();
+    return {
+      left: er.left - br.left, right: er.right - br.left,
+      top: er.top - br.top,    bottom: er.bottom - br.top,
+      midX: (er.left + er.right) / 2 - br.left,
+      midY: (er.top + er.bottom) / 2 - br.top,
+    };
+  }
+
+  /* ── Draw arrows ─────────────────────────── */
+  function drawArrows() {
+    var svg  = document.getElementById('arrow-svg');
+    var diag = document.getElementById('diagram');
+    var dr   = diag.getBoundingClientRect();
+
+    svg.setAttribute('viewBox', '0 0 ' + dr.width + ' ' + dr.height);
+    svg.setAttribute('width',  dr.width);
+    svg.setAttribute('height', dr.height);
+    svg.innerHTML = '<defs></defs>';
+
+    var BLUE   = 'rgba(59,130,246,0.8)';
+    var GREEN  = 'rgba(34,197,94,0.8)';
+    var ORANGE = 'rgba(249,115,22,0.8)';
+    var PURPLE = 'rgba(168,85,247,0.8)';
+
+    mkMarker(svg, 'a-blue-fwd',   BLUE,   false);
+    mkMarker(svg, 'a-blue-rev',   BLUE,   true);
+    mkMarker(svg, 'a-green-fwd',  GREEN,  false);
+    mkMarker(svg, 'a-orange-fwd', ORANGE, false);
+    mkMarker(svg, 'a-purple-fwd', PURPLE, false);
+
+    var browser    = rel(document.getElementById('zone-browser'),     diag);
+    var vercel     = rel(document.getElementById('zone-vercel'),      diag);
+    var openclaw   = rel(document.getElementById('zone-openclaw'),    diag);
+    var supabase   = rel(document.getElementById('zone-supabase'),    diag);
+    var extVercel  = rel(document.getElementById('zone-ext-vercel'),  diag);
+    var extOpenclaw = rel(document.getElementById('zone-ext-openclaw'), diag);
+
+    var INSET = 22;
+
+    /* 1. Browser ↔ Vercel  (horizontal bidirectional) */
+    var bvY = browser.top + 32;
+    mkLine(svg,
+      browser.right - INSET, bvY,
+      vercel.left   + INSET, bvY,
+      BLUE, 'a-blue-rev', 'a-blue-fwd');
+
+    /* 2. OpenClaw → Vercel  (horizontal, POST to ingest endpoints) */
+    var ocvY = openclaw.top + 32;
+    mkLine(svg,
+      openclaw.left + 10, ocvY,
+      vercel.right  - 10, ocvY,
+      ORANGE, null, 'a-orange-fwd');
+
+    /* 3. Vercel ↓ Supabase  (straight down) */
+    mkLine(svg,
+      vercel.midX, vercel.bottom + 4,
+      vercel.midX, supabase.top  - 4,
+      GREEN, null, 'a-green-fwd');
+
+    /* 4. Vercel ↓ Public.com zone  (straight down from right side of Vercel) */
+    var vPubX = vercel.right - (vercel.right - vercel.midX) * 0.4;
+    mkLine(svg,
+      extVercel.midX, vercel.bottom + 4,
+      extVercel.midX, extVercel.top - 4,
+      PURPLE, null, 'a-purple-fwd');
+
+    /* 5. OpenClaw ↓ OpenClaw's external APIs  (straight down) */
+    mkLine(svg,
+      openclaw.midX,    openclaw.bottom + 4,
+      extOpenclaw.midX, extOpenclaw.top - 4,
+      ORANGE, null, 'a-orange-fwd');
+  }
+
+  if (document.readyState === 'complete') {
+    drawArrows();
+  } else {
+    window.addEventListener('load', drawArrows);
+  }
+})();
+</script>
+
+</body>
+</html>

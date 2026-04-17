@@ -1,0 +1,44 @@
+<h2>Audit Approach Options</h2>
+<p class="subtitle">How should we structure this redesign? Pick the one that matches your appetite.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Design System First</h3>
+      <p>Establish a shared theme object (CSS variables + a central <code>theme.js</code>) with the new C-direction palette, typography scale, and spacing. Then systematically migrate all inline styles to use it — every component gets cleaner at the same time. Fixes code quality and visual consistency in one pass.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>One source of truth for colors/type/spacing</li><li>Future changes are one-line edits</li><li>Code quality improves across the board</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Larger upfront work before you see visual results</li><li>Risk of sprawling scope</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Calendar-First Showcase ✦ recommended</h3>
+      <p>Redesign CalendarTab to the new C aesthetic — it becomes the visual target for the whole app. Extract the design tokens from that work into a <code>theme.js</code>, then apply them to Positions. Journal and Summary follow. Code quality improvements happen naturally as we touch each file.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Fastest path to visible results</li><li>Calendar is the highest-opportunity tab</li><li>Design tokens emerge from real usage, not speculation</li><li>Each tab is a self-contained chunk of work</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Brief inconsistency while mid-migration (old tabs vs new)</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Positions + AccountBar Only</h3>
+      <p>Narrow scope: just redesign the parts you actually look at every day — AccountBar and OpenPositionsTab. Leave Calendar and the rest for later. Quick, low-risk, immediately useful.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Smallest scope, fastest to ship</li><li>Highest daily-use ROI</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Leaves Calendar (biggest opportunity) untouched</li><li>No design system foundation</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Click your preference, then confirm in the terminal.</p>
