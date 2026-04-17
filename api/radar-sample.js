@@ -89,20 +89,35 @@ async function getPublicAccessToken(supabase) {
 // ── Public.com option-chain fetchers ──────────────────────────────────────────
 
 async function fetchExpirations(token, symbol) {
-  const url = `${PUBLIC_COM_BASE}/userapigateway/option-details/${ACCOUNT_ID}/expirations?symbol=${encodeURIComponent(symbol)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // POST /userapigateway/marketdata/{account_id}/option-expirations
+  // Body: { instrument: { symbol, type: "EQUITY" } }
+  const url = `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/option-expirations`;
+  const res = await fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body:    JSON.stringify({ instrument: { symbol, type: "EQUITY" } }),
+  });
   if (!res.ok) throw new Error(`expirations ${symbol} failed ${res.status}: ${url}`);
   const data = await res.json();
-  // Confirmed shape: { baseSymbol, expirations: ["YYYY-MM-DD", ...] }
+  // Response shape: { baseSymbol, expirations: ["YYYY-MM-DD", ...] }
   return data.expirations || [];
 }
 
 async function fetchChain(token, symbol, expirationDate) {
-  const url = `${PUBLIC_COM_BASE}/userapigateway/option-details/${ACCOUNT_ID}/chain?symbol=${encodeURIComponent(symbol)}&expiration=${expirationDate}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // POST /userapigateway/marketdata/{account_id}/option-chain
+  // Body: { instrument: { symbol, type: "EQUITY" }, expirationDate }
+  const url = `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/option-chain`;
+  const res = await fetch(url, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body:    JSON.stringify({
+      instrument:     { symbol, type: "EQUITY" },
+      expirationDate,
+    }),
+  });
   if (!res.ok) throw new Error(`chain ${symbol} ${expirationDate} failed ${res.status}: ${url}`);
   const data = await res.json();
-  // Confirmed shape: { baseSymbol, calls: [...], puts: [...] }
+  // Response shape: { baseSymbol, calls: [...], puts: [...] }
   // Puts are pre-separated — no need to filter by type.
   return data.puts || [];
 }
