@@ -394,19 +394,38 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
           ? (linkedTrade.premium >= 0 ? "+" : "") + formatDollars(linkedTrade.premium)
           : null;
 
-        const dot = <span style={{ color: theme.text.faint }}>·</span>;
+        const dot  = <span style={{ color: theme.text.faint, margin: `0 ${theme.space[1]}px` }}>·</span>;
+        const pipe = <span style={{ color: theme.border.strong, margin: `0 ${theme.space[2]}px`, fontWeight: 300 }}>|</span>;
+
+        const contractGroup = [
+          linkedTrade.strike && <span key="strike">${linkedTrade.strike}{strikeSuffix}</span>,
+          linkedTrade.expiry && linkedTrade.expiry !== "—" && <span key="expiry">exp {linkedTrade.expiry}</span>,
+          linkedTrade.contracts && <span key="contracts">{linkedTrade.contracts} ct</span>,
+        ].filter(Boolean);
+
+        const executionGroup = [
+          entryCostStr && <span key="cost">{entryCostStr}{exitCostStr ? ` ${exitCostStr}` : ""}</span>,
+          cashPct      && <span key="cash">{cashPct}</span>,
+        ].filter(Boolean);
+
+        const performanceGroup = [
+          rorDisplay   && <span key="ror">{rorDisplay}</span>,
+          deltaDisplay && <span key="delta">{deltaDisplay}</span>,
+          daysDisplay  && <span key="days">{daysDisplay}</span>,
+          keptDisplay  && <span key="kept">{keptDisplay}</span>,
+        ].filter(Boolean);
+
+        const resultGroup = plDisplay
+          ? [<span key="pl" style={{ color: linkedTrade.premium >= 0 ? theme.green : theme.red, fontWeight: 600 }}>{plDisplay}</span>]
+          : [];
+
+        const renderGroup = (items) => items.flatMap((node, i) => i === 0 ? [node] : [dot, node]);
+
+        const groups = [contractGroup, executionGroup, performanceGroup, resultGroup].filter(g => g.length > 0);
+
         return (
-          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: theme.space[2], display: "flex", gap: theme.space[2], flexWrap: "wrap", alignItems: "center" }}>
-            {linkedTrade.strike && <span>${linkedTrade.strike}{strikeSuffix}</span>}
-            {linkedTrade.expiry && linkedTrade.expiry !== "—" && <>{dot}<span>exp {linkedTrade.expiry}</span></>}
-            {linkedTrade.contracts                               && <>{dot}<span>{linkedTrade.contracts} ct</span></>}
-            {entryCostStr                                        && <>{dot}<span>{entryCostStr}{exitCostStr ? ` ${exitCostStr}` : ""}</span></>}
-            {cashPct                                             && <>{dot}<span>{cashPct}</span></>}
-            {deltaDisplay                                        && <>{dot}<span>{deltaDisplay}</span></>}
-            {rorDisplay                                          && <>{dot}<span>{rorDisplay}</span></>}
-            {daysDisplay                                         && <>{dot}<span>{daysDisplay}</span></>}
-            {keptDisplay                                         && <>{dot}<span>{keptDisplay}</span></>}
-            {plDisplay                                           && <>{dot}<span style={{ color: linkedTrade.premium >= 0 ? theme.green : theme.red }}>{plDisplay}</span></>}
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: theme.space[2], display: "flex", flexWrap: "wrap", alignItems: "center" }}>
+            {groups.flatMap((group, i) => i === 0 ? renderGroup(group) : [<span key={`pipe-${i}`}>{pipe}</span>, ...renderGroup(group)])}
           </div>
         );
       })()}
