@@ -13,5 +13,9 @@ src/data/account.json
 # Runbooks with embedded secrets
 RUNBOOK_*.md
 
-# Git worktrees
+# Git worktrees (both locations)
 .worktrees/
+.claude/worktrees/
+
+# Brainstorm companion session state (per-session, not durable)
+.superpowers/brainstorm/
