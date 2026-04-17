@@ -85,7 +85,7 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   function RollRow({ expiry, dte, strike, mid, net, viable, label }) {
     if (!expiry) {
       return (
-        <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: 3 }}>
+        <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: theme.space[1] }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, width: 80 }}>{label}</span>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>—</span>
           {notes && <span style={{ fontSize: theme.size.xs, color: theme.text.faint }}>({notes})</span>}
@@ -95,7 +95,7 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
 
     if (mid == null) {
       return (
-        <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: 3 }}>
+        <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: theme.space[1] }}>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, width: 80 }}>{label} ({formatExpiry(expiry)})</span>
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>—</span>
           {notes?.includes("weekly") && (
@@ -110,7 +110,7 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
     const viableMark = viable ? "✓" : "✗";
 
     return (
-      <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: 3 }}>
+      <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", marginBottom: theme.space[1] }}>
         <span style={{ fontSize: theme.size.sm, color: theme.text.secondary, flexShrink: 0 }}>
           {dte}d ({formatExpiry(expiry)}){strike != null ? ` $${strike}` : ""}
         </span>
@@ -137,7 +137,7 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
             background:   "rgba(63,185,80,0.10)",
             border:       `1px solid ${theme.green}`,
             borderRadius: theme.radius.sm,
-            padding:      "1px 6px",
+            padding:      `2px ${theme.space[1]}px`,
           }}>
             ● Roll opportunity
           </span>
@@ -345,7 +345,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
   const numericCols = new Set(["Strike", "% OTM", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
   const colHeader = (label) => (
     <th key={label} style={{
-      padding:       "8px 10px",
+      padding:       `${theme.space[2]}px ${theme.space[3]}px`,
       textAlign:     numericCols.has(label) ? "right" : "left",
       color:         theme.text.muted,
       fontWeight:    500,
@@ -454,7 +454,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
             const valueColor   = isLeap ? theme.chart.leaps : theme.green;
 
             const td = (content, style = {}) => (
-              <td style={{ padding: "9px 10px", ...style }}>{content}</td>
+              <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, ...style }}>{content}</td>
             );
 
             const rowKey = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
@@ -615,13 +615,13 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
   const SCALE = Math.max(allocRows[0]?.totalPct ?? 0.20, 0.20);
 
   const panel = (children, style = {}) => (
-    <div style={{ padding: "20px", background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: 16, ...style }}>
+    <div style={{ padding: theme.space[5], background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}`, marginBottom: theme.space[4], ...style }}>
       {children}
     </div>
   );
 
   const sectionHeader = (title) => (
-    <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 14 }}>
+    <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[3] }}>
       {title}
     </div>
   );
@@ -658,7 +658,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
               const leapsW  = (row.leapsPct  / SCALE) * 100;
               const cspW    = (row.cspPct    / SCALE) * 100;
               return (
-                <div key={row.ticker} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
+                <div key={row.ticker} style={{ display: "flex", alignItems: "center", gap: theme.space[2], marginBottom: theme.space[1] }}>
                   <div style={{ width: 52, fontSize: theme.size.sm, fontWeight: 700, color: theme.text.primary, textAlign: "right", flexShrink: 0 }}>
                     {row.ticker}
                   </div>
@@ -675,7 +675,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
                 </div>
               );
             })}
-            <div style={{ display: "flex", gap: 16, marginTop: 14, paddingLeft: 62, fontSize: theme.size.xs, color: theme.text.subtle }}>
+            <div style={{ display: "flex", gap: theme.space[4], marginTop: theme.space[3], paddingLeft: 62, fontSize: theme.size.xs, color: theme.text.subtle }}>
               <span><span style={{ color: theme.chart.shares }}>■</span> Shares</span>
               <span><span style={{ color: theme.chart.leaps }}>■</span> LEAPS</span>
               <span><span style={{ color: theme.blue }}>■</span> CSP</span>
@@ -689,11 +689,17 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
       {/* ── Open Positions (tabbed: CSPs / CCs / LEAPs) ── */}
       {panel(
         <>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: theme.space[2] }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.space[3], flexWrap: "wrap", gap: theme.space[2] }}>
             {sectionHeader("Open Positions")}
-            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: theme.space[1], marginBottom: theme.space[3] }}>
               {positionTabs.map(t => (
-                <button key={t.key} style={tabBtnStyle(t.key)} onClick={() => setPositionTab(t.key)}>
+                <button
+                  key={t.key}
+                  style={tabBtnStyle(t.key)}
+                  onClick={() => setPositionTab(t.key)}
+                  onMouseEnter={e => { if (positionTab !== t.key) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                  onMouseLeave={e => { if (positionTab !== t.key) e.currentTarget.style.background = theme.bg.elevated; }}
+                >
                   {t.label}
                 </button>
               ))}
@@ -712,12 +718,12 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
       {/* ── Assigned Shares ── */}
       {panel(
         <>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: theme.space[2], marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: theme.space[2], marginBottom: theme.space[3] }}>
             <div style={{ fontSize: theme.size.md, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
               Assigned Shares ({assigned_shares.length} tickers)
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: theme.space[1] }}>
                 <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Proximity threshold:</span>
                 <input
                   type="number"
@@ -734,7 +740,10 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
                     fontFamily:   "inherit",
                     padding:      "2px 6px",
                     textAlign:    "right",
+                    outline:      "none",
                   }}
+                  onFocus={e => { e.currentTarget.style.boxShadow = `0 0 0 2px ${theme.blue}55`; }}
+                  onBlur={e => { e.currentTarget.style.boxShadow = "none"; }}
                 />
                 <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>%</span>
                 {thresholdError && (
@@ -756,6 +765,8 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
                   padding:      "4px 12px",
                   opacity:      rollLoading ? 0.6 : 1,
                 }}
+                onMouseEnter={e => { if (!rollLoading && !thresholdError) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = theme.bg.elevated; }}
               >
                 ↻ {buttonLabel}
               </button>
@@ -768,7 +779,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: theme.space[3] }}>
             {assigned_shares.map((pos) => {
               const cc  = pos.active_cc;
               const dte = cc ? calcDTE(cc.expiry_date) : null;
@@ -778,15 +789,15 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
               const rollData          = rollMap[pos.ticker] ?? null;
 
               return (
-                <div key={pos.ticker} style={{ background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}`, padding: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <div key={pos.ticker} style={{ background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}`, padding: theme.space[4] }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.space[2] }}>
                     <span style={{ fontSize: theme.size.lg, fontWeight: 700, color: theme.text.primary }}>{pos.ticker}</span>
                     <span style={{ fontSize: theme.size.md, color: theme.text.muted }}>
                       Cost basis: <span style={{ color: theme.text.primary, fontWeight: 600 }}>{formatDollarsFull(pos.cost_basis_total)}</span>
                     </span>
                   </div>
 
-                  <div style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: theme.space[2] }}>
                     {pos.positions.map((p, i) => (
                       <div key={i} style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: 2 }}>
                         {p.description} — {formatDollarsFull(p.fronted)}
@@ -795,14 +806,14 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
                   </div>
 
                   {cc ? (
-                    <div style={{ padding: "10px 12px", background: TYPE_COLORS.CC.bg, border: `1px solid ${TYPE_COLORS.CC.border}`, borderRadius: theme.radius.sm }}>
+                    <div style={{ padding: `${theme.space[2]}px ${theme.space[3]}px`, background: TYPE_COLORS.CC.bg, border: `1px solid ${TYPE_COLORS.CC.border}`, borderRadius: theme.radius.sm }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                         <span style={{ fontSize: theme.size.sm, color: TYPE_COLORS.CC.text, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Active CC</span>
                         <span style={{ fontSize: theme.size.sm, color: dte != null && dte <= 3 ? theme.red : theme.text.muted }}>
                           {dte != null ? `${dte}d DTE` : "—"} · exp {formatExpiry(cc.expiry_date)}
                         </span>
                       </div>
-                      <div style={{ display: "flex", gap: 16 }}>
+                      <div style={{ display: "flex", gap: theme.space[4] }}>
                         <div>
                           <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>Strike </span>
                           <span style={{ fontSize: theme.size.md, color: theme.text.primary, fontWeight: 600 }}>${cc.strike}</span>
@@ -818,7 +829,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ padding: "8px 12px", background: theme.alert.dangerBg, border: `1px solid ${theme.alert.dangerBorder}`, borderRadius: theme.radius.sm, fontSize: theme.size.md, color: theme.red, fontWeight: 500 }}>
+                    <div style={{ padding: `${theme.space[2]}px ${theme.space[3]}px`, background: theme.alert.dangerBg, border: `1px solid ${theme.alert.dangerBorder}`, borderRadius: theme.radius.sm, fontSize: theme.size.md, color: theme.red, fontWeight: 500 }}>
                       NO ACTIVE CC
                     </div>
                   )}
