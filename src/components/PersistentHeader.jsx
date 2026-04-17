@@ -191,7 +191,7 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
               border:        `1px solid ${theme.border.strong}`,
               borderRadius:  theme.radius.sm,
               color:         theme.text.secondary,
-              padding:       `${theme.space[1]}px ${theme.space[2]}px`,
+              padding:       "6px 10px",
               cursor:        "pointer",
               fontSize:      theme.size.md,
               fontFamily:    "inherit",

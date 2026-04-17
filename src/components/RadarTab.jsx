@@ -339,172 +339,149 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
         onClick={onToggle}
         style={{
           display:       "flex",
-          alignItems:    "center",
-          gap:           theme.space[2],
+          flexDirection: "column",
+          gap:           theme.space[1],
           padding:       `${theme.space[2]}px ${theme.space[3]}px`,
           background:    expanded ? theme.bg.elevated : rowBg,
           borderBottom:  `1px solid ${theme.border.default}`,
           cursor:        "pointer",
-          flexWrap:      "wrap",
-          minHeight:     40,
           transition:    "background 0.1s",
         }}
       >
-        {/* Ticker */}
-        <span style={{
-          fontSize:   theme.size.md,
-          fontWeight: 700,
-          color:      theme.text.primary,
-          minWidth:   52,
-          flexShrink: 0,
-        }}>
-          {ticker}
-        </span>
-
-        {/* Left-rail position/earnings indicators */}
-        {(indicators.length > 0 || earningsWarn) && (
-          <div style={{
-            display:     "inline-flex",
-            alignItems:  "center",
-            gap:         theme.space[1],
-            fontSize:    theme.size.xs,
-            flexShrink:  0,
-            color:       theme.text.muted,
-          }}>
-            {indicators.includes('📌 Shares') && <span title="Shares held">📌</span>}
-            {indicators.includes('🔼 CC')     && <span title="Covered call open">🔼</span>}
-            {indicators.includes('📋 CSP')    && <span title="CSP open">📋</span>}
-            {indicators.includes('🔭 LEAPS')  && <span title="LEAP open">🔭</span>}
-            {earningsWarn && (
-              <span style={{ color: theme.amber }} title={earningsWarn}>⚠</span>
-            )}
-          </div>
-        )}
-
-        {/* BB badge */}
-        {bucket ? (
+        {/* Row 1: ticker · indicators · BB badge · spacer · score bar · caret */}
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
+          {/* Ticker */}
           <span style={{
-            fontSize:     theme.size.xs,
-            fontWeight:   600,
-            color:        bucketColors.text,
-            background:   bucketColors.bg,
-            borderRadius: theme.radius.pill,
-            padding:      "2px 8px",
-            flexShrink:   0,
+            fontSize:   theme.size.md,
+            fontWeight: 700,
+            color:      theme.text.primary,
+            flexShrink: 0,
           }}>
-            {BB_BUCKET_LABELS[bucket]}
+            {ticker}
           </span>
-        ) : (
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
-        )}
 
-        {/* BB value */}
-        {bb_position != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("bb") }}>
-            BB: {bb_position.toFixed(2)}
-          </span>
-        )}
+          {/* Left-rail position/earnings indicators */}
+          {(indicators.length > 0 || earningsWarn) && (
+            <div style={{
+              display:    "inline-flex",
+              alignItems: "center",
+              gap:        theme.space[1],
+              fontSize:   theme.size.xs,
+              flexShrink: 0,
+              color:      theme.text.muted,
+            }}>
+              {indicators.includes('📌 Shares') && <span title="Shares held">📌</span>}
+              {indicators.includes('🔼 CC')     && <span title="Covered call open">🔼</span>}
+              {indicators.includes('📋 CSP')    && <span title="CSP open">📋</span>}
+              {indicators.includes('🔭 LEAPS')  && <span title="LEAP open">🔭</span>}
+              {earningsWarn && (
+                <span style={{ color: theme.amber }} title={earningsWarn}>⚠</span>
+              )}
+            </div>
+          )}
 
-        {/* IV */}
-        <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_raw") }}>
-          {iv != null ? `IV: ${Math.round(iv * 100)}%` : "IV pending"}
-        </span>
-
-        {/* IVR */}
-        {iv_rank != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_rank") }}>
-            IVR: {iv_rank.toFixed(1)}
-          </span>
-        )}
-
-        {/* Composite IV */}
-        {ivComp != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_composite") }}>
-            IVC: {ivComp.toFixed(2)}
-          </span>
-        )}
-
-        {/* P/E */}
-        {pe_ttm != null && (
-          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("pe") }}>
-            P/E: {pe_ttm.toFixed(1)}
-          </span>
-        )}
-
-        {/* Sample cell */}
-        {(() => {
-          if (!sample) {
-            return (
-              <span style={{
-                fontSize:   theme.size.sm,
-                color:      theme.text.faint,
-                fontFamily: "inherit",
-                marginLeft: theme.space[3],
-                minWidth:   180,
-              }}>—</span>
-            );
-          }
-          if (sample.status === "ok") {
-            const ror = (sample.mid * 100 / sample.collateral) * 100;
-            const collatStr = sample.collateral >= 1000
-              ? `$${(sample.collateral / 1000).toFixed(1)}k`
-              : `$${sample.collateral}`;
-            return (
-              <span style={{
-                fontSize:   theme.size.sm,
-                fontFamily: "inherit",
-                marginLeft: theme.space[3],
-                minWidth:   180,
-                color:      theme.text.muted,
-              }}>
-                <span style={{ color: theme.text.primary, fontWeight: 600 }}>${sample.strike}p</span>
-                {" · "}
-                <span style={{ color: theme.text.secondary }}>${sample.mid.toFixed(2)}</span>
-                {" · "}
-                {ror.toFixed(1)}% RoR
-                {" · "}
-                {collatStr}
-              </span>
-            );
-          }
-          if (sample.status === "no_suitable_strike") {
-            return (
-              <span style={{
-                fontSize:   theme.size.sm,
-                color:      theme.text.subtle,
-                fontStyle:  "italic",
-                fontFamily: "inherit",
-                marginLeft: theme.space[3],
-                minWidth:   180,
-              }}>no 25–35δ</span>
-            );
-          }
-          // fetch_failed
-          return (
+          {/* BB badge */}
+          {bucket ? (
             <span style={{
-              fontSize:   theme.size.sm,
-              color:      theme.text.subtle,
-              fontFamily: "inherit",
-              marginLeft: theme.space[3],
-              minWidth:   180,
-            }}>—</span>
-          );
-        })()}
+              fontSize:     theme.size.xs,
+              fontWeight:   600,
+              color:        bucketColors.text,
+              background:   bucketColors.bg,
+              borderRadius: theme.radius.pill,
+              padding:      "2px 8px",
+              flexShrink:   0,
+            }}>
+              {BB_BUCKET_LABELS[bucket]}
+            </span>
+          ) : (
+            <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
+          )}
 
-        {/* Spacer */}
-        <div style={{ flex: 1 }} />
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
 
-        {/* Score bar */}
-        {score != null ? (
-          <ScoreBar score={score} />
-        ) : (
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>—</span>
-        )}
+          {/* Score bar */}
+          {score != null ? (
+            <ScoreBar score={score} />
+          ) : (
+            <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>—</span>
+          )}
 
-        {/* Expand caret */}
-        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, marginLeft: theme.space[1] }}>
-          {expanded ? "▲" : "▼"}
-        </span>
+          {/* Expand caret */}
+          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, marginLeft: theme.space[1] }}>
+            {expanded ? "▲" : "▼"}
+          </span>
+        </div>
+
+        {/* Row 2: BB value · IV · IVR · IVC · P/E · sample */}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: theme.space[2] }}>
+          {/* BB value */}
+          {bb_position != null && (
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("bb") }}>
+              BB: {bb_position.toFixed(2)}
+            </span>
+          )}
+
+          {/* IV */}
+          <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_raw") }}>
+            {iv != null ? `IV: ${Math.round(iv * 100)}%` : "IV pending"}
+          </span>
+
+          {/* IVR */}
+          {iv_rank != null && (
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_rank") }}>
+              IVR: {iv_rank.toFixed(1)}
+            </span>
+          )}
+
+          {/* Composite IV */}
+          {ivComp != null && (
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_composite") }}>
+              IVC: {ivComp.toFixed(2)}
+            </span>
+          )}
+
+          {/* P/E */}
+          {pe_ttm != null && (
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("pe") }}>
+              P/E: {pe_ttm.toFixed(1)}
+            </span>
+          )}
+
+          {/* Sample cell */}
+          {(() => {
+            if (!sample) {
+              return (
+                <span style={{ fontSize: theme.size.sm, color: theme.text.faint, fontFamily: "inherit" }}>—</span>
+              );
+            }
+            if (sample.status === "ok") {
+              const ror = (sample.mid * 100 / sample.collateral) * 100;
+              const collatStr = sample.collateral >= 1000
+                ? `$${(sample.collateral / 1000).toFixed(1)}k`
+                : `$${sample.collateral}`;
+              return (
+                <span style={{ fontSize: theme.size.sm, fontFamily: "inherit", color: theme.text.muted }}>
+                  <span style={{ color: theme.text.primary, fontWeight: 600 }}>${sample.strike}p</span>
+                  {" · "}
+                  <span style={{ color: theme.text.secondary }}>${sample.mid.toFixed(2)}</span>
+                  {" · "}
+                  {ror.toFixed(1)}% RoR
+                  {" · "}
+                  {collatStr}
+                </span>
+              );
+            }
+            if (sample.status === "no_suitable_strike") {
+              return (
+                <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, fontStyle: "italic", fontFamily: "inherit" }}>no 25–35δ</span>
+              );
+            }
+            return (
+              <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, fontFamily: "inherit" }}>—</span>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Expanded detail panel */}
