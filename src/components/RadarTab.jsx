@@ -222,8 +222,11 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
     ? { color: theme.blue, fontWeight: 700 }
     : {};
 
+  const hasPosition = indicators.length > 0;
+
   const rowBg = label === "Strong" ? SCORE_ROW_BG.Strong
     : label === "Weak"   ? SCORE_ROW_BG.Weak
+    : hasPosition        ? "rgba(227,179,65,0.05)"
     : theme.bg.surface;
 
   return (
@@ -254,6 +257,26 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
         }}>
           {ticker}
         </span>
+
+        {/* Left-rail position/earnings indicators */}
+        {(indicators.length > 0 || earningsWarn) && (
+          <div style={{
+            display:     "inline-flex",
+            alignItems:  "center",
+            gap:         theme.space[1],
+            fontSize:    theme.size.xs,
+            flexShrink:  0,
+            color:       theme.text.muted,
+          }}>
+            {indicators.includes('📌 Shares') && <span title="Shares held">📌</span>}
+            {indicators.includes('🔼 CC')     && <span title="Covered call open">🔼</span>}
+            {indicators.includes('📋 CSP')    && <span title="CSP open">📋</span>}
+            {indicators.includes('🔭 LEAPS')  && <span title="LEAP open">🔭</span>}
+            {earningsWarn && (
+              <span style={{ color: theme.amber }} title={earningsWarn}>⚠</span>
+            )}
+          </div>
+        )}
 
         {/* BB badge */}
         {bucket ? (
@@ -307,20 +330,6 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
-
-        {/* Position indicators */}
-        {indicators.length > 0 && (
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>
-            {indicators.join(" · ")}
-          </span>
-        )}
-
-        {/* Earnings warning */}
-        {earningsWarn && (
-          <span style={{ fontSize: theme.size.xs, color: theme.amber, fontWeight: 600, flexShrink: 0 }}>
-            {earningsWarn}
-          </span>
-        )}
 
         {/* Score bar */}
         {score != null ? (
