@@ -306,9 +306,14 @@ export default async function handler(req, res) {
   const fresh = [];
   const staleTickers = [];
 
+  // Treat fetch_failed rows as stale regardless of age — we want to retry
+  // them on the next call during market hours instead of serving a stale
+  // error for the full 1-hour cache window.
   for (const t of tickers) {
     const row = existingByTicker[t];
-    if (row && new Date(row.fetched_at).getTime() > now - CACHE_TTL_MS) {
+    const isFresh  = row && new Date(row.fetched_at).getTime() > now - CACHE_TTL_MS;
+    const isFailed = row && row.status === "fetch_failed";
+    if (isFresh && !isFailed) {
       fresh.push(row);
     } else {
       staleTickers.push(t);
