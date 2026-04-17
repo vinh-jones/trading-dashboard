@@ -50,6 +50,7 @@ function SavePresetModal({ initialFilters, onSave, onClose }) {
   const [localFilters, setLocalFilters] = useState({ ...DEFAULT_FILTERS, ...initialFilters });
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState(null);
+  const [nameFocused, setNameFocused] = useState(false);
 
   function handleFilterChange(field, value) {
     setLocalFilters(prev => ({ ...prev, [field]: value }));
@@ -80,7 +81,7 @@ function SavePresetModal({ initialFilters, onSave, onClose }) {
       </div>
 
       <div style={{ marginBottom: theme.space[3] }}>
-        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 4 }}>Name (max 20 chars)</div>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>Name (max 20 chars)</div>
         <input
           autoFocus
           type="text"
@@ -88,7 +89,9 @@ function SavePresetModal({ initialFilters, onSave, onClose }) {
           value={name}
           onChange={e => { setName(e.target.value); setError(null); }}
           placeholder="e.g. High Income"
-          style={modalInputStyle}
+          style={{ ...modalInputStyle, border: `1px solid ${nameFocused ? theme.blue : theme.border.default}` }}
+          onFocus={() => setNameFocused(true)}
+          onBlur={() => setNameFocused(false)}
           onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         />
         {error && <div style={{ fontSize: theme.size.xs, color: theme.red, marginTop: 4 }}>{error}</div>}
@@ -119,6 +122,7 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
 
   function handleFilterChange(field, value) {
     setLocalFilters(prev => ({ ...prev, [field]: value }));
@@ -168,14 +172,16 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
       </div>
 
       <div style={{ marginBottom: theme.space[3] }}>
-        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 4 }}>Name (max 20 chars)</div>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>Name (max 20 chars)</div>
         <input
           autoFocus
           type="text"
           maxLength={20}
           value={name}
           onChange={e => { setName(e.target.value); setError(null); }}
-          style={modalInputStyle}
+          style={{ ...modalInputStyle, border: `1px solid ${nameFocused ? theme.blue : theme.border.default}` }}
+          onFocus={() => setNameFocused(true)}
+          onBlur={() => setNameFocused(false)}
           onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
         />
         {error && <div style={{ fontSize: theme.size.xs, color: theme.red, marginTop: 4 }}>{error}</div>}
@@ -210,7 +216,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
 
   return (
     <div
-      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+      style={{ display: "inline-flex", alignItems: "center", gap: theme.space[1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -218,7 +224,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
         onClick={onSelect}
         style={{
           fontSize:     theme.size.sm,
-          padding:      "3px 10px",
+          padding:      `2px ${theme.space[2]}px`,
           borderRadius: theme.radius.pill,
           border:       `1px solid ${active ? theme.blue : theme.border.default}`,
           background:   active ? theme.blue : "transparent",
@@ -247,7 +253,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
             display:        "flex",
             alignItems:     "center",
             justifyContent: "center",
-            fontSize:       10,
+            fontSize:       theme.size.xs,
             padding:        0,
             flexShrink:     0,
           }}
@@ -275,6 +281,7 @@ export default function RadarPresetBar({
 }) {
   const [internalSaveModal, setInternalSaveModal] = useState(false);
   const [editPreset, setEditPreset]               = useState(null);
+  const [selectHovered, setSelectHovered]         = useState(false);
 
   const saveModal = saveModalOpen || internalSaveModal;
   function closeSaveModal() {
@@ -327,14 +334,17 @@ export default function RadarPresetBar({
                 const p = presets.find(x => x.id === e.target.value);
                 onSelect(p ?? null);
               }}
+              onMouseEnter={() => setSelectHovered(true)}
+              onMouseLeave={() => setSelectHovered(false)}
               style={{
                 fontSize:     theme.size.sm,
-                padding:      "3px 8px",
-                background:   theme.bg.base,
+                padding:      `2px ${theme.space[2]}px`,
+                background:   selectHovered ? "rgba(58,130,246,0.06)" : theme.bg.base,
                 border:       `1px solid ${theme.border.default}`,
                 borderRadius: theme.radius.sm,
                 color:        theme.text.primary,
                 cursor:       "pointer",
+                transition:   "background 0.1s",
               }}
             >
               <option value="">Select preset…</option>
@@ -398,7 +408,7 @@ export default function RadarPresetBar({
 
 const ghostBtnStyle = {
   fontSize:     theme.size.sm,
-  padding:      "3px 10px",
+  padding:      `2px ${theme.space[2]}px`,
   borderRadius: theme.radius.pill,
   border:       `1px solid ${theme.border.default}`,
   background:   "transparent",
@@ -409,7 +419,7 @@ const ghostBtnStyle = {
 
 const cancelBtnStyle = {
   fontSize:     theme.size.sm,
-  padding:      "5px 14px",
+  padding:      `${theme.space[1]}px ${theme.space[3]}px`,
   borderRadius: theme.radius.sm,
   border:       `1px solid ${theme.border.default}`,
   background:   "transparent",
@@ -419,7 +429,7 @@ const cancelBtnStyle = {
 
 const primaryBtnStyle = {
   fontSize:     theme.size.sm,
-  padding:      "5px 14px",
+  padding:      `${theme.space[1]}px ${theme.space[3]}px`,
   borderRadius: theme.radius.sm,
   border:       `1px solid ${theme.blue}`,
   background:   theme.blue,
@@ -429,13 +439,13 @@ const primaryBtnStyle = {
 };
 
 const modalInputStyle = {
-  width:      "100%",
-  padding:    "6px 10px",
-  fontSize:   theme.size.sm,
-  background: theme.bg.base,
-  border:     `1px solid ${theme.border.default}`,
+  width:        "100%",
+  padding:      `${theme.space[1]}px ${theme.space[2]}px`,
+  fontSize:     theme.size.sm,
+  background:   theme.bg.base,
+  border:       `1px solid ${theme.border.default}`,
   borderRadius: theme.radius.sm,
-  color:      theme.text.primary,
-  outline:    "none",
-  boxSizing:  "border-box",
+  color:        theme.text.primary,
+  outline:      "none",
+  boxSizing:    "border-box",
 };

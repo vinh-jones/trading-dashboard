@@ -184,7 +184,7 @@ function ScoreBar({ score }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
-      <div style={{ display: "flex", gap: 2 }}>
+      <div style={{ display: "flex", gap: theme.space[1] }}>
         {Array.from({ length: 10 }, (_, i) => (
           <div
             key={i}
@@ -330,7 +330,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy })
         )}
 
         {/* Expand caret */}
-        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, marginLeft: 4 }}>
+        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, marginLeft: theme.space[1] }}>
           {expanded ? "▲" : "▼"}
         </span>
       </div>
@@ -595,18 +595,21 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
 // ── Filter button ─────────────────────────────────────────────────────────────
 
 function FilterBtn({ label, active, onClick }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <button
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background:   active ? theme.bg.elevated : "transparent",
+        background:   active ? theme.bg.elevated : hovered ? "rgba(58,130,246,0.06)" : "transparent",
         border:       `1px solid ${active ? theme.border.strong : theme.border.default}`,
         borderRadius: theme.radius.sm,
         color:        active ? theme.text.primary : theme.text.muted,
         fontSize:     theme.size.sm,
         fontFamily:   "inherit",
         cursor:       "pointer",
-        padding:      "3px 10px",
+        padding:      `2px ${theme.space[2]}px`,
         fontWeight:   active ? 600 : 400,
         transition:   "all 0.1s",
       }}
@@ -835,12 +838,12 @@ export function RadarTab({ positions = null }) {
         border:       `1px solid ${theme.border.default}`,
         borderRadius: theme.radius.md,
         padding:      `${theme.space[3]}px ${theme.space[4]}px`,
-        marginBottom: theme.space[3],
+        marginBottom: theme.space[4],
       }}>
 
         {/* BB Position filters */}
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[3] }}>
-          <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginRight: 4, flexShrink: 0 }}>
+          <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginRight: theme.space[1], flexShrink: 0 }}>
             BB Position:
           </span>
           <FilterBtn label="All" active={bbFilter === "all"} onClick={() => setBbFilter("all")} />

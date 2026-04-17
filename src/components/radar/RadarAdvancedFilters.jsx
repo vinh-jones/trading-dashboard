@@ -20,10 +20,10 @@ function SectorTooltip({ group, data }) {
       maxWidth:      280,
       pointerEvents: "none",
     }}>
-      <div style={{ fontSize: theme.size.xs, fontWeight: 700, color: theme.text.primary, marginBottom: 4 }}>
+      <div style={{ fontSize: theme.size.xs, fontWeight: 700, color: theme.text.primary, marginBottom: theme.space[1] }}>
         {group}
       </div>
-      <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginBottom: 4 }}>
+      <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginBottom: theme.space[1] }}>
         <span style={{ color: theme.text.subtle }}>Sectors: </span>
         {data.sectors.join(', ')}
       </div>
@@ -51,7 +51,7 @@ function SectorBtn({ group, active, onClick }) {
         onMouseLeave={() => setHovered(false)}
         style={{
           fontSize:     theme.size.xs,
-          padding:      "3px 10px",
+          padding:      `2px ${theme.space[2]}px`,
           borderRadius: theme.radius.pill,
           border:       `1px solid ${active ? theme.blue : theme.border.default}`,
           background:   active ? theme.blue : "transparent",
@@ -80,6 +80,8 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
 
   const [minStr, setMinStr] = useState(() => storedToDisplay(filters[minField]));
   const [maxStr, setMaxStr] = useState(() => storedToDisplay(filters[maxField]));
+  const [minFocused, setMinFocused] = useState(false);
+  const [maxFocused, setMaxFocused] = useState(false);
 
   // Sync display state when filters change externally (preset load, clear all)
   useEffect(() => { setMinStr(storedToDisplay(filters[minField])); }, [filters[minField]]);
@@ -100,7 +102,7 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
 
   return (
     <div>
-      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 4 }}>
+      <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>
         {label}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: theme.space[1] }}>
@@ -109,7 +111,9 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
           value={minStr}
           onChange={e => handleChange(e.target.value, minField, setMinStr)}
           placeholder={placeholderMin}
-          style={inputStyle}
+          style={{ ...inputStyle, border: `1px solid ${minFocused ? theme.blue : theme.border.default}` }}
+          onFocus={() => setMinFocused(true)}
+          onBlur={() => setMinFocused(false)}
         />
         <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>–</span>
         <input
@@ -117,7 +121,9 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
           value={maxStr}
           onChange={e => handleChange(e.target.value, maxField, setMaxStr)}
           placeholder={placeholderMax}
-          style={inputStyle}
+          style={{ ...inputStyle, border: `1px solid ${maxFocused ? theme.blue : theme.border.default}` }}
+          onFocus={() => setMaxFocused(true)}
+          onBlur={() => setMaxFocused(false)}
         />
       </div>
     </div>
@@ -126,7 +132,7 @@ function RangeInput({ label, minField, maxField, filters, onChange, placeholderM
 
 const inputStyle = {
   width:        56,
-  padding:      "3px 6px",
+  padding:      `${theme.space[1]}px ${theme.space[1]}px`,
   fontSize:     theme.size.xs,
   background:   theme.bg.base,
   border:       `1px solid ${theme.border.default}`,
@@ -148,6 +154,7 @@ export default function RadarAdvancedFilters({
   bare          = false,
 }) {
   const groupNames = Object.keys(SECTOR_GROUPS);
+  const [earningsFocused, setEarningsFocused] = useState(false);
 
   function toggleSectorGroup(row, group) {
     const current = filters[row] ?? [];
@@ -241,10 +248,10 @@ export default function RadarAdvancedFilters({
       {/* ── Ownership + Earnings ── */}
       <div style={{ display: "flex", gap: theme.space[6], flexWrap: "wrap", marginBottom: hideFooter ? 0 : theme.space[3] }}>
         <div>
-          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 6 }}>Ownership</div>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>Ownership</div>
           <div style={{ display: "flex", gap: theme.space[3] }}>
             {[['all', 'All'], ['not_held', 'Not held'], ['held', 'Held']].map(([val, label]) => (
-              <label key={val} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: theme.size.sm, color: theme.text.muted, cursor: "pointer" }}>
+              <label key={val} style={{ display: "flex", alignItems: "center", gap: theme.space[1], fontSize: theme.size.sm, color: theme.text.muted, cursor: "pointer" }}>
                 <input
                   type="radio"
                   name="radar-ownership"
@@ -260,7 +267,7 @@ export default function RadarAdvancedFilters({
         </div>
 
         <div>
-          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 6 }}>Min days to earnings</div>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>Min days to earnings</div>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
             <input
               type="text"
@@ -270,7 +277,9 @@ export default function RadarAdvancedFilters({
                 onChange('earnings_days_min', isNaN(n) ? null : n);
               }}
               placeholder="e.g. 21"
-              style={{ ...inputStyle, width: 64 }}
+              style={{ ...inputStyle, width: 64, border: `1px solid ${earningsFocused ? theme.blue : theme.border.default}` }}
+              onFocus={() => setEarningsFocused(true)}
+              onBlur={() => setEarningsFocused(false)}
             />
             <span style={{ fontSize: theme.size.xs, color: theme.text.faint }}>blank = no filter</span>
           </div>
@@ -290,7 +299,7 @@ export default function RadarAdvancedFilters({
 
 const ghostBtnStyle = {
   fontSize:     theme.size.sm,
-  padding:      "4px 12px",
+  padding:      `${theme.space[1]}px ${theme.space[3]}px`,
   borderRadius: theme.radius.sm,
   border:       `1px solid ${theme.border.default}`,
   background:   "transparent",
