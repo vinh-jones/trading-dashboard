@@ -36,6 +36,7 @@ export function ReviewView({
   selectedDuration, setSelectedDuration,
   selectedDay, setSelectedDay,
   captureRate, setCaptureRate,
+  journalIntent, onJournalIntentConsumed,
 }) {
   const active = isValidSubView("review", subView) ? subView : "monthly";
 
@@ -70,7 +71,12 @@ export function ReviewView({
           selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
         />
       )}
-      {active === "journal" && <JournalTab />}
+      {active === "journal" && (
+        <JournalTab
+          journalIntent={journalIntent}
+          onJournalIntentConsumed={onJournalIntentConsumed}
+        />
+      )}
     </div>
   );
 }

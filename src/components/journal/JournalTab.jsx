@@ -16,7 +16,7 @@ import { JournalField } from "./JournalField";
 import { JournalAutoTextarea } from "./JournalAutoTextarea";
 import { theme } from "../../lib/theme";
 
-export function JournalTab() {
+export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
   const { trades, positions, account } = useData();
 
   // Feed
@@ -31,6 +31,14 @@ export function JournalTab() {
 
   // Form
   const [entryType,      setEntryType]      = useState("trade_note");
+
+  // Consume an incoming intent exactly once (fired by the command palette).
+  useEffect(() => {
+    if (journalIntent === "eod_update") {
+      setEntryType("eod_update");
+      onJournalIntentConsumed?.();
+    }
+  }, [journalIntent, onJournalIntentConsumed]);
   const [linkedPosition, setLinkedPosition] = useState(null);
 
   // Inline edit state (replaces right-panel edit mode)
