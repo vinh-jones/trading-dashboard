@@ -6,6 +6,7 @@ import { formatExpiry } from "../../lib/format";
 import { JOURNAL_BADGE } from "./journalConstants";
 import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate } from "./journalHelpers";
 import { theme } from "../../lib/theme";
+import { useWindowWidth } from "../../hooks/useWindowWidth";
 
 export function JournalEntryCard({ entry, onEdit, onDelete }) {
   const { trades, positions, account } = useData();
@@ -13,6 +14,8 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
   const [cardHovered, setCardHovered] = useState(false);
   const [editHovered, setEditHovered] = useState(false);
   const [deleteHovered, setDeleteHovered] = useState(false);
+  const [actionsHovered, setActionsHovered] = useState(false);
+  const isMobile = useWindowWidth() < 600;
 
   // Flatten open positions (CSPs, CCs, standalone LEAPS) into normalized trade objects
   // so they can be matched against journal entries the same way as closed trades.
@@ -324,7 +327,11 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
   // ── Legacy EOD card (no metadata) and all non-EOD cards ───────────────────
   return (
     /* Q2: marginBottom 12 → theme.space[3] */
-    <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: theme.space[3] }}>
+    <div
+      onMouseEnter={() => { setActionsHovered(true); }}
+      onMouseLeave={() => { setActionsHovered(false); }}
+      style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: theme.space[3] }}
+    >
       {/* Header row: badge (+ mood for EOD) and date */}
       {/* Q2: marginBottom 8 → theme.space[2]; gap 8 → theme.space[2] */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[2] }}>
@@ -448,7 +455,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
       )}
 
       {/* Actions — Q2: gap 12 → theme.space[3]; Q5: hover states on Edit/Delete */}
-      <div style={{ display: "flex", gap: theme.space[3], justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", gap: theme.space[3], justifyContent: "flex-end", opacity: isMobile || actionsHovered ? 1 : 0, transition: "opacity 0.15s" }}>
         <button
           onClick={() => onEdit(entry)}
           onMouseEnter={() => setEditHovered(true)}

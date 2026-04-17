@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { JOURNAL_BADGE } from "./journalConstants";
 import { journalSinceDate, fmtEntryDate } from "./journalHelpers";
 import { JournalEntryCard } from "./JournalEntryCard";
+import { EODBand } from "./EODBand";
 import { JournalInlineEditForm } from "./JournalInlineEditForm";
 import { JournalQuickAdd } from "./JournalQuickAdd";
 import { computeEodMetadata } from "../../lib/trading";
@@ -264,23 +265,31 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                     }}>
                       {new Date(day.date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", weekday: "long" })}
                     </div>
-                    {day.entries.map(entry =>
-                      entry.id === inlineEditId
-                        ? <JournalInlineEditForm
-                            key={entry.id}
-                            entry={entry}
-                            title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
-                            body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
-                            tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
-                            source={inlineSource}         onSourceChange={setInlineSource}
-                            mood={inlineMood}             onMoodChange={setInlineMood}
-                            onSave={() => handleInlineSave(entry.entry_type, entry)}
-                            onCancel={handleInlineCancel}
-                            saving={inlineSaving}
-                            error={inlineError}
-                          />
-                        : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
-                    )}
+                    {(() => {
+                      const eodEntries   = day.entries.filter(e => e.entry_type === "eod_update");
+                      const otherEntries = day.entries.filter(e => e.entry_type !== "eod_update");
+
+                      const renderCard = (entry) =>
+                        entry.id === inlineEditId
+                          ? <JournalInlineEditForm
+                              key={entry.id}
+                              entry={entry}
+                              title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
+                              body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
+                              tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
+                              source={inlineSource}         onSourceChange={setInlineSource}
+                              mood={inlineMood}             onMoodChange={setInlineMood}
+                              onSave={() => handleInlineSave(entry.entry_type, entry)}
+                              onCancel={handleInlineCancel}
+                              saving={inlineSaving}
+                              error={inlineError}
+                            />
+                          : entry.entry_type === "eod_update"
+                            ? <EODBand key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
+                            : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />;
+
+                      return [...eodEntries.map(renderCard), ...otherEntries.map(renderCard)];
+                    })()}
                   </div>
                 ))}
               </div>
