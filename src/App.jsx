@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 // Static JSON fallbacks — replaced by /api/data on mount in prod (see useEffect below).
 const tradesData    = { trades: [] };
 const positionsData = { open_csps: [], assigned_shares: [], open_leaps: [], open_spreads: [] };
@@ -16,6 +16,9 @@ import { FocusTab } from "./components/FocusTab";
 import { ExploreView } from "./components/ExploreView";
 import { ReviewView } from "./components/ReviewView";
 import { useFocusItems } from "./hooks/useFocusItems";
+import { useHotkey } from "./hooks/useHotkey";
+import { buildPaletteItems } from "./lib/paletteItems";
+import { CommandPalette } from "./components/palette/CommandPalette";
 
 export default function TradeDashboard() {
   const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
@@ -50,6 +53,17 @@ export default function TradeDashboard() {
   // ── Focus pipeline — hoisted so header / nav / tab all read from one source ──
   const focus = useFocusItems({ positions, account });
 
+  // ── Command palette state ────────────────────────────────────────────────
+  const [paletteOpen,   setPaletteOpen]   = useState(false);
+  const [journalIntent, setJournalIntent] = useState(null);
+
+  useHotkey("mod+k", (e) => {
+    e.preventDefault();
+    setPaletteOpen(true);
+  });
+
+  const paletteItems = useMemo(() => buildPaletteItems({ positions }), [positions]);
+
   // ── Mode + sub-view state ─────────────────────────────────────────────────
   // Focus is the default home mode per spec.
   const [mode, setModeRaw]       = useState("focus");
@@ -64,6 +78,35 @@ export default function TradeDashboard() {
   function setSubView(next) {
     if (!isValidSubView(mode, next)) return;
     setSubViewRaw(next);
+  }
+
+  function handlePaletteSelect(item) {
+    setPaletteOpen(false);
+    switch (item.action) {
+      case "open_journal":
+        setMode("review");
+        setSubViewRaw("journal");
+        return;
+      case "new_eod_entry":
+        setMode("review");
+        setSubViewRaw("journal");
+        setJournalIntent("eod_update");
+        return;
+      case "open_radar":
+        setMode("explore");
+        setSubViewRaw("radar");
+        return;
+      case "open_macro":
+        setMode("explore");
+        setSubViewRaw("macro");
+        return;
+      case "open_position":
+        setMode("explore");
+        setSubViewRaw("positions");
+        return;
+      default:
+        return;
+    }
   }
 
   // ── Filter state — preserved from prior shell ─────────────────────────────
@@ -104,7 +147,11 @@ export default function TradeDashboard() {
             <span style={{ fontSize: theme.size.xs, color: theme.border.strong }}>v{VERSION}</span>
           </div>
 
-          <PersistentHeader captureRate={captureRate} p1Count={focus.p1Count} />
+          <PersistentHeader
+            captureRate={captureRate}
+            p1Count={focus.p1Count}
+            onOpenPalette={() => setPaletteOpen(true)}
+          />
           <ModeNav mode={mode} onChange={setMode} p1Count={focus.p1Count} />
 
           {showFilterChips && (
@@ -181,10 +228,18 @@ export default function TradeDashboard() {
               selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
               selectedDay={selectedDay}           setSelectedDay={setSelectedDay}
               captureRate={captureRate}           setCaptureRate={setCaptureRate}
+              journalIntent={journalIntent}
+              onJournalIntentConsumed={() => setJournalIntent(null)}
             />
           )}
         </div>
       </div>
+      <CommandPalette
+        open={paletteOpen}
+        items={paletteItems}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={handlePaletteSelect}
+      />
     </DataContext.Provider>
   );
 }
