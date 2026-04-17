@@ -60,6 +60,18 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
   const [saving,         setSaving]         = useState(false);
   const [formMood,       setFormMood]       = useState("🟡");
 
+  // Q5: focus states for filter selects
+  const [focusedFilter, setFocusedFilter] = useState(null);
+
+  // Q5: hover state for Cancel button
+  const [cancelHovered, setCancelHovered] = useState(false);
+
+  // Q5: hover state for entry type buttons
+  const [hoveredType, setHoveredType] = useState(null);
+
+  // Q5: hover state for mood buttons
+  const [hoveredMood, setHoveredMood] = useState(null);
+
   // Tickers seen in the feed (for filter dropdown)
   const feedTickers = useMemo(
     () => [...new Set(entries.map(e => e.ticker).filter(Boolean))].sort(),
@@ -392,35 +404,46 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
     </JournalField>
   );
 
-  const filterSelectSt = {
-    background: theme.bg.base, border: `1px solid ${theme.border.default}`, color: theme.text.secondary,
+  const filterSelectSt = (id) => ({
+    background: theme.bg.base, border: `1px solid ${focusedFilter === id ? theme.blue : theme.border.default}`, color: theme.text.secondary,
     borderRadius: theme.radius.sm, padding: "4px 8px", fontFamily: "inherit", fontSize: theme.size.sm,
-  };
+    outline: "none",
+  });
 
   return (
-    <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+    /* Q2: gap 20 → theme.space[5] */
+    <div style={{ display: "flex", gap: theme.space[5], flexWrap: "wrap", alignItems: "flex-start" }}>
 
       {/* ── LEFT: Activity Feed ──────────────────────────────────────────── */}
       <div style={{ flex: "1 1 420px", minWidth: 0 }}>
 
         {/* Filter bar */}
+        {/* Q2: gap 8 → theme.space[2]; padding "10px 12px" → token; marginBottom 16 → theme.space[4] */}
         <div style={{
-          display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
-          padding: "10px 12px", background: theme.bg.surface, borderRadius: theme.radius.md,
-          border: `1px solid ${theme.border.default}`, marginBottom: 16,
+          display: "flex", gap: theme.space[2], flexWrap: "wrap", alignItems: "center",
+          padding: `${theme.space[2]}px ${theme.space[3]}px`, background: theme.bg.surface, borderRadius: theme.radius.md,
+          border: `1px solid ${theme.border.default}`, marginBottom: theme.space[4],
         }}>
-          <span style={{ color: theme.text.subtle, fontSize: 12, marginRight: 4 }}>Filter:</span>
-          <select style={filterSelectSt} value={filterType} onChange={e => setFilterType(e.target.value)}>
+          {/* Q2: fontSize 12 → theme.size.sm; marginRight 4 → theme.space[1] */}
+          <span style={{ color: theme.text.subtle, fontSize: theme.size.sm, marginRight: theme.space[1] }}>Filter:</span>
+          {/* Q5: focus rings on filter selects */}
+          <select style={filterSelectSt("type")} value={filterType}
+            onFocus={() => setFocusedFilter("type")} onBlur={() => setFocusedFilter(null)}
+            onChange={e => setFilterType(e.target.value)}>
             <option value="all">All types</option>
             <option value="trade_note">Trade Notes</option>
             <option value="eod_update">EOD Updates</option>
             <option value="position_note">Position Notes</option>
           </select>
-          <select style={filterSelectSt} value={filterTicker} onChange={e => setFilterTicker(e.target.value)}>
+          <select style={filterSelectSt("ticker")} value={filterTicker}
+            onFocus={() => setFocusedFilter("ticker")} onBlur={() => setFocusedFilter(null)}
+            onChange={e => setFilterTicker(e.target.value)}>
             <option value="all">All tickers</option>
             {feedTickers.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select style={filterSelectSt} value={filterSince} onChange={e => setFilterSince(e.target.value)}>
+          <select style={filterSelectSt("since")} value={filterSince}
+            onFocus={() => setFocusedFilter("since")} onBlur={() => setFocusedFilter(null)}
+            onChange={e => setFilterSince(e.target.value)}>
             <option value="this_month">This month</option>
             <option value="last_30">Last 30 days</option>
             <option value="last_90">Last 90 days</option>
@@ -429,16 +452,19 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
         </div>
 
         {/* Feed content */}
+        {/* Q2/Q3: fontSize 13 → theme.size.sm */}
         {loading && (
-          <div style={{ color: theme.text.muted, fontSize: 13, padding: "20px 0" }}>Loading...</div>
+          <div style={{ color: theme.text.muted, fontSize: theme.size.sm, padding: "20px 0" }}>Loading...</div>
         )}
+        {/* Q2: fontSize 13 → theme.size.sm; padding "10px 12px" → token; marginBottom 12 → theme.space[3] */}
         {feedError && (
-          <div style={{ color: theme.red, fontSize: 13, padding: "10px 12px", background: theme.bg.base, borderRadius: theme.radius.sm, marginBottom: 12 }}>
+          <div style={{ color: theme.red, fontSize: theme.size.sm, padding: `${theme.space[2]}px ${theme.space[3]}px`, background: theme.bg.base, borderRadius: theme.radius.sm, marginBottom: theme.space[3] }}>
             Error loading feed: {feedError}
           </div>
         )}
+        {/* Q2/Q3: fontSize 13 → theme.size.sm */}
         {!loading && !feedError && entries.length === 0 && (
-          <div style={{ color: theme.text.muted, fontSize: 13, padding: "40px 0", textAlign: "center", lineHeight: 1.9 }}>
+          <div style={{ color: theme.text.muted, fontSize: theme.size.sm, padding: "40px 0", textAlign: "center", lineHeight: 1.9 }}>
             No journal entries yet.<br />
             Use the form to add your first trade note or EOD update.
           </div>
@@ -464,26 +490,32 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
 
       {/* ── RIGHT: New Entry Form ────────────────────────────────────────── */}
       <div style={{ flex: "0 0 340px", minWidth: 300 }}>
-        <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: 16 }}>
+        {/* Q2: padding 16 → theme.space[4] */}
+        <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: theme.space[4] }}>
 
           {/* Form header */}
-          <div style={{ marginBottom: 14, fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary }}>
+          {/* Q2: marginBottom 14 → theme.space[3] */}
+          <div style={{ marginBottom: theme.space[3], fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary }}>
             New Entry
           </div>
 
           {/* Entry type selector */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+          {/* Q2: gap 6 → theme.space[1]; marginBottom 16 → theme.space[4]; fontSize 12 → theme.size.sm; padding "7px 0" → token; borderRadius 4 → theme.radius.sm */}
+          <div style={{ display: "flex", gap: theme.space[1], marginBottom: theme.space[4] }}>
             {JOURNAL_ENTRY_TYPES.map(({ key, label, activeColor, activeBg }) => {
               const active = entryType === key;
+              const hovered = hoveredType === key;
               return (
                 <button
                   key={key}
                   onClick={() => { resetForm(); setEntryType(key); }}
+                  onMouseEnter={() => setHoveredType(key)}
+                  onMouseLeave={() => setHoveredType(null)}
                   style={{
-                    flex: 1, padding: "7px 0", fontSize: 12, fontFamily: "inherit",
-                    cursor: "pointer", borderRadius: 4,
+                    flex: 1, padding: `${theme.space[2]}px 0`, fontSize: theme.size.sm, fontFamily: "inherit",
+                    cursor: "pointer", borderRadius: theme.radius.sm,
                     fontWeight: active ? 600 : 400,
-                    background: active ? activeBg : "transparent",
+                    background: active ? activeBg : hovered ? "rgba(58,130,246,0.06)" : "transparent",
                     color: active ? activeColor : theme.text.muted,
                     border: `1px solid ${active ? activeColor : theme.border.strong}`,
                   }}
@@ -518,7 +550,8 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                 />
               </JournalField>
               <JournalField label="Source">
-                <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+                {/* Q2: gap 16 → theme.space[4]; fontSize 13 → theme.size.sm */}
+                <div style={{ display: "flex", gap: theme.space[4], fontSize: theme.size.sm }}>
                   {["Ryan", "Self"].map(s => (
                     <label key={s} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: theme.text.secondary }}>
                       <input type="radio" name="journal-source" value={s} checked={formSource === s} onChange={() => setFormSource(s)} style={{ accentColor: theme.blue }} />
@@ -547,22 +580,26 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                 <input type="date" style={JOURNAL_INPUT_ST} value={formDate} onChange={e => setFormDate(e.target.value)} />
               </JournalField>
               <JournalField label="Mood">
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: theme.space[1] }}>
                   {MOODS.map(m => {
                     const active = formMood === m.emoji;
+                    const hovered = hoveredMood === m.emoji;
                     return (
                       <button
                         key={m.emoji}
                         onClick={() => setFormMood(m.emoji)}
+                        onMouseEnter={() => setHoveredMood(m.emoji)}
+                        onMouseLeave={() => setHoveredMood(null)}
                         style={{
-                          flex: 1, padding: "8px 2px", borderRadius: theme.radius.sm, cursor: "pointer",
+                          flex: 1, padding: `${theme.space[2]}px 2px`, borderRadius: theme.radius.sm, cursor: "pointer",
                           border: `2px solid ${active ? m.activeBorder : theme.border.strong}`,
-                          background: active ? m.activeBg : "transparent",
-                          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                          background: active ? m.activeBg : hovered ? "rgba(58,130,246,0.06)" : "transparent",
+                          display: "flex", flexDirection: "column", alignItems: "center", gap: theme.space[1],
                           fontFamily: "inherit",
                         }}
                       >
-                        <span style={{ fontSize: 20, lineHeight: 1 }}>{m.emoji}</span>
+                        {/* Q3: fontSize 20 → theme.size.xl */}
+                        <span style={{ fontSize: theme.size.xl, lineHeight: 1 }}>{m.emoji}</span>
                         <span style={{ fontSize: theme.size.xs, color: active ? m.activeBorder : theme.text.subtle }}>{m.label}</span>
                       </button>
                     );
@@ -571,7 +608,8 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
               </JournalField>
 
               {/* Snapshot values — auto-populated from synced account data, read-only */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+              {/* Q2: gap 8 → theme.space[2]; marginBottom 14 → theme.space[3] */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: theme.space[2], marginBottom: theme.space[3] }}>
                 {[
                   { label: "Free Cash %", value: eodAutoFreeCash != null ? `${eodAutoFreeCash}%` : "—" },
                   { label: "VIX",         value: eodAutoVix      != null ? eodAutoVix            : "—" },
@@ -584,14 +622,16 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                 ))}</div>
 
               {/* Auto-populated preview panel */}
-              <div style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
+              {/* Q2: padding "10px 12px" → token; marginBottom 14 → theme.space[3]; fontSize 12 → theme.size.sm */}
+              <div style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm, padding: `${theme.space[2]}px ${theme.space[3]}px`, marginBottom: theme.space[3], fontSize: theme.size.sm }}>
                 <div style={{ color: theme.text.subtle, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8, fontSize: theme.size.xs }}>
                   Preview (auto-populated)
                 </div>
 
                 {/* Deployment status */}
+                {/* Q2: marginBottom 6 → theme.space[1] */}
                 {eodDeploymentPreview ? (
-                  <div style={{ marginBottom: 6 }}>
+                  <div style={{ marginBottom: theme.space[1] }}>
                     <span style={{ color: theme.text.muted }}>Deployment: </span>
                     <span style={{
                       color: eodDeploymentPreview.status === "above" ? theme.amber
@@ -607,11 +647,11 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                     <span style={{ color: theme.text.subtle }}> · Floor: {eodDeploymentPreview.band.floorPct * 100}–{eodDeploymentPreview.band.ceilingPct * 100}%</span>
                   </div>
                 ) : (
-                  <div style={{ color: theme.text.subtle, marginBottom: 6 }}>Deployment: — (enter VIX + Free Cash)</div>
+                  <div style={{ color: theme.text.subtle, marginBottom: theme.space[1] }}>Deployment: — (enter VIX + Free Cash)</div>
                 )}
 
                 {/* MTD Realized */}
-                <div style={{ marginBottom: 6 }}>
+                <div style={{ marginBottom: theme.space[1] }}>
                   <span style={{ color: theme.text.muted }}>MTD Realized: </span>
                   <span style={{ color: theme.text.secondary }}>
                     {account?.month_to_date_premium != null
@@ -622,7 +662,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
 
                 {/* Pipeline Est (60%) */}
                 {eodAutoPipeline > 0 && (
-                  <div style={{ marginBottom: 6 }}>
+                  <div style={{ marginBottom: theme.space[1] }}>
                     <span style={{ color: theme.text.muted }}>Pipeline Est. (60%): </span>
                     <span style={{ color: theme.text.secondary }}>${Math.round(eodAutoPipeline * 0.60).toLocaleString()}</span>
                   </div>
@@ -679,17 +719,21 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
           )}
 
           {/* Save error */}
+          {/* Q2: fontSize 12 → theme.size.sm; marginBottom 10 → theme.space[2]; padding "8px 10px" → token */}
           {saveError && (
-            <div style={{ color: theme.red, fontSize: 12, marginBottom: 10, padding: "8px 10px", background: theme.bg.base, borderRadius: theme.radius.sm }}>
+            <div style={{ color: theme.red, fontSize: theme.size.sm, marginBottom: theme.space[2], padding: `${theme.space[2]}px ${theme.space[2]}px`, background: theme.bg.base, borderRadius: theme.radius.sm }}>
               {saveError}
             </div>
           )}
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          {/* Q2: gap 8 → theme.space[2]; Cancel padding "6px 12px" → token; Save padding "6px 16px" → token; Q5: Cancel hover */}
+          <div style={{ display: "flex", gap: theme.space[2], justifyContent: "flex-end" }}>
             <button
               onClick={resetForm}
-              style={{ background: "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 12px" }}
+              onMouseEnter={() => setCancelHovered(true)}
+              onMouseLeave={() => setCancelHovered(false)}
+              style={{ background: cancelHovered ? "rgba(58,130,246,0.06)" : "transparent", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.md, fontFamily: "inherit", padding: `${theme.space[1]}px ${theme.space[3]}px`, borderRadius: theme.radius.sm }}
             >
               Cancel
             </button>
@@ -699,7 +743,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
               style={{
                 background: theme.green, border: "none", color: theme.text.primary,
                 cursor: saving ? "not-allowed" : "pointer",
-                fontSize: theme.size.md, fontFamily: "inherit", padding: "6px 16px",
+                fontSize: theme.size.md, fontFamily: "inherit", padding: `${theme.space[1]}px ${theme.space[4]}px`,
                 borderRadius: theme.radius.sm, fontWeight: 500, opacity: saving ? 0.7 : 1,
               }}
             >

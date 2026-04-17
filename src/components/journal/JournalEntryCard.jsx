@@ -10,6 +10,9 @@ import { theme } from "../../lib/theme";
 export function JournalEntryCard({ entry, onEdit, onDelete }) {
   const { trades, positions, account } = useData();
   const [expanded, setExpanded] = useState(false);
+  const [cardHovered, setCardHovered] = useState(false);
+  const [editHovered, setEditHovered] = useState(false);
+  const [deleteHovered, setDeleteHovered] = useState(false);
 
   // Flatten open positions (CSPs, CCs, standalone LEAPS) into normalized trade objects
   // so they can be matched against journal entries the same way as closed trades.
@@ -71,33 +74,48 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
       : "";
 
     // Shared label style for the metadata grid
-    const CELL_LBL = { color: theme.text.subtle, textTransform: "uppercase", letterSpacing: "0.5px", fontSize: theme.size.xs, marginBottom: 5 };
+    // Q2: CELL_LBL marginBottom 5 → theme.space[2] (8px, nearest grid point; 5px off-grid)
+    const CELL_LBL = { color: theme.text.subtle, textTransform: "uppercase", letterSpacing: "0.5px", fontSize: theme.size.xs, marginBottom: theme.space[2] };
     const CELL_VAL = { fontSize: theme.size.md, fontWeight: 600, color: theme.text.primary };
-    const SEC_HDR  = { color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.8px", fontSize: theme.size.xs, fontWeight: 700, marginBottom: 10 };
+    // Q2: SEC_HDR marginBottom 10 → theme.space[2]
+    const SEC_HDR  = { color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.8px", fontSize: theme.size.xs, fontWeight: 700, marginBottom: theme.space[2] };
 
     return (
-      <div style={{ marginBottom: 12 }}>
+      /* Q2: marginBottom 12 → theme.space[3] */
+      <div style={{ marginBottom: theme.space[3] }}>
         {/* ── Collapsed card ── */}
+        {/* Q5: hover tint on collapsed card; Q2: padding 16 → theme.space[4] */}
         <div
           onClick={() => setExpanded(prev => !prev)}
-          style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: expanded ? `${theme.radius.md}px ${theme.radius.md}px 0 0` : theme.radius.md, padding: 16, cursor: "pointer", userSelect: "none" }}
+          onMouseEnter={() => setCardHovered(true)}
+          onMouseLeave={() => setCardHovered(false)}
+          style={{
+            background: cardHovered && !expanded ? "rgba(58,130,246,0.06)" : theme.bg.surface,
+            border: `1px solid ${theme.border.default}`,
+            borderRadius: expanded ? `${theme.radius.md}px ${theme.radius.md}px 0 0` : theme.radius.md,
+            padding: theme.space[4], cursor: "pointer", userSelect: "none",
+          }}
         >
           {/* Header: badge + mood · date · arrow */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
+          {/* Q2: marginBottom 6 → theme.space[1]; gap 8 → theme.space[2] */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[1] }}>
+            <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
+              {/* Q2/Q3: fontSize 11 → theme.size.xs */}
+              <span style={{ color: badge.color, fontSize: theme.size.xs, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
                 {badge.label}
               </span>
               {entry.mood && <span style={{ fontSize: theme.size.lg, lineHeight: 1 }}>{entry.mood}</span>}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Q2: gap 10 → theme.space[2] */}
+            <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
               <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{fmtEntryDate(entry.entry_date)}</span>
               <span style={{ color: theme.text.subtle, fontSize: theme.size.lg, lineHeight: 1, width: 14, textAlign: "center" }}>{expanded ? "↑" : "↓"}</span>
             </div>
           </div>
 
           {/* Stinger line */}
-          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: 8, display: "flex", flexWrap: "wrap", gap: "0 6px" }}>
+          {/* Q2: marginBottom 8 → theme.space[2]; gap 6 → theme.space[1] */}
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: theme.space[2], display: "flex", flexWrap: "wrap", gap: `0 ${theme.space[1]}px` }}>
             {md.vix != null && <span>VIX {md.vix}</span>}
             {md.free_cash_pct != null && (
               <>
@@ -122,7 +140,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
             )}
           </div>
 
-          <div style={{ borderTop: `1px solid ${theme.border.default}`, marginBottom: expanded ? 0 : 10 }} />
+          <div style={{ borderTop: `1px solid ${theme.border.default}`, marginBottom: expanded ? 0 : theme.space[2] }} />
 
           {/* Body preview — only when collapsed */}
           {!expanded && (
@@ -134,10 +152,11 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
 
         {/* ── Expanded detail view ── */}
         {expanded && (
-          <div style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderTop: "none", borderRadius: `0 0 ${theme.radius.md}px ${theme.radius.md}px`, padding: "16px 16px 12px" }}>
+          /* Q2: padding "16px 16px 12px" → token; gap "18px 20px" → token; marginBottom 20 → theme.space[5] */
+          <div style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderTop: "none", borderRadius: `0 0 ${theme.radius.md}px ${theme.radius.md}px`, padding: `${theme.space[4]}px ${theme.space[4]}px ${theme.space[3]}px` }}>
 
             {/* ── Section A: Metadata grid ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px 20px", marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: `${theme.space[4]}px ${theme.space[5]}px`, marginBottom: theme.space[5] }}>
               <div>
                 <div style={CELL_LBL}>Free Cash</div>
                 <div style={CELL_VAL}>{md.free_cash_pct != null ? `${md.free_cash_pct}%` : "—"}</div>
@@ -173,8 +192,9 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
             </div>
 
             {/* Monthly targets with progress bars */}
+            {/* Q2: marginBottom 20 → theme.space[5]; paddingBottom 16 → theme.space[4] */}
             {account?.monthly_targets && (
-              <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${theme.border.default}` }}>
+              <div style={{ marginBottom: theme.space[5], paddingBottom: theme.space[4], borderBottom: `1px solid ${theme.border.default}` }}>
                 <div style={SEC_HDR}>Monthly Targets</div>
                 {[
                   { label: "Baseline", target: account.monthly_targets.baseline, color: "#3fb950" },
@@ -184,7 +204,8 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
                   const pctStr = md.mtd_realized != null ? pct.toFixed(1) + "%" : "—";
                   const barColor = pct >= 100 ? color : color + "99";
                   return (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    /* Q2: gap 10 → theme.space[2]; marginBottom 6 → theme.space[1] */
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: theme.space[2], marginBottom: theme.space[1] }}>
                       <span style={{ color: theme.text.muted, fontSize: theme.size.sm, width: 56 }}>{label}</span>
                       <span style={{ color: theme.text.secondary, fontSize: theme.size.sm, width: 58 }}>${(target / 1000).toFixed(0)}k</span>
                       <div style={{ flex: 1, height: 5, background: theme.border.default, borderRadius: theme.radius.sm, overflow: "hidden" }}>
@@ -198,15 +219,16 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
             )}
 
             {/* ── Section B: Today's Activity ── */}
-            <div style={{ marginBottom: 20 }}>
+            {/* Q2: marginBottom 20 → theme.space[5]; paddingTop 10 → theme.space[2]; marginBottom 6 → theme.space[1]; gap 8 → theme.space[2] */}
+            <div style={{ marginBottom: theme.space[5] }}>
               <div style={SEC_HDR}>Today's Activity</div>
-              <div style={{ borderTop: `1px solid ${theme.border.default}`, paddingTop: 10 }}>
+              <div style={{ borderTop: `1px solid ${theme.border.default}`, paddingTop: theme.space[2] }}>
                 {(!md.activity?.closed?.length && !md.activity?.opened?.length) ? (
                   <div style={{ color: theme.text.subtle, fontStyle: "italic", fontSize: theme.size.sm }}>No trades on this date</div>
                 ) : (
                   <>
                     {(md.activity.closed || []).map((t, i) => (
-                      <div key={i} style={{ marginBottom: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                      <div key={i} style={{ marginBottom: theme.space[1], display: "flex", gap: theme.space[2], flexWrap: "wrap", alignItems: "baseline" }}>
                         <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, textTransform: "uppercase", letterSpacing: "0.4px", minWidth: 44 }}>Closed</span>
                         <span style={{ color: theme.text.primary, fontWeight: 700, fontSize: theme.size.md }}>{t.ticker}</span>
                         <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{t.type} ${t.strike}</span>
@@ -215,7 +237,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
                       </div>
                     ))}
                     {(md.activity.opened || []).map((p, i) => (
-                      <div key={i} style={{ marginBottom: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                      <div key={i} style={{ marginBottom: theme.space[1], display: "flex", gap: theme.space[2], flexWrap: "wrap", alignItems: "baseline" }}>
                         <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, textTransform: "uppercase", letterSpacing: "0.4px", minWidth: 44 }}>Opened</span>
                         <span style={{ color: theme.text.primary, fontWeight: 700, fontSize: theme.size.md }}>{p.ticker}</span>
                         <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{p.type} ${p.strike}</span>
@@ -229,9 +251,10 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
             </div>
 
             {/* ── Section C: Open CSP Snapshot ── */}
-            <div style={{ marginBottom: 20 }}>
+            {/* Q2: marginBottom 20 → theme.space[5]; paddingTop 10 → theme.space[2]; table cell padding "5px 12px 5px 0" → token */}
+            <div style={{ marginBottom: theme.space[5] }}>
               <div style={SEC_HDR}>Open CSP Positions <span style={{ color: theme.text.subtle, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(as of save time)</span></div>
-              <div style={{ borderTop: `1px solid ${theme.border.default}`, paddingTop: 10 }}>
+              <div style={{ borderTop: `1px solid ${theme.border.default}`, paddingTop: theme.space[2] }}>
                 {!md.csp_snapshot?.length ? (
                   <div style={{ color: theme.text.subtle, fontStyle: "italic", fontSize: theme.size.sm }}>No open CSPs at time of save</div>
                 ) : (
@@ -240,21 +263,21 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
                       <thead>
                         <tr>
                           {["Ticker", "Strike", "Expiry", "DTE", "% Left", "Premium", "Capital", "ROI"].map(h => (
-                            <th key={h} style={{ color: theme.text.subtle, textAlign: "left", padding: "0 12px 8px 0", fontWeight: 600, fontSize: theme.size.xs, whiteSpace: "nowrap" }}>{h}</th>
+                            <th key={h} style={{ color: theme.text.subtle, textAlign: "left", padding: `0 ${theme.space[3]}px ${theme.space[2]}px 0`, fontWeight: 600, fontSize: theme.size.xs, whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {md.csp_snapshot.map((row, i) => (
                           <tr key={i} style={{ borderTop: `1px solid ${theme.bg.surface}` }}>
-                            <td style={{ color: theme.text.primary, fontWeight: 700, padding: "5px 12px 5px 0" }}>{row.ticker}</td>
-                            <td style={{ color: theme.text.secondary, padding: "5px 12px 5px 0" }}>${row.strike}</td>
-                            <td style={{ color: theme.text.muted, padding: "5px 12px 5px 0" }}>{formatExpiry(row.expiry)}</td>
-                            <td style={{ color: theme.text.secondary, padding: "5px 12px 5px 0" }}>{row.dte}d</td>
-                            <td style={{ color: row.dte_pct >= 60 ? theme.green : theme.text.secondary, padding: "5px 12px 5px 0", fontWeight: row.dte_pct >= 60 ? 600 : 400 }}>{row.dte_pct}%</td>
-                            <td style={{ color: theme.green, padding: "5px 12px 5px 0", fontWeight: 500 }}>${row.premium?.toLocaleString()}</td>
-                            <td style={{ color: theme.text.muted, padding: "5px 12px 5px 0" }}>${row.capital?.toLocaleString()}</td>
-                            <td style={{ color: theme.text.secondary, padding: "5px 0 5px 0" }}>{Number(row.roi).toFixed(2)}%</td>
+                            <td style={{ color: theme.text.primary, fontWeight: 700, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0` }}>{row.ticker}</td>
+                            <td style={{ color: theme.text.secondary, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0` }}>${row.strike}</td>
+                            <td style={{ color: theme.text.muted, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0` }}>{formatExpiry(row.expiry)}</td>
+                            <td style={{ color: theme.text.secondary, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0` }}>{row.dte}d</td>
+                            <td style={{ color: row.dte_pct >= 60 ? theme.green : theme.text.secondary, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0`, fontWeight: row.dte_pct >= 60 ? 600 : 400 }}>{row.dte_pct}%</td>
+                            <td style={{ color: theme.green, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0`, fontWeight: 500 }}>${row.premium?.toLocaleString()}</td>
+                            <td style={{ color: theme.text.muted, padding: `${theme.space[1]}px ${theme.space[3]}px ${theme.space[1]}px 0` }}>${row.capital?.toLocaleString()}</td>
+                            <td style={{ color: theme.text.secondary, padding: `${theme.space[1]}px 0 ${theme.space[1]}px 0` }}>{Number(row.roi).toFixed(2)}%</td>
                           </tr>
                         ))}
                       </tbody>
@@ -265,23 +288,29 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
             </div>
 
             {/* Body text */}
+            {/* Q2: marginBottom 16 → theme.space[4]; paddingTop 14 → theme.space[3] */}
             {entry.body && (
-              <div style={{ color: theme.text.secondary, fontSize: theme.size.md, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 16, paddingTop: 14, borderTop: `1px solid ${theme.border.default}` }}>
+              <div style={{ color: theme.text.secondary, fontSize: theme.size.md, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: theme.space[4], paddingTop: theme.space[3], borderTop: `1px solid ${theme.border.default}` }}>
                 {entry.body}
               </div>
             )}
 
             {/* Edit + Delete at bottom */}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            {/* Q2: gap 8 → theme.space[2]; Delete padding "5px 8px" → token; Edit padding "5px 14px" → token; Q5: hover states */}
+            <div style={{ display: "flex", gap: theme.space[2], justifyContent: "flex-end" }}>
               <button
                 onClick={e => { e.stopPropagation(); onDelete(entry.id); }}
-                style={{ background: "none", border: "none", color: theme.text.subtle, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: "5px 8px" }}
+                onMouseEnter={() => setDeleteHovered(true)}
+                onMouseLeave={() => setDeleteHovered(false)}
+                style={{ background: deleteHovered ? "rgba(58,130,246,0.06)" : "none", border: "none", color: theme.text.subtle, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: `${theme.space[1]}px ${theme.space[2]}px`, borderRadius: theme.radius.sm }}
               >
                 Delete
               </button>
               <button
                 onClick={e => { e.stopPropagation(); onEdit(entry); }}
-                style={{ background: "none", border: `1px solid ${theme.border.strong}`, color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: "5px 14px", borderRadius: theme.radius.sm }}
+                onMouseEnter={() => setEditHovered(true)}
+                onMouseLeave={() => setEditHovered(false)}
+                style={{ background: editHovered ? "rgba(58,130,246,0.06)" : "none", border: `1px solid ${theme.border.strong}`, color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: `${theme.space[1]}px ${theme.space[3]}px`, borderRadius: theme.radius.sm }}
               >
                 Edit
               </button>
@@ -294,24 +323,30 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
 
   // ── Legacy EOD card (no metadata) and all non-EOD cards ───────────────────
   return (
-    <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: 12 }}>
+    /* Q2: marginBottom 12 → theme.space[3] */
+    <div style={{ background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: theme.space[3] }}>
       {/* Header row: badge (+ mood for EOD) and date */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: badge.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
+      {/* Q2: marginBottom 8 → theme.space[2]; gap 8 → theme.space[2] */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[2] }}>
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
+          {/* Q2/Q3: fontSize 11 → theme.size.xs */}
+          <span style={{ color: badge.color, fontSize: theme.size.xs, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>
             {badge.label}
           </span>
           {isEOD && entry.mood && (
-            <span style={{ fontSize: 16, lineHeight: 1 }}>{entry.mood}</span>
+            /* Q3: fontSize 16 → theme.size.lg */
+            <span style={{ fontSize: theme.size.lg, lineHeight: 1 }}>{entry.mood}</span>
           )}
         </div>
         <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{fmtEntryDate(entry.entry_date)}</span>
       </div>
 
       {/* Context line: emoji + ticker + title (trade/position notes only) */}
+      {/* Q2/Q3: fontSize 13 → theme.size.sm; marginBottom 8 → theme.space[2]; gap 5 → theme.space[1] */}
       {!isEOD && (entry.ticker || entry.title) && (
-        <div style={{ fontSize: 13, marginBottom: 8, display: "flex", alignItems: "baseline", gap: 5 }}>
-          {cardEmoji && <span style={{ fontSize: 15 }}>{cardEmoji}</span>}
+        <div style={{ fontSize: theme.size.sm, marginBottom: theme.space[2], display: "flex", alignItems: "baseline", gap: theme.space[1] }}>
+          {/* Q3: cardEmoji fontSize 15 → theme.size.md */}
+          {cardEmoji && <span style={{ fontSize: theme.size.md }}>{cardEmoji}</span>}
           {entry.ticker && <span style={{ color: theme.text.primary, fontWeight: 600 }}>{entry.ticker}</span>}
           {entry.ticker && entry.title && <span style={{ color: theme.text.muted }}> · {entry.title}</span>}
           {!entry.ticker && entry.title && <span style={{ color: theme.text.primary, fontWeight: 500 }}>{entry.title}</span>}
@@ -319,6 +354,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
       )}
 
       {/* Trade metadata row */}
+      {/* Q2: marginBottom 8 → theme.space[2]; gap 8 → theme.space[2] */}
       {linkedTrade && (() => {
         const isOpen   = !linkedTrade.closeDate;
         const isCSP    = linkedTrade.type === "CSP";
@@ -360,7 +396,7 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
 
         const dot = <span style={{ color: theme.text.faint }}>·</span>;
         return (
-          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, marginBottom: theme.space[2], display: "flex", gap: theme.space[2], flexWrap: "wrap", alignItems: "center" }}>
             {linkedTrade.strike && <span>${linkedTrade.strike}{strikeSuffix}</span>}
             {linkedTrade.expiry && linkedTrade.expiry !== "—" && <>{dot}<span>exp {linkedTrade.expiry}</span></>}
             {linkedTrade.contracts                               && <>{dot}<span>{linkedTrade.contracts} ct</span></>}
@@ -376,25 +412,36 @@ export function JournalEntryCard({ entry, onEdit, onDelete }) {
       })()}
 
       {/* Body */}
-      <div style={{ color: entry.body ? theme.text.secondary : theme.text.subtle, fontSize: theme.size.md, lineHeight: 1.6, marginBottom: entry.tags?.length ? 10 : 6, whiteSpace: "pre-wrap", fontStyle: entry.body ? "normal" : "italic" }}>
+      <div style={{ color: entry.body ? theme.text.secondary : theme.text.subtle, fontSize: theme.size.md, lineHeight: 1.6, marginBottom: entry.tags?.length ? theme.space[2] : theme.space[1], whiteSpace: "pre-wrap", fontStyle: entry.body ? "normal" : "italic" }}>
         {entry.body || "No notes yet — click Edit to add."}
       </div>
 
       {/* Tags */}
+      {/* Q2: marginBottom 10 → theme.space[2]; marginRight 6 → theme.space[1] */}
       {entry.tags?.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
+        <div style={{ marginBottom: theme.space[2] }}>
           {entry.tags.map(tag => (
-            <span key={tag} style={{ background: theme.bg.elevated, color: theme.blue, fontSize: theme.size.xs, padding: "2px 8px", borderRadius: theme.radius.sm, marginRight: 6, display: "inline-block", marginBottom: 4 }}>
+            <span key={tag} style={{ background: theme.bg.elevated, color: theme.blue, fontSize: theme.size.xs, padding: "2px 8px", borderRadius: theme.radius.sm, marginRight: theme.space[1], display: "inline-block", marginBottom: 4 }}>
               {tag}
             </span>
           ))}
         </div>
       )}
 
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-        <button onClick={() => onEdit(entry)} style={{ background: "none", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: 0 }}>Edit</button>
-        <button onClick={() => onDelete(entry.id)} style={{ background: "none", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: 0 }}>Delete</button>
+      {/* Actions — Q2: gap 12 → theme.space[3]; Q5: hover states on Edit/Delete */}
+      <div style={{ display: "flex", gap: theme.space[3], justifyContent: "flex-end" }}>
+        <button
+          onClick={() => onEdit(entry)}
+          onMouseEnter={() => setEditHovered(true)}
+          onMouseLeave={() => setEditHovered(false)}
+          style={{ background: editHovered ? "rgba(58,130,246,0.06)" : "none", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: "2px 4px", borderRadius: theme.radius.sm }}
+        >Edit</button>
+        <button
+          onClick={() => onDelete(entry.id)}
+          onMouseEnter={() => setDeleteHovered(true)}
+          onMouseLeave={() => setDeleteHovered(false)}
+          style={{ background: deleteHovered ? "rgba(58,130,246,0.06)" : "none", border: "none", color: theme.text.muted, cursor: "pointer", fontSize: theme.size.sm, fontFamily: "inherit", padding: "2px 4px", borderRadius: theme.radius.sm }}
+        >Delete</button>
       </div>
     </div>
   );
