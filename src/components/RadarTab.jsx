@@ -7,6 +7,7 @@ import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./ra
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
 import { getVixBand } from "../lib/vixBand";
+import { useRadarSamples } from "../hooks/useRadarSamples";
 
 // ── Score computation ─────────────────────────────────────────────────────────
 
@@ -308,7 +309,7 @@ function ScoreBar({ score }) {
 
 // ── Compact row ───────────────────────────────────────────────────────────────
 
-function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy, account }) {
+function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank);
@@ -430,6 +431,66 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy, a
           </span>
         )}
 
+        {/* Sample cell */}
+        {(() => {
+          if (!sample) {
+            return (
+              <span style={{
+                fontSize:   theme.size.sm,
+                color:      theme.text.faint,
+                fontFamily: "inherit",
+                marginLeft: theme.space[3],
+                minWidth:   180,
+              }}>—</span>
+            );
+          }
+          if (sample.status === "ok") {
+            const ror = (sample.mid * 100 / sample.collateral) * 100;
+            const collatStr = sample.collateral >= 1000
+              ? `$${(sample.collateral / 1000).toFixed(1)}k`
+              : `$${sample.collateral}`;
+            return (
+              <span style={{
+                fontSize:   theme.size.sm,
+                fontFamily: "inherit",
+                marginLeft: theme.space[3],
+                minWidth:   180,
+                color:      theme.text.muted,
+              }}>
+                <span style={{ color: theme.text.primary, fontWeight: 600 }}>${sample.strike}p</span>
+                {" · "}
+                <span style={{ color: theme.text.secondary }}>${sample.mid.toFixed(2)}</span>
+                {" · "}
+                {ror.toFixed(1)}% RoR
+                {" · "}
+                {collatStr}
+              </span>
+            );
+          }
+          if (sample.status === "no_suitable_strike") {
+            return (
+              <span style={{
+                fontSize:   theme.size.sm,
+                color:      theme.text.subtle,
+                fontStyle:  "italic",
+                fontFamily: "inherit",
+                marginLeft: theme.space[3],
+                minWidth:   180,
+              }}>no 25–35δ</span>
+            );
+          }
+          // fetch_failed
+          return (
+            <span style={{
+              fontSize:   theme.size.sm,
+              color:      theme.text.subtle,
+              fontFamily: "inherit",
+              marginLeft: theme.space[3],
+              minWidth:   180,
+            }}>—</span>
+          );
+        })()}
+
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
@@ -450,6 +511,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy, a
       {expanded && (
         <ExpandedPanel
           row={row}
+          sample={sample}
           indicators={indicators}
           positions={positions}
           marketContext={marketContext}
@@ -464,7 +526,7 @@ function RadarRow({ row, positions, marketContext, expanded, onToggle, sortBy, a
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, indicators, positions, marketContext, bucket, score, account }) {
+function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm } = row;
 
   // Detailed position data for this ticker
@@ -599,6 +661,31 @@ function ExpandedPanel({ row, indicators, positions, marketContext, bucket, scor
             {fieldRow("IV Rank", iv_rank.toFixed(1))}
             {fieldRow("Composite", `${ivLabel} (${ivComp.toFixed(2)})`)}
           </div>
+          {sample?.status === "ok" && (
+            <div style={{
+              display:      "flex",
+              gap:          theme.space[4],
+              flexWrap:     "wrap",
+              marginTop:    theme.space[2],
+              marginBottom: theme.space[2],
+            }}>
+              {fieldRow("Sample", `$${sample.strike}p @ $${sample.mid.toFixed(2)} mid`)}
+              {fieldRow("DTE",    `${sample.dte}d`)}
+              {fieldRow("Delta",  `${(sample.delta * 100).toFixed(0)}δ`)}
+              {fieldRow("RoR",    `${((sample.mid * 100 / sample.collateral) * 100).toFixed(2)}%`)}
+              {fieldRow("Collateral", `$${sample.collateral.toLocaleString()}`)}
+            </div>
+          )}
+          {sample?.status === "no_suitable_strike" && (
+            <div style={{
+              fontSize:   theme.size.sm,
+              color:      theme.text.subtle,
+              marginTop:  theme.space[2],
+              fontStyle:  "italic",
+            }}>
+              No strike in the 25–35δ window at {sample.dte ?? "~30"}-day expiry. Illiquid chain or extreme IV.
+            </div>
+          )}
           {ivLabel && IV_EXPLANATIONS[ivLabelForTemplate] && (
             <div style={{
               fontSize:     theme.size.sm,
@@ -959,6 +1046,12 @@ export function RadarTab({ positions = null, account = null }) {
     [processedRows]
   );
 
+  const visibleTickers = useMemo(
+    () => (processedRows || []).map(r => r.ticker).filter(Boolean),
+    [processedRows]
+  );
+  const { samplesByTicker, fetchedAt: samplesFetchedAt } = useRadarSamples(visibleTickers);
+
   function handleRowToggle(ticker) {
     setExpandedTicker(prev => prev === ticker ? null : ticker);
   }
@@ -1047,6 +1140,13 @@ export function RadarTab({ positions = null, account = null }) {
               {" · "}
             </span>
           )}
+          {samplesFetchedAt && (
+            <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>
+              {"Sample data as of: "}
+              {new Date(samplesFetchedAt).toLocaleString()}
+              {" · "}
+            </span>
+          )}
           <span>{processedRows.length} tickers</span>
           {strongCount > 0 && (
             <span style={{ color: theme.green }}> · {strongCount} strong candidates</span>
@@ -1078,6 +1178,7 @@ export function RadarTab({ positions = null, account = null }) {
             <RadarRow
               key={row.ticker}
               row={row}
+              sample={samplesByTicker.get(row.ticker) ?? null}
               positions={positions}
               marketContext={marketContext}
               expanded={expandedTicker === row.ticker}
