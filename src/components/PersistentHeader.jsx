@@ -35,7 +35,7 @@ function SlotLabel({ children }) {
   );
 }
 
-export function PersistentHeader({ captureRate, p1Count = 0 }) {
+export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
   const { account, positions } = useData();
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
@@ -176,8 +176,26 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
         </Slot>
       )}
 
-      {/* ── Slot 5: Sync / future ⌘K ─────────────────────────────────────── */}
-      <Slot divider={false} style={{ textAlign: "right" }}>
+      {/* ── Slot 5: Search (mobile) + Sync ───────────────────────────────── */}
+      <Slot divider={false} style={{ textAlign: "right", display: "flex", gap: theme.space[2], justifyContent: "flex-end", alignItems: "center" }}>
+        {isMobile && onOpenPalette && (
+          <button
+            onClick={onOpenPalette}
+            aria-label="Open command palette"
+            style={{
+              background:    theme.bg.base,
+              border:        `1px solid ${theme.border.strong}`,
+              borderRadius:  theme.radius.sm,
+              color:         theme.text.secondary,
+              padding:       "6px 10px",
+              cursor:        "pointer",
+              fontSize:      theme.size.md,
+              fontFamily:    "inherit",
+            }}
+          >
+            🔍
+          </button>
+        )}
         <SyncButton />
       </Slot>
 
