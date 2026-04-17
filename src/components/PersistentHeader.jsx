@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useData } from "../hooks/useData";
 import { useLiveVix } from "../hooks/useLiveVix";
 import { useWindowWidth } from "../hooks/useWindowWidth";
@@ -28,7 +29,7 @@ function SlotLabel({ children }) {
       color:         theme.text.muted,
       textTransform: "uppercase",
       letterSpacing: "0.5px",
-      marginBottom:  2,
+      marginBottom:  theme.space[1],
     }}>
       {children}
     </div>
@@ -39,6 +40,7 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
   const { account, positions } = useData();
   const windowWidth = useWindowWidth();
   const isMobile    = windowWidth < 600;
+  const [paletteHover, setPaletteHover] = useState(false);
 
   // ── Free cash + VIX band status ─────────────────────────────────────────────
   const freeCashEst    = account.free_cash_est ?? null;
@@ -78,7 +80,7 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
       background:         theme.bg.surface,
       border:             `1px solid ${theme.border.default}`,
       borderRadius:       theme.radius.md,
-      marginBottom:       theme.space[5],
+      marginBottom:       theme.space[4],
       alignItems:         "center",
     }}>
 
@@ -92,19 +94,19 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
           }
         </div>
         {band && (
-          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 1 }}>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: theme.space[1] }}>
             Target {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
           </div>
         )}
         {status !== "unknown" && (
-          <div style={{ fontSize: theme.size.xs, fontWeight: 500, color: statusColor, marginTop: 1 }}>
+          <div style={{ fontSize: theme.size.xs, fontWeight: 500, color: statusColor, marginTop: theme.space[1] }}>
             {status === "ok"    && "✓ Within band"}
             {status === "over"  && `⚠ ${((band.floorPct - freeCashPctEst) * 100).toFixed(1)}% below floor · ~${formatDollars(deltaAmt)} to free up`}
             {status === "under" && `↓ ${((freeCashPctEst - band.ceilingPct) * 100).toFixed(1)}% above ceiling · ~${formatDollars(deltaAmt)} to deploy`}
           </div>
         )}
         {status === "unknown" && (
-          <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 1 }}>Set VIX in account.json</div>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: theme.space[1] }}>Set VIX in account.json</div>
         )}
       </Slot>
 
@@ -114,7 +116,7 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
         <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
           {liveVix != null ? liveVix.toFixed(2) : "—"}
         </div>
-        <div style={{ fontSize: theme.size.xs, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4 }}>
           {band && (
             <span style={{
               padding:      "1px 7px",
@@ -165,11 +167,11 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
             {formatDollarsFull(mtd)}
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, fontWeight: 400 }}>{" "}/ {formatDollars(baseline)}</span>
           </div>
-          <div style={{ height: 4, background: theme.border.default, borderRadius: theme.radius.sm, overflow: "hidden", marginTop: 4 }}>
+          <div style={{ height: 4, background: theme.border.default, borderRadius: theme.radius.sm, overflow: "hidden", marginTop: theme.space[1] }}>
             <div style={{ height: "100%", width: `${progress}%`, background: progress >= 100 ? theme.green : theme.blueBold, borderRadius: theme.radius.sm, transition: "width 0.3s" }} />
           </div>
           {hasPipeline && (
-            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: 2 }}>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
               Pipeline {formatDollarsFull(grossOpenPremium)} · {formatDollarsFull(expectedPipeline)} est
             </div>
           )}
@@ -181,16 +183,19 @@ export function PersistentHeader({ captureRate, p1Count = 0, onOpenPalette }) {
         {isMobile && onOpenPalette && (
           <button
             onClick={onOpenPalette}
+            onMouseEnter={() => setPaletteHover(true)}
+            onMouseLeave={() => setPaletteHover(false)}
             aria-label="Open command palette"
             style={{
-              background:    theme.bg.base,
+              background:    paletteHover ? theme.bg.elevated : theme.bg.base,
               border:        `1px solid ${theme.border.strong}`,
               borderRadius:  theme.radius.sm,
               color:         theme.text.secondary,
-              padding:       "6px 10px",
+              padding:       `${theme.space[1]}px ${theme.space[2]}px`,
               cursor:        "pointer",
               fontSize:      theme.size.md,
               fontFamily:    "inherit",
+              transition:    "background 0.15s",
             }}
           >
             🔍
