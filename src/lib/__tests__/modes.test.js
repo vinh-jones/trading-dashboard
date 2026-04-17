@@ -10,14 +10,14 @@ describe("modes", () => {
     expect(EXPLORE_SUBVIEWS).toEqual(["positions", "radar", "macro"]);
   });
 
-  it("exposes Review sub-views in order with Monthly first", () => {
-    expect(REVIEW_SUBVIEWS).toEqual(["monthly", "ytd", "journal"]);
+  it("exposes Review sub-views in order with Journal first", () => {
+    expect(REVIEW_SUBVIEWS).toEqual(["journal", "monthly", "ytd"]);
   });
 
   it("returns the default sub-view for each mode", () => {
     expect(defaultSubView("focus")).toBe(null);
     expect(defaultSubView("explore")).toBe("positions");
-    expect(defaultSubView("review")).toBe("monthly");
+    expect(defaultSubView("review")).toBe("journal");
   });
 
   it("validates modes", () => {

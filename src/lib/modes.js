@@ -3,7 +3,7 @@
 export const MODES = ["focus", "explore", "review"];
 
 export const EXPLORE_SUBVIEWS = ["positions", "radar", "macro"];
-export const REVIEW_SUBVIEWS  = ["monthly", "ytd", "journal"];
+export const REVIEW_SUBVIEWS  = ["journal", "monthly", "ytd"];
 
 export const SUBVIEW_LABELS = {
   positions: "Positions",
@@ -22,7 +22,7 @@ export const MODE_LABELS = {
 
 export function defaultSubView(mode) {
   if (mode === "explore") return "positions";
-  if (mode === "review")  return "monthly";
+  if (mode === "review")  return "journal";
   return null;
 }
 
