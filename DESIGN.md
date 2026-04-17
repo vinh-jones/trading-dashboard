@@ -26,6 +26,7 @@ All tokens live in `src/lib/theme.js`. Do not redefine — import and use.
 | `theme.size.md`   | 14px | Default body text                                          |
 | `theme.size.lg`   | 16px | Subsection headers                                         |
 | `theme.size.xl`   | 18px | Section headers                                            |
+| `theme.size.xxl`  | 28px | Hero numbers (e.g. VIX posture value). Use sparingly.      |
 
 Font: `theme.font.mono` — `'SF Mono', 'Fira Code', 'Consolas', monospace`. Used universally.
 
@@ -81,6 +82,15 @@ No other pixel values. If you find yourself wanting `10px` or `18px`, you want `
 ### Radius
 
 `theme.radius.sm` = 4px (buttons, small chips) · `md` = 8px (panels, cards) · `pill` = 20px (chip-nav).
+
+### Alert surfaces
+
+| Token                        | Hex       | Use                                          |
+|------------------------------|-----------|----------------------------------------------|
+| `alert.dangerBg`             | `#3a1a1a` | Tinted red alert background                  |
+| `alert.dangerBorder`         | `#7c2a2a` | Tinted red alert border                      |
+| `alert.successBg`            | `#1c2d1c` | Tinted green alert background (55% rule etc) |
+| `alert.successBorder`        | `#238636` | Tinted green alert border                    |
 
 ### Chart
 

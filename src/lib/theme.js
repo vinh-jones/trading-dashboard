@@ -34,8 +34,10 @@ export const theme = {
   // ── Danger / warning panels ───────────────────────────────────────────────
   // Darker than TYPE_COLORS.Shares for an inset "empty state" alert feel.
   alert: {
-    dangerBg:     "#3a1a1a",
-    dangerBorder: "#7c2a2a",
+    dangerBg:      "#3a1a1a",
+    dangerBorder:  "#7c2a2a",
+    successBg:     "#1c2d1c",
+    successBorder: "#238636",
   },
 
   // ── Loss / gain gradients (monthly bar chart) ────────────────────────────
@@ -56,7 +58,7 @@ export const theme = {
   radius: { sm: 4, md: 8, pill: 20 },
 
   // ── Font size scale ───────────────────────────────────────────────────────
-  size: { xs: 10, sm: 12, md: 14, lg: 16, xl: 18 },
+  size: { xs: 10, sm: 12, md: 14, lg: 16, xl: 18, xxl: 28 },
 
   // ── Chart-specific colors ─────────────────────────────────────────────────
   chart: { shares: "#2eb88a", leaps: "#f0c040" },

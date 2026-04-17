@@ -50,7 +50,8 @@ Key token categories:
 - `theme.text.primary/secondary/muted/subtle/faint` — text hierarchy
 - `theme.border.default/strong` — borders
 - `theme.green/red/blue/amber` — semantic status colors
-- `theme.size.xs/sm/md/lg/xl` (10/12/14/16/18px) — font sizes, no in-betweens
+- `theme.alert.dangerBg/dangerBorder/successBg/successBorder` — tinted alert surfaces
+- `theme.size.xs/sm/md/lg/xl/xxl` (10/12/14/16/18/28px) — font sizes, no in-betweens (xxl is a hero-only size)
 - `theme.space[1..6]` (4/8/12/16/20/24px) — spacing, 4-point grid
 - `theme.radius.sm/md/pill` (4/8/20px) — border radius
 - `theme.font.mono` — monospace font stack
