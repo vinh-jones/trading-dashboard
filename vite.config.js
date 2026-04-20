@@ -103,4 +103,12 @@ function sheetsPlugin() {
 
 export default defineConfig({
   plugins: [react(), sheetsPlugin()],
+  build: {
+    rollupOptions: {
+      input: {
+        main:     new URL("./index.html",    import.meta.url).pathname,
+        tradesV2: new URL("./trades-v2.html", import.meta.url).pathname,
+      },
+    },
+  },
 });
