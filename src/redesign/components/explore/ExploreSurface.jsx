@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { T } from "../../theme.js";
 import { Frame, SectionLabel, Empty } from "../../primitives.jsx";
 import { calcDTE } from "../../../lib/trading.js";
@@ -397,6 +397,12 @@ export function ExploreSurface({ positions, account }) {
     setMode(m);
     try { localStorage.setItem("redesign-explore-mode", m); } catch {}
   };
+
+  useEffect(() => {
+    const h = (e) => { if (e.detail === "portfolio" || e.detail === "radar") switchMode(e.detail); };
+    window.addEventListener("tw-explore-mode", h);
+    return () => window.removeEventListener("tw-explore-mode", h);
+  }, []);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>

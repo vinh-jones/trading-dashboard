@@ -7,6 +7,7 @@ import { FocusCommandCenter } from "./components/focus/FocusCommandCenter.jsx";
 import { ExploreSurface } from "./components/explore/ExploreSurface.jsx";
 import { ReviewSurface } from "./components/review/ReviewSurface.jsx";
 import { PositionDetailHost } from "./components/PositionDetail.jsx";
+import { CommandPaletteHost } from "./components/CommandPalette.jsx";
 
 // ── Global page style injected once ───────────────────────────────────────────
 const PAGE_STYLE = `
@@ -154,6 +155,11 @@ function AppShell({ focus, trades, account, positions }) {
         account={account}
         quoteMap={focus.quoteMap}
       />
+      <CommandPaletteHost
+        positions={positions}
+        trades={trades}
+        setSurface={setSurface}
+      />
     </div>
   );
 }
@@ -246,15 +252,17 @@ function Footer() {
       borderTop: `1px solid ${T.bd}`,
       background: T.deep + "f0",
       padding: "6px 24px",
-      display: "flex", justifyContent: "space-between",
+      display: "flex", justifyContent: "space-between", alignItems: "center",
       fontSize: 10, color: T.tf, letterSpacing: "0.15em", fontFamily: T.mono,
       zIndex: 10,
     }}>
       <div>▸ WHEEL OS TERMINAL · REDESIGN PREVIEW</div>
-      <div style={{ display: "flex", gap: 18 }}>
+      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
         {cmds.map((c, i) => (
           <span key={i}><span style={{ color: T.tm }}>{c.k}</span> {c.label}</span>
         ))}
+        <span style={{ color: T.bd }}>·</span>
+        <span style={{ color: T.ts }}>⌘K</span>
       </div>
     </div>
   );
