@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { T } from "../../theme.js";
 import { Frame, SectionLabel, Empty } from "../../primitives.jsx";
 import { calcDTE } from "../../../lib/trading.js";
+import { RadarSurface } from "./RadarSurface.jsx";
 
 // Semantic color map for allocation bars — parallel to TYPE_COLORS intentional exception
 const ALLOC_COLORS = { Shares: T.green, LEAPS: T.amber, CSP: T.blue };
@@ -381,7 +382,48 @@ function AssignedCard({ s }) {
 
 // ── Main surface ──────────────────────────────────────────────────────────────
 
+const EXPLORE_TABS = [
+  { k: "portfolio", label: "Portfolio" },
+  { k: "radar",     label: "Radar"     },
+];
+
 export function ExploreSurface({ positions, account }) {
+  const [mode, setMode] = useState(() => {
+    try { const s = localStorage.getItem("redesign-explore-mode"); return s === "radar" ? "radar" : "portfolio"; }
+    catch { return "portfolio"; }
+  });
+
+  const switchMode = (m) => {
+    setMode(m);
+    try { localStorage.setItem("redesign-explore-mode", m); } catch {}
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Tab strip */}
+      <div style={{ display: "flex", gap: 6 }}>
+        {EXPLORE_TABS.map(t => {
+          const active = t.k === mode;
+          return (
+            <button key={t.k} onClick={() => switchMode(t.k)} style={{
+              padding: "5px 16px",
+              border: `1px solid ${active ? T.green : T.bd}`,
+              background: active ? T.green + "18" : "transparent",
+              color: active ? T.green : T.tm,
+              fontSize: T.sm, fontFamily: T.mono, letterSpacing: "0.06em",
+              cursor: "pointer", borderRadius: T.rMd,
+            }}>{t.label}</button>
+          );
+        })}
+      </div>
+
+      {mode === "portfolio" && <PortfolioView positions={positions} account={account} />}
+      {mode === "radar"     && <RadarSurface positions={positions} account={account} />}
+    </div>
+  );
+}
+
+function PortfolioView({ positions, account }) {
   const allPositions = [
     ...(positions?.open_csps || []),
     ...(positions?.assigned_shares || []),
@@ -390,7 +432,7 @@ export function ExploreSurface({ positions, account }) {
 
   if (allPositions.length === 0) {
     return (
-      <Frame accent="focus" title="EXPLORE" subtitle="no positions">
+      <Frame accent="focus" title="PORTFOLIO" subtitle="no positions">
         <Empty glyph="◻" accent="focus" compact
           title="Portfolio is empty."
           body="Allocation breakdowns, open positions, assigned shares, and LEAPS all render here once you have positions."
