@@ -38,12 +38,12 @@ export function RollCandidates({ positions, rollMap }) {
 }
 
 function buildRollRows(positions, rollMap) {
-  if (!rollMap || rollMap.size === 0) return [];
+  if (!rollMap || Object.keys(rollMap).length === 0) return [];
   const rows = [];
 
   const process = (list, type) => {
     (list || []).forEach(pos => {
-      const entry = rollMap.get(pos.ticker);
+      const entry = rollMap?.[pos.ticker];
       if (!entry?.candidates?.length) return;
       const best = entry.candidates[0];
       const credit = best.credit ?? best.net_credit ?? 0;

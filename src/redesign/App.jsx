@@ -138,6 +138,7 @@ function AppShell({ focus, trades, account, positions }) {
               positions={positions}
               focusItems={focus.items}
               quoteMap={focus.quoteMap}
+              rollMap={focus.rollMap}
               marketContext={focus.marketContext}
               liveVix={focus.liveVix}
             />

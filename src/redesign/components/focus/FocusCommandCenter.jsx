@@ -22,7 +22,7 @@ function useMacroSignals() {
   return macroData;
 }
 
-export function FocusCommandCenter({ account, positions, focusItems, quoteMap, marketContext, liveVix }) {
+export function FocusCommandCenter({ account, positions, focusItems, quoteMap, rollMap, marketContext, liveVix }) {
   const macroData = useMacroSignals();
 
   // Merge live VIX into account for posture widget
@@ -71,7 +71,7 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, m
           </div>
         )}
 
-        <RollCandidates positions={positions} rollMap={quoteMap?._rollMap} />
+        <RollCandidates positions={positions} rollMap={rollMap} />
 
         <SectionLabel label="CONTEXT" />
         <MacroGlance macroData={macroData} marketContext={marketContext} />
