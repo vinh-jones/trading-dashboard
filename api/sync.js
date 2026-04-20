@@ -44,7 +44,7 @@ export default async function handler(req, res) {
 
     // ── Auto-journal: insert entries for any trades not yet journaled ──
     const [{ data: trades }, { data: existing }] = await Promise.all([
-      supabase.from("trades").select("*").gte("open_date", JOURNAL_CUTOFF),
+      supabase.from("trades").select("*").or(`open_date.gte.${JOURNAL_CUTOFF},close_date.gte.${JOURNAL_CUTOFF}`),
       supabase.from("journal_entries")
         .select("id, ticker, entry_date, title, trade_id, body")
         .eq("entry_type", "trade_note"),
