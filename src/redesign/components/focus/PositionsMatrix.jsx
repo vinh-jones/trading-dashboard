@@ -22,8 +22,9 @@ export function normalizePositions(positions, quoteMap = new Map(), focusItems =
       }
       const targetPct = targetProfitPctForDtePct(dtePct);
 
-      // G/L from focus items if available
-      const posItems = (focusItems || []).filter(it => it.ticker === pos.ticker && it.type === type);
+      // Focus engine items have no `type` field — match by ticker only.
+      // Use the top-priority item across all alerts for this ticker.
+      const posItems = (focusItems || []).filter(it => it.ticker === pos.ticker);
       const topAlert = posItems[0] ?? null;
       const priority = topAlert?.priority ?? null;
 
@@ -52,15 +53,24 @@ export function normalizePositions(positions, quoteMap = new Map(), focusItems =
         gl: pos.premium_collected && glPct != null ? Math.round(pos.premium_collected * glPct / 100) : null,
         targetPct,
         priority,
-        alerts: posItems.map(it => ({ priority: it.priority, title: it.message || it.rule || "" })),
+        alerts: posItems.map(it => ({ priority: it.priority, title: it.title || it.rule || "" })),
       });
     });
   };
 
-  addRows(positions.open_csps,       "CSP");
-  addRows(positions.assigned_shares, "CC");  // CC shares
-  addRows(positions.open_leaps,      "LEAPS");
-  addRows(positions.open_spreads,    "Spread");
+  addRows(positions.open_csps, "CSP");
+
+  // CCs are nested as active_cc inside each assigned_shares entry — extract them
+  const ccRows = (positions.assigned_shares || [])
+    .filter(s => s.active_cc)
+    .map(s => s.active_cc);
+  addRows(ccRows, "CC");
+
+  // Standalone LEAPs + LEAPs nested inside assigned_shares
+  const nestedLeaps = (positions.assigned_shares || []).flatMap(s => s.open_leaps || []);
+  addRows([...(positions.open_leaps || []), ...nestedLeaps], "LEAPS");
+
+  addRows(positions.open_spreads, "Spread");
 
   // Sort: P1 first, then P2, then by DTE ascending
   const rank = { P1: 0, P2: 1, P3: 2, null: 3 };

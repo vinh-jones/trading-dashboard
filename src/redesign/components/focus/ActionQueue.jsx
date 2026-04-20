@@ -13,7 +13,7 @@ function itemToAction(item) {
     ticker: item.ticker ?? "—",
     type: item.type ?? "",
     verb,
-    reason: item.message ?? item.rule ?? "",
+    reason: item.title ?? item.message ?? item.rule ?? "",
     due: item.due ?? "",
   };
 }
