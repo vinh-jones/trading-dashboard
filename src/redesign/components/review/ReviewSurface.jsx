@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { T } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
+import { JournalSurface } from "./JournalSurface.jsx";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -613,9 +614,9 @@ function ReviewYTD({ trades, filters, toggleFilter }) {
 
 // ── Main surface ──────────────────────────────────────────────────────────────
 
-export function ReviewSurface({ trades, account }) {
+export function ReviewSurface({ trades, account, positions }) {
   const [mode, setMode] = useState(() => {
-    try { const s = localStorage.getItem("rv2-mode"); return (s === "monthly" || s === "ytd") ? s : "monthly"; }
+    try { const s = localStorage.getItem("rv2-mode"); return (s === "monthly" || s === "ytd" || s === "journal") ? s : "monthly"; }
     catch { return "monthly"; }
   });
   const setModePersist = (m) => {
@@ -636,8 +637,9 @@ export function ReviewSurface({ trades, account }) {
   );
 
   const TABS = [
-    { k: "monthly", label: "Monthly" },
-    { k: "ytd",     label: "YTD"     },
+    { k: "monthly",  label: "Monthly"  },
+    { k: "ytd",      label: "YTD"      },
+    { k: "journal",  label: "Journal",  accent: T.mag },
   ];
 
   return (
@@ -646,25 +648,31 @@ export function ReviewSurface({ trades, account }) {
       <div style={{ display: "flex", gap: 6 }}>
         {TABS.map(tab => {
           const active = tab.k === mode;
+          const color  = tab.accent || T.blue;
           return (
             <button key={tab.k} onClick={() => setModePersist(tab.k)} style={{
               padding: "5px 14px", borderRadius: 999,
-              border: `1px solid ${active ? T.blue : T.bd}`,
-              background: active ? T.blue + "18" : "transparent",
-              color: active ? T.blue : T.tm,
+              border: `1px solid ${active ? color : T.bd}`,
+              background: active ? color + "18" : "transparent",
+              color: active ? color : T.tm,
               fontSize: T.sm, fontFamily: T.mono, letterSpacing: "0.04em", cursor: "pointer",
             }}>{tab.label}</button>
           );
         })}
       </div>
 
-      <ReviewFilters filters={filters} setFilters={setFilters} clearFilters={clearFilters} />
+      {mode !== "journal" && (
+        <ReviewFilters filters={filters} setFilters={setFilters} clearFilters={clearFilters} />
+      )}
 
       {mode === "monthly" && (
         <ReviewMonthly trades={closedTrades} account={account} filters={filters} toggleFilter={toggleFilter} />
       )}
       {mode === "ytd" && (
         <ReviewYTD trades={closedTrades} filters={filters} toggleFilter={toggleFilter} />
+      )}
+      {mode === "journal" && (
+        <JournalSurface trades={trades} positions={positions} account={account} />
       )}
     </div>
   );

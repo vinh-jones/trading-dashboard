@@ -143,7 +143,7 @@ function AppShell({ focus, trades, account, positions }) {
             />
           )}
           {surface === "explore" && <ExploreSurface positions={positions} account={account} />}
-          {surface === "review"  && <ReviewSurface trades={trades} account={account} />}
+          {surface === "review"  && <ReviewSurface trades={trades} account={account} positions={positions} />}
         </div>
 
         <Footer />
