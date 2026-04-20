@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { T } from "../../theme.js";
 import { SectionLabel, Empty, Frame } from "../../primitives.jsx";
 import { getVixBand } from "../../theme.js";
@@ -9,7 +10,21 @@ import { MacroGlance } from "./MacroGlance.jsx";
 import { CalendarBar } from "./CalendarBar.jsx";
 import { RollCandidates } from "./RollCandidates.jsx";
 
+function useMacroSignals() {
+  const [macroData, setMacroData] = useState(null);
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    fetch("/api/macro")
+      .then(r => r.json())
+      .then(d => { if (d.ok) setMacroData(d); })
+      .catch(() => {});
+  }, []);
+  return macroData;
+}
+
 export function FocusCommandCenter({ account, positions, focusItems, quoteMap, marketContext, liveVix }) {
+  const macroData = useMacroSignals();
+
   // Merge live VIX into account for posture widget
   const acct = liveVix != null ? { ...account, vix_current: liveVix } : account;
 
@@ -20,7 +35,7 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, m
   ];
   const isEmpty = allPositions.length === 0 && !(focusItems?.length);
 
-  if (isEmpty) return <FirstRunState acct={acct} />;
+  if (isEmpty) return <FirstRunState acct={acct} macroData={macroData} />;
 
   // Deploy headroom: free cash > VIX band ceiling by >3pp
   const vix  = acct?.vix_current ?? null;
@@ -59,7 +74,7 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, m
         <RollCandidates positions={positions} rollMap={quoteMap?._rollMap} />
 
         <SectionLabel label="CONTEXT" />
-        <MacroGlance marketContext={marketContext} />
+        <MacroGlance macroData={macroData} marketContext={marketContext} />
         <CalendarBar positions={positions} marketContext={marketContext} />
       </div>
     </div>
@@ -90,7 +105,7 @@ function DeployHint({ band, acct }) {
 }
 
 // First-run / no-data empty state
-function FirstRunState({ acct }) {
+function FirstRunState({ acct, macroData }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(0, 1fr)", gap: 14 }}>
       <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
@@ -116,7 +131,7 @@ function FirstRunState({ acct }) {
           />
         </Frame>
         <SectionLabel label="CONTEXT" />
-        <MacroGlance marketContext={null} />
+        <MacroGlance macroData={macroData} marketContext={null} />
       </div>
     </div>
   );

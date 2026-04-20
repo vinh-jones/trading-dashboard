@@ -106,13 +106,20 @@ function buildExpiryMap(positions) {
 
 function buildEarningsMap(marketContext) {
   const map = {};
-  // marketContext may have earningsDates or similar — scan macroEvents for EARNINGS type
+  // macroEvents: TradingView economic calendar events tagged EARNINGS
   (marketContext?.macroEvents || []).forEach(e => {
     if ((e.eventType || "").toLowerCase().includes("earn") && e.dateTime) {
       const key = e.dateTime.slice(0, 10);
       if (!map[key]) map[key] = [];
       if (e.ticker) map[key].push(e.ticker);
     }
+  });
+  // positions[].nextEarnings: Finnhub per-ticker earnings dates
+  (marketContext?.positions || []).forEach(p => {
+    if (!p.nextEarnings?.date) return;
+    const key = p.nextEarnings.date.slice(0, 10);
+    if (!map[key]) map[key] = [];
+    if (p.ticker && !map[key].includes(p.ticker)) map[key].push(p.ticker);
   });
   return map;
 }
