@@ -4,6 +4,8 @@ import { normalizeTrade } from "../lib/trading.js";
 import { DataContext } from "../hooks/useData.js";
 import { useFocusItems } from "../hooks/useFocusItems.js";
 import { FocusCommandCenter } from "./components/focus/FocusCommandCenter.jsx";
+import { ExploreSurface } from "./components/explore/ExploreSurface.jsx";
+import { ReviewSurface } from "./components/review/ReviewSurface.jsx";
 
 // ── Global page style injected once ───────────────────────────────────────────
 const PAGE_STYLE = `
@@ -66,7 +68,7 @@ export function RedesignApp() {
 
   return (
     <DataContext.Provider value={{ trades, positions, account, refreshData, deleteTrade: () => {} }}>
-      <AppShell focus={focus} account={account} positions={positions} />
+      <AppShell focus={focus} trades={trades} account={account} positions={positions} />
     </DataContext.Provider>
   );
 }
@@ -78,7 +80,7 @@ const SURFACES = [
   { k: "review",  label: "REVIEW",  key: "V", accent: T.mag   },
 ];
 
-function AppShell({ focus, account, positions }) {
+function AppShell({ focus, trades, account, positions }) {
   const [surface, setSurface] = useState("focus");
   const [time, setTime] = useState(new Date());
 
@@ -138,8 +140,8 @@ function AppShell({ focus, account, positions }) {
               liveVix={focus.liveVix}
             />
           )}
-          {surface === "explore" && <PlaceholderSurface label="EXPLORE" color={T.green} note="Explore view coming — uses existing Radar/Positions tabs" />}
-          {surface === "review"  && <PlaceholderSurface label="REVIEW"  color={T.mag}   note="Review view coming — uses existing Journal/Monthly/YTD tabs" />}
+          {surface === "explore" && <ExploreSurface positions={positions} account={account} />}
+          {surface === "review"  && <ReviewSurface trades={trades} account={account} />}
         </div>
 
         <Footer />
