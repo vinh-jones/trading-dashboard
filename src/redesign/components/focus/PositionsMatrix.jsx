@@ -3,6 +3,7 @@ import { T } from "../../theme.js";
 import { Frame, TypeTag, Empty } from "../../primitives.jsx";
 import { calcDTE, buildOccSymbol } from "../../../lib/trading.js";
 import { targetProfitPctForDtePct, proximityFraction } from "../../../lib/positionAttention.js";
+import { openPosition } from "../PositionDetail.jsx";
 
 // Normalize the app's positions shape into the flat array the matrix expects.
 export function normalizePositions(positions, quoteMap = new Map(), focusItems = []) {
@@ -132,13 +133,13 @@ export function PositionsMatrix({ positions, focusItems, quoteMap }) {
           </span>
         </div>
       ) : (
-        visible.map(p => <PositionRow key={p.id} p={p} />)
+        visible.map(p => <PositionRow key={p.id} p={p} onClick={() => openPosition(p.id)} />)
       )}
     </Frame>
   );
 }
 
-function PositionRow({ p }) {
+function PositionRow({ p, onClick }) {
   const [hover, setHover] = useState(false);
   const topAlert = p.alerts?.[0];
   const priColor = !topAlert ? "transparent" : topAlert.priority === "P1" ? T.red : T.amber;
@@ -148,6 +149,7 @@ function PositionRow({ p }) {
 
   return (
     <div
+      onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -160,7 +162,7 @@ function PositionRow({ p }) {
         borderLeft: `2px solid ${priColor}`,
         paddingLeft: 6,
         transition: "background 0.12s",
-        cursor: "default",
+        cursor: "pointer",
       }}
     >
       <span style={{ fontSize: T.md, fontWeight: 600, color: T.t1 }}>{p.ticker}</span>

@@ -39,7 +39,7 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, m
       <div style={{ display: "grid", gap: 14, minWidth: 0, alignContent: "start" }}>
         <PostureInstrument account={acct} />
         <PositionsMatrix positions={positions} focusItems={focusItems} quoteMap={quoteMap} />
-        <ActionQueue focusItems={focusItems} />
+        <ActionQueue focusItems={focusItems} positions={positions} />
       </div>
 
       {/* RIGHT — QUIET: MTD | Opportunities | Context */}

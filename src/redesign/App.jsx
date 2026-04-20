@@ -6,6 +6,7 @@ import { useFocusItems } from "../hooks/useFocusItems.js";
 import { FocusCommandCenter } from "./components/focus/FocusCommandCenter.jsx";
 import { ExploreSurface } from "./components/explore/ExploreSurface.jsx";
 import { ReviewSurface } from "./components/review/ReviewSurface.jsx";
+import { PositionDetailHost } from "./components/PositionDetail.jsx";
 
 // ── Global page style injected once ───────────────────────────────────────────
 const PAGE_STYLE = `
@@ -146,6 +147,13 @@ function AppShell({ focus, trades, account, positions }) {
 
         <Footer />
       </div>
+
+      <PositionDetailHost
+        positions={positions}
+        trades={trades}
+        account={account}
+        quoteMap={focus.quoteMap}
+      />
     </div>
   );
 }

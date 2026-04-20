@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { T } from "../../theme.js";
 import { Frame, Pill, Empty } from "../../primitives.jsx";
+import { openPosition } from "../PositionDetail.jsx";
+import { normalizePositions } from "./PositionsMatrix.jsx";
 
 // Map focus engine item → action queue row
 function itemToAction(item) {
@@ -29,11 +31,15 @@ function actionVerb(item) {
   return "REVIEW";
 }
 
-export function ActionQueue({ focusItems }) {
+export function ActionQueue({ focusItems, positions }) {
   const p1 = (focusItems || []).filter(it => it.priority === "P1");
   const p2 = (focusItems || []).filter(it => it.priority === "P2");
   const p3 = (focusItems || []).filter(it => it.priority === "P3");
   const actions = [...p1, ...p2].map(itemToAction);
+
+  // Build a ticker+type → position id lookup from normalized rows
+  const posRows = normalizePositions(positions || {});
+  const posLookup = new Map(posRows.map(r => [`${r.ticker}|${r.type}`, r.id]));
 
   const header = (
     <div style={{ display: "flex", gap: 6 }}>
@@ -58,18 +64,24 @@ export function ActionQueue({ focusItems }) {
   return (
     <Frame accent="warn" title="ACTION QUEUE" subtitle={`${actions.length} items · by urgency`} right={header}>
       <div style={{ display: "grid", gap: 1, background: T.bd, border: `1px solid ${T.bd}`, borderRadius: T.rSm }}>
-        {actions.map((a, i) => <ActionRow key={i} {...a} />)}
+        {actions.map((a, i) => (
+          <ActionRow key={i} {...a} onOpen={() => {
+            const id = posLookup.get(`${a.ticker}|${a.type}`);
+            if (id) openPosition(id);
+          }} />
+        ))}
       </div>
     </Frame>
   );
 }
 
-function ActionRow({ pri, ticker, type, verb, reason, due }) {
+function ActionRow({ pri, ticker, type, verb, reason, due, onOpen }) {
   const [hover, setHover] = useState(false);
   const priColor = pri === "P1" ? T.red : T.amber;
 
   return (
     <div
+      onClick={onOpen}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -81,6 +93,7 @@ function ActionRow({ pri, ticker, type, verb, reason, due }) {
         background: hover ? T.elev : T.surf,
         transition: "background 0.12s",
         borderLeft: `3px solid ${priColor}`,
+        cursor: onOpen ? "pointer" : "default",
       }}
     >
       <span style={{ fontSize: T.xs, letterSpacing: "0.1em", color: priColor, fontWeight: 700, width: 18 }}>{pri}</span>
