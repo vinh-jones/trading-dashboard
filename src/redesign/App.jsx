@@ -117,6 +117,8 @@ function AppShell({ focus, trades, account, positions }) {
         setSurface("review");
         try { localStorage.setItem("rv2-mode", "journal"); } catch {}
         window.dispatchEvent(new CustomEvent("tw-review-mode", { detail: "journal" }));
+        // give the surface a tick to mount, then trigger the ritual
+        setTimeout(() => window.dispatchEvent(new CustomEvent("tw-journal-new")), 50);
       }
     }
     window.addEventListener("keydown", handler);

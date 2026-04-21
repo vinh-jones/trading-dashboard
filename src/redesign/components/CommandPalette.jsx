@@ -294,10 +294,14 @@ function buildActions(setSurface) {
     try { localStorage.setItem("rv2-mode", "journal"); } catch {}
     window.dispatchEvent(new CustomEvent("tw-review-mode", { detail: "journal" }));
   };
+  const newEodEntry = () => {
+    openJournal();
+    setTimeout(() => window.dispatchEvent(new CustomEvent("tw-journal-new")), 50);
+  };
 
   return [
-    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "New journal entry", subtitle: "open Review → Journal ritual", run: openJournal },
-    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "Open journal",      subtitle: "review → recent entries feed", run: openJournal },
+    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "New EOD entry",  subtitle: "open the 3-step ritual modal", run: newEodEntry },
+    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "Open journal",   subtitle: "review → ledger feed + EOD + transaction log", run: openJournal },
     { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Focus",        subtitle: "current state + action queue", run: () => setSurface?.("focus") },
     { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Portfolio",    subtitle: "explore → allocation + positions", run: () => goExplore("portfolio") },
     { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Radar",        subtitle: "explore → scanner + BB gauge", run: () => goExplore("radar") },
