@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { T } from "../../theme.js";
 import { openPosition } from "../PositionDetail.jsx";
+import { normalizePositions } from "../focus/PositionsMatrix.jsx";
 import { supabase } from "../../../lib/supabase.js";
 import { calcDTE } from "../../../lib/trading.js";
 
@@ -17,6 +18,19 @@ export function EodDrawer({ entry, account, trades, positions, onClose, onDelete
   const [editing, setEditing] = useState(false);
   const [editBody, setEditBody] = useState(entry.body || "");
   const [saving, setSaving]     = useState(false);
+
+  // Ticker → first matching position id lookup, for click-through
+  const tickerToId = useMemo(() => {
+    const rows = normalizePositions(positions || {});
+    const map = new Map();
+    rows.forEach(r => { if (r.ticker && !map.has(r.ticker)) map.set(r.ticker, r.id); });
+    return map;
+  }, [positions]);
+
+  const clickTicker = (ticker) => {
+    const id = tickerToId.get(ticker);
+    if (id) openPosition(id);
+  };
 
   const meta = entry.metadata || {};
   const vix       = meta.vix ?? account?.vix_current ?? null;
@@ -179,7 +193,15 @@ export function EodDrawer({ entry, account, trades, positions, onClose, onDelete
                     <span style={{ color: T.tf, letterSpacing: "0.05em", width: 56 }}>
                       {a.subtype === "Roll Loss" ? "ROLLED" : a.close === entryMmDd ? "CLOSED" : "OPENED"}
                     </span>
-                    <span style={{ color: T.t1, fontWeight: 600 }}>{a.ticker}</span>
+                    <span
+                      onClick={() => clickTicker(a.ticker)}
+                      style={{
+                        color: T.t1, fontWeight: 600,
+                        cursor: tickerToId.has(a.ticker) ? "pointer" : "default",
+                        textDecoration: tickerToId.has(a.ticker) ? "underline dotted" : "none",
+                        textUnderlineOffset: 3,
+                      }}
+                    >{a.ticker}</span>
                     <span style={{ color: T.tm }}>
                       {a.type}{a.strike ? ` $${a.strike}` : ""}{a.contracts ? ` · ${a.contracts}ct` : ""}
                     </span>
@@ -210,11 +232,16 @@ export function EodDrawer({ entry, account, trades, positions, onClose, onDelete
                   <span style={{ textAlign: "right" }}>ROI</span>
                 </div>
                 {openCsps.map((p, i) => (
-                  <div key={i} style={{
-                    display: "grid", gridTemplateColumns: "56px 60px 72px 44px 54px 72px 72px 56px", gap: 8,
-                    padding: "6px 2px", borderBottom: `1px solid ${T.hair}`,
-                    fontSize: T.sm, fontFamily: T.mono,
-                  }}>
+                  <div
+                    key={i}
+                    onClick={() => clickTicker(p.ticker)}
+                    style={{
+                      display: "grid", gridTemplateColumns: "56px 60px 72px 44px 54px 72px 72px 56px", gap: 8,
+                      padding: "6px 2px", borderBottom: `1px solid ${T.hair}`,
+                      fontSize: T.sm, fontFamily: T.mono,
+                      cursor: tickerToId.has(p.ticker) ? "pointer" : "default",
+                    }}
+                  >
                     <span style={{ color: T.t1, fontWeight: 600 }}>{p.ticker}</span>
                     <span style={{ color: T.t2 }}>{p.strike ? `$${p.strike}` : "—"}</span>
                     <span style={{ color: T.tm }}>{p.expiry ? p.expiry.slice(5).replace("-", "/") : "—"}</span>
