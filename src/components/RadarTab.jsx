@@ -16,11 +16,23 @@ function compositeIv(iv, ivRank) {
   return (ivRank / 100 * 0.60) + (Math.min(iv / 1.50, 1.0) * 0.40);
 }
 
-function scannerScore(bbPosition, iv, ivRank) {
+function getTrendState(price, ma50, ma200) {
+  if (price == null) return null;
+  const above200 = ma200 == null || price >= ma200;
+  const above50  = ma50  == null || price >= ma50;
+  if (above200 && above50)   return { state: "uptrend",   label: "Uptrend",    modifier: 1.00 };
+  if (above200 && !above50)  return { state: "pullback",  label: "Pullback",   modifier: 0.90 };
+  if (!above200 && above50)  return { state: "recovering",label: "Recovering", modifier: 0.85 };
+  return                            { state: "downtrend", label: "Downtrend",  modifier: 0.70 };
+}
+
+function scannerScore(bbPosition, iv, ivRank, price, ma50, ma200) {
   if (bbPosition == null) return null;
   const ivComp = compositeIv(iv, ivRank);
   if (ivComp == null) return null;
-  return (1 - bbPosition) * 0.50 + ivComp * 0.50;
+  const base  = (1 - bbPosition) * 0.50 + ivComp * 0.50;
+  const trend = getTrendState(price, ma50, ma200);
+  return base * (trend?.modifier ?? 1.0);
 }
 
 function scoreLabel(score) {
@@ -199,6 +211,37 @@ const IV_EXPLANATIONS = {
     `Composite: ${composite.toFixed(2)}.`,
 };
 
+// Hardcoded hex — intentional exception (like BB_BUCKET_COLORS)
+const TREND_COLORS = {
+  pullback:   { bg: "#2d2600", text: "#e3b341" },
+  recovering: { bg: "#2d2600", text: "#e3b341" },
+  downtrend:  { bg: "#3d1a1a", text: "#f85149" },
+};
+
+const TREND_EXPLANATIONS = {
+  uptrend: (ticker, price, ma50, ma200) =>
+    `${ticker} is above both its 50-day ($${ma50?.toFixed(2)}) and 200-day ($${ma200?.toFixed(2)}) moving averages — ` +
+    `a healthy uptrend. Mean reversion setups work as intended here. No trend penalty applied. Modifier: 1.00×.`,
+
+  pullback: (ticker, price, ma50, ma200) =>
+    `${ticker} is in a pullback within a broader uptrend — price ($${price?.toFixed(2)}) has dropped below its 50-day ($${ma50?.toFixed(2)}) ` +
+    `but remains above its 200-day ($${ma200?.toFixed(2)}). This is typically transient, not a structural breakdown. ` +
+    `CSP entries still have mean-reversion support. Reduce size 10–15% vs a full uptrend setup. ` +
+    `If price breaks below the 200-day, re-evaluate — that's the shift to structural downtrend. Modifier: 0.90×.`,
+
+  recovering: (ticker, price, ma50, ma200) =>
+    `${ticker} is recovering from a downtrend — price ($${price?.toFixed(2)}) has reclaimed its 50-day ($${ma50?.toFixed(2)}) ` +
+    `but remains below its 200-day ($${ma200?.toFixed(2)}). The shorter-term trend has flipped ` +
+    `but the longer-term trend hasn't confirmed yet. Size down 15–20% and watch for price to reclaim the 200-day as confirmation. Modifier: 0.85×.`,
+
+  downtrend: (ticker, price, ma50, ma200) =>
+    `${ticker} is in a structural downtrend — price ($${price?.toFixed(2)}) is below both its 50-day ($${ma50?.toFixed(2)}) ` +
+    `and 200-day ($${ma200?.toFixed(2)}). This is not mean-reversion territory. A name below its lower Bollinger Band ` +
+    `in a downtrend often continues lower rather than reverting. Ryan actively avoids these setups. ` +
+    `Skip unless you have a specific fundamental thesis and are willing to size way down. ` +
+    `Re-evaluate when price reclaims the 50-day MA. Modifier: 0.70×.`,
+};
+
 // ── VIX context line (new, for ExpandedPanel top) ────────────────────────────
 function vixContextLine(vix, vixBand, ivRank) {
   if (!vix || !vixBand) return null;
@@ -310,10 +353,11 @@ function ScoreBar({ score }) {
 // ── Compact row ───────────────────────────────────────────────────────────────
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, ma_50, ma_200 } = row;
   const bucket   = bbBucket(bb_position);
-  const score    = scannerScore(bb_position, iv, iv_rank);
+  const score    = scannerScore(bb_position, iv, iv_rank, last, ma_50, ma_200);
   const ivComp   = compositeIv(iv, iv_rank);
+  const trend    = getTrendState(last, ma_50, ma_200);
   const label    = scoreLabel(score);
   const bucketColors = bucket ? BB_BUCKET_COLORS[bucket] : null;
   const indicators   = getPositionIndicators(ticker, positions);
@@ -395,6 +439,21 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
             </span>
           ) : (
             <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
+          )}
+
+          {/* Trend badge — only shown when not uptrend */}
+          {trend && trend.state !== "uptrend" && TREND_COLORS[trend.state] && (
+            <span style={{
+              fontSize:     theme.size.xs,
+              fontWeight:   600,
+              color:        TREND_COLORS[trend.state].text,
+              background:   TREND_COLORS[trend.state].bg,
+              borderRadius: theme.radius.pill,
+              padding:      "2px 8px",
+              flexShrink:   0,
+            }}>
+              {trend.label}
+            </span>
           )}
 
           {/* Spacer */}
@@ -491,7 +550,8 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, ma_50, ma_200 } = row;
+  const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
   const sharePos    = (positions?.assigned_shares || []).find(s => s.ticker === ticker) ?? null;
@@ -614,6 +674,43 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         }}>
           {BB_EXPLANATIONS[bucket](ticker, bb_position, vixSentiment, ivLabelForTemplate)}
         </div>
+      )}
+
+      {/* ── Trend Context section ── */}
+      <div style={sectionLabelStyle}>Trend Context</div>
+      {trend ? (
+        <>
+          <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+            {fieldRow("Price",    last   != null ? `$${last.toFixed(2)}`   : null)}
+            {fieldRow("50-day MA", ma_50  != null ? `$${ma_50.toFixed(2)}`  : "—")}
+            {fieldRow("200-day MA",ma_200 != null ? `$${ma_200.toFixed(2)}` : "—")}
+            <span style={{ ...monoStyle }}>
+              <span style={{ color: theme.text.subtle }}>State: </span>
+              <span style={{
+                color: trend.state === "uptrend"   ? theme.green
+                     : trend.state === "downtrend" ? theme.red
+                     : theme.amber,
+                fontWeight: 600,
+              }}>
+                {trend.label}
+              </span>
+              <span style={{ color: theme.text.subtle }}> · {trend.modifier.toFixed(2)}× modifier</span>
+            </span>
+          </div>
+          <div style={{
+            fontSize:     theme.size.sm,
+            color:        theme.text.muted,
+            lineHeight:   1.6,
+            padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+            background:   theme.bg.surface,
+            borderRadius: theme.radius.sm,
+            border:       `1px solid ${theme.border.default}`,
+          }}>
+            {TREND_EXPLANATIONS[trend.state](ticker, last, ma_50, ma_200)}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Trend data pending</div>
       )}
 
       {/* ── IV & Premium Quality section ── */}
@@ -751,14 +848,19 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", alignItems: "center" }}>
           {fieldRow("Score", `${score.toFixed(3)} (${label})`)}
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            BB component: {((1 - bb_position) * 0.5).toFixed(3)}
+            BB: {((1 - bb_position) * 0.5).toFixed(3)}
           </span>
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            IV component: {(ivComp * 0.5).toFixed(3)}
+            IV: {(ivComp * 0.5).toFixed(3)}
           </span>
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            Combined: {score.toFixed(3)}
+            base: {((1 - bb_position) * 0.5 + ivComp * 0.5).toFixed(3)}
           </span>
+          {trend && trend.modifier !== 1.0 && (
+            <span style={{ ...monoStyle, color: trend.state === "downtrend" ? theme.red : theme.amber }}>
+              ×{trend.modifier.toFixed(2)} ({trend.label})
+            </span>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
@@ -982,7 +1084,7 @@ export function RadarTab({ positions = null, account = null }) {
       const d = sortBy.dir === "asc" ? 1 : -1;  // multiplier: asc=1, desc=-1
 
       const getVal = {
-        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank),
+        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200),
         bb:           r => r.bb_position,
         iv_rank:      r => r.iv_rank,
         iv_raw:       r => r.iv,
@@ -1006,7 +1108,7 @@ export function RadarTab({ positions = null, account = null }) {
   }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext]);
 
   const strongCount = useMemo(() =>
-    processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank)) === "Strong").length,
+    processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200)) === "Strong").length,
     [processedRows]
   );
 

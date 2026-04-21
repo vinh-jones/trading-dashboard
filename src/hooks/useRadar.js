@@ -33,7 +33,7 @@ export function useRadar() {
         ] = await Promise.all([
           supabase
             .from("quotes")
-            .select("symbol, last, prev_close, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, earnings_date, earnings_meta, earnings_refreshed_at")
+            .select("symbol, last, prev_close, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, earnings_date, earnings_meta, earnings_refreshed_at, ma_50, ma_200")
             .in("symbol", approvedTickers),
           supabase
             .from("fundamentals")
@@ -75,6 +75,8 @@ export function useRadar() {
             earnings_date:         q.earnings_date   ?? null,
             earnings_meta:         q.earnings_meta   ?? null,
             earnings_refreshed_at: q.earnings_refreshed_at ?? null,
+            ma_50:                 q.ma_50           ?? null,
+            ma_200:                q.ma_200          ?? null,
             pe_ttm:                f.pe_ttm           ?? null,
             pe_annual:             f.pe_annual        ?? null,
             eps_ttm:               f.eps_ttm          ?? null,
