@@ -222,23 +222,23 @@ const TREND_COLORS = {
 
 const TREND_EXPLANATIONS = {
   uptrend: (ticker, price, ma50, ma200) =>
-    `${ticker} is above both its 50-day ($${ma50?.toFixed(2)}) and 200-day ($${ma200?.toFixed(2)}) moving averages — ` +
+    `${ticker} is above both its 50-day (${ma50 != null ? `$${ma50.toFixed(2)}` : "N/A"}) and 200-day (${ma200 != null ? `$${ma200.toFixed(2)}` : "N/A"}) moving averages — ` +
     `a healthy uptrend. Mean reversion setups work as intended here. No trend penalty applied. Modifier: 1.00×.`,
 
   pullback: (ticker, price, ma50, ma200) =>
-    `${ticker} is in a pullback within a broader uptrend — price ($${price?.toFixed(2)}) has dropped below its 50-day ($${ma50?.toFixed(2)}) ` +
-    `but remains above its 200-day ($${ma200?.toFixed(2)}). This is typically transient, not a structural breakdown. ` +
+    `${ticker} is in a pullback within a broader uptrend — price (${price != null ? `$${price.toFixed(2)}` : "N/A"}) has dropped below its 50-day (${ma50 != null ? `$${ma50.toFixed(2)}` : "N/A"}) ` +
+    `but remains above its 200-day (${ma200 != null ? `$${ma200.toFixed(2)}` : "N/A"}). This is typically transient, not a structural breakdown. ` +
     `CSP entries still have mean-reversion support. Reduce size 10–15% vs a full uptrend setup. ` +
     `If price breaks below the 200-day, re-evaluate — that's the shift to structural downtrend. Modifier: 0.90×.`,
 
   recovering: (ticker, price, ma50, ma200) =>
-    `${ticker} is recovering from a downtrend — price ($${price?.toFixed(2)}) has reclaimed its 50-day ($${ma50?.toFixed(2)}) ` +
-    `but remains below its 200-day ($${ma200?.toFixed(2)}). The shorter-term trend has flipped ` +
+    `${ticker} is recovering from a downtrend — price (${price != null ? `$${price.toFixed(2)}` : "N/A"}) has reclaimed its 50-day (${ma50 != null ? `$${ma50.toFixed(2)}` : "N/A"}) ` +
+    `but remains below its 200-day (${ma200 != null ? `$${ma200.toFixed(2)}` : "N/A"}). The shorter-term trend has flipped ` +
     `but the longer-term trend hasn't confirmed yet. Size down 15–20% and watch for price to reclaim the 200-day as confirmation. Modifier: 0.85×.`,
 
   downtrend: (ticker, price, ma50, ma200) =>
-    `${ticker} is in a structural downtrend — price ($${price?.toFixed(2)}) is below both its 50-day ($${ma50?.toFixed(2)}) ` +
-    `and 200-day ($${ma200?.toFixed(2)}). This is not mean-reversion territory. A name below its lower Bollinger Band ` +
+    `${ticker} is in a structural downtrend — price (${price != null ? `$${price.toFixed(2)}` : "N/A"}) is below both its 50-day (${ma50 != null ? `$${ma50.toFixed(2)}` : "N/A"}) ` +
+    `and 200-day (${ma200 != null ? `$${ma200.toFixed(2)}` : "N/A"}). This is not mean-reversion territory. A name below its lower Bollinger Band ` +
     `in a downtrend often continues lower rather than reverting. Ryan actively avoids these setups. ` +
     `Skip unless you have a specific fundamental thesis and are willing to size way down. ` +
     `Re-evaluate when price reclaims the 50-day MA. Modifier: 0.70×.`,
