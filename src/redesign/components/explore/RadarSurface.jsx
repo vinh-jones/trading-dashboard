@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { T, getVixBand } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
 import { useRadar } from "../../../hooks/useRadar.js";
+import { getDeployContext, clearDeployContext } from "../focus/DeployBlock.jsx";
 
 // ── Score computation (mirrors RadarTab.jsx) ──────────────────────────────────
 function compositeIv(iv, ivRank) {
@@ -117,6 +118,31 @@ export function RadarSurface({ positions, account, marketContext }) {
   const { rows: rawRows, loading, error } = useRadar();
   const [selected, setSelected] = useState(null);
   const [bbFilter, setBbFilter] = useState("all");
+  const [bookOnly, setBookOnly] = useState(false);
+  const [deployCtx, setDeployCtx] = useState(() => getDeployContext());
+
+  // On mount, honor a deploy-context handoff from Focus
+  useEffect(() => {
+    const ctx = getDeployContext();
+    if (!ctx) return;
+    setDeployCtx(ctx);
+    if (ctx.bookOnly) setBookOnly(true);
+    if (ctx.ticker)   setSelected(ctx.ticker);
+  }, []);
+
+  const clearDeploy = () => {
+    clearDeployContext();
+    setDeployCtx(null);
+    setBookOnly(false);
+  };
+
+  const bookSet = useMemo(() => {
+    const set = new Set();
+    (positions?.open_csps       || []).forEach(p => p.ticker && set.add(p.ticker));
+    (positions?.assigned_shares || []).forEach(s => s.ticker && set.add(s.ticker));
+    (positions?.open_leaps      || []).forEach(l => l.ticker && set.add(l.ticker));
+    return set;
+  }, [positions]);
 
   const accountValue = account?.account_value ?? 0;
   const vix          = account?.vix_current ?? null;
@@ -134,13 +160,16 @@ export function RadarSurface({ positions, account, marketContext }) {
   }, [marketContext]);
 
   const rows = useMemo(() => {
-    const adapted = rawRows
+    let adapted = rawRows
       .map(r => adaptRow(r, positions, accountValue, earningsMap))
       .filter(r => r.score != null)
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
-    return bbFilter === "all" ? adapted : adapted.filter(r => r.bb === bbFilter);
-  }, [rawRows, bbFilter, positions, accountValue, earningsMap]);
+    if (bbFilter !== "all") adapted = adapted.filter(r => r.bb === bbFilter);
+    if (bookOnly)           adapted = adapted.filter(r => bookSet.has(r.t));
+
+    return adapted;
+  }, [rawRows, bbFilter, bookOnly, bookSet, positions, accountValue, earningsMap]);
 
   if (loading) {
     return (
@@ -181,8 +210,11 @@ export function RadarSurface({ positions, account, marketContext }) {
       gap: 14,
       alignItems: "start",
     }}>
-      {/* Left: filter bar + list */}
+      {/* Left: optional deploy banner + filter bar + list */}
       <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
+        {deployCtx && bookOnly && (
+          <DeployBanner ctx={deployCtx} bookCount={bookSet.size} totalCount={rawRows.length} onClear={clearDeploy} />
+        )}
         <FiltersBar bbFilter={bbFilter} setBbFilter={setBbFilter} count={rows.length} total={rawRows.length} />
         <RadarList rows={rows} total={rawRows.length} vix={vix} sentiment={sentiment} selected={selected} setSelected={setSelected} />
       </div>
@@ -191,6 +223,35 @@ export function RadarSurface({ positions, account, marketContext }) {
       {showDetail && (
         <RadarDetail r={selectedRow} onClose={() => setSelected(null)} />
       )}
+    </div>
+  );
+}
+
+// ── Deploy context banner ─────────────────────────────────────────────────────
+function DeployBanner({ ctx, bookCount, totalCount, onClear }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+      background: T.cyan + "0f", border: `1px solid ${T.cyan}55`, borderRadius: T.rSm,
+    }}>
+      <span style={{ fontSize: T.xs, color: T.cyan, letterSpacing: "0.15em", fontWeight: 700, fontFamily: T.mono }}>
+        ◂ FROM DEPLOY
+      </span>
+      <span style={{ fontSize: T.sm, color: T.tm, fontFamily: T.mono }}>
+        Showing your book — {bookCount} tickers
+        {ctx.ticker && <span style={{ color: T.t1, marginLeft: 6 }}>· opened {ctx.ticker}</span>}
+      </span>
+      <span style={{ flex: 1 }} />
+      <button
+        onClick={onClear}
+        style={{
+          fontSize: T.xs, color: T.tm, border: `1px solid ${T.bd}`, background: "transparent",
+          padding: "3px 10px", letterSpacing: "0.1em", borderRadius: T.rSm,
+          fontFamily: T.mono, cursor: "pointer",
+        }}
+      >
+        SHOW ALL {totalCount} ▸
+      </button>
     </div>
   );
 }

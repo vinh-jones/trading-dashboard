@@ -9,6 +9,7 @@ import { PipelineGauge } from "./PipelineGauge.jsx";
 import { MacroGlance } from "./MacroGlance.jsx";
 import { CalendarBar } from "./CalendarBar.jsx";
 import { RollCandidates } from "./RollCandidates.jsx";
+import { DeployBlock, UpcomingTargetsBlock } from "./DeployBlock.jsx";
 
 function useMacroSignals() {
   const [macroData, setMacroData] = useState(null);
@@ -22,7 +23,7 @@ function useMacroSignals() {
   return macroData;
 }
 
-export function FocusCommandCenter({ account, positions, focusItems, quoteMap, rollMap, marketContext, liveVix }) {
+export function FocusCommandCenter({ account, positions, focusItems, quoteMap, rollMap, marketContext, liveVix, trades }) {
   const macroData = useMacroSignals();
 
   // Merge live VIX into account for posture widget
@@ -63,13 +64,23 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, r
 
         <SectionLabel label="OPPORTUNITIES" right={showDeploy || hasActions ? "active" : "all clear"} />
 
-        {showDeploy && <DeployHint band={band} acct={acct} />}
+        {showDeploy && (
+          <DeployBlock
+            account={acct}
+            positions={positions}
+            trades={trades}
+            marketContext={marketContext}
+            band={band}
+          />
+        )}
 
         {!showDeploy && !hasActions && (
           <div style={{ fontSize: T.sm, color: T.tf, fontStyle: "italic", padding: "4px 2px", letterSpacing: "0.03em" }}>
             nothing to surface — within posture, no targets close
           </div>
         )}
+
+        <UpcomingTargetsBlock positions={positions} quoteMap={quoteMap} />
 
         <RollCandidates positions={positions} rollMap={rollMap} />
 
@@ -78,29 +89,6 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, r
         <CalendarBar positions={positions} marketContext={marketContext} />
       </div>
     </div>
-  );
-}
-
-// Minimal deploy hint when user has headroom above VIX band ceiling
-function DeployHint({ band, acct }) {
-  const headroom = (acct.free_cash_pct_est ?? acct.free_cash_pct ?? 0) - band.ceilingPct;
-  const room = Math.round((headroom * (acct.account_value ?? 0)) / 1000) * 1000;
-  return (
-    <Frame accent="quiet" title="▸ DEPLOY" subtitle={`${room > 0 ? `~$${(room / 1000).toFixed(0)}k` : ""} above VIX ceiling · band ${band.label} targets ${Math.round(band.floorPct * 100)}–${Math.round(band.ceilingPct * 100)}%`}>
-      <div style={{ fontSize: T.sm, color: T.tm, lineHeight: 1.6 }}>
-        Free cash is above the {band.label} ceiling. Open Radar to find CSP candidates from your book.
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <a href="/" style={{
-          fontSize: T.xs, color: T.cyan, border: `1px solid ${T.cyan}44`,
-          background: T.cyan + "10", padding: "4px 11px",
-          letterSpacing: "0.12em", borderRadius: T.rSm,
-          textDecoration: "none", display: "inline-block",
-        }}>
-          OPEN RADAR ▸
-        </a>
-      </div>
-    </Frame>
   );
 }
 

@@ -123,6 +123,23 @@ function AppShell({ focus, trades, account, positions }) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // Cross-surface navigation (fired by DeployBlock, command palette, etc.)
+  useEffect(() => {
+    const h = (e) => {
+      const { surface: targetSurface, mode } = e.detail || {};
+      if (targetSurface) setSurface(targetSurface);
+      if (mode) {
+        // Re-dispatch mode switch after surface renders
+        if (targetSurface === "explore") {
+          try { localStorage.setItem("redesign-explore-mode", mode); } catch {}
+          setTimeout(() => window.dispatchEvent(new CustomEvent("tw-explore-mode", { detail: mode })), 0);
+        }
+      }
+    };
+    window.addEventListener("tw-goto", h);
+    return () => window.removeEventListener("tw-goto", h);
+  }, []);
+
   const hhmm = time.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const vix = account?.vix_current ?? focus.liveVix ?? null;
   const band = vix ? getVixBand(vix) : null;
@@ -171,6 +188,7 @@ function AppShell({ focus, trades, account, positions }) {
               rollMap={focus.rollMap}
               marketContext={focus.marketContext}
               liveVix={focus.liveVix}
+              trades={trades}
             />
           )}
           {surface === "explore" && <ExploreSurface positions={positions} account={account} quoteMap={focus.quoteMap} marketContext={focus.marketContext} />}
