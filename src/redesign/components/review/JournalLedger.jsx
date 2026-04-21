@@ -29,16 +29,20 @@ function timeOfIso(iso) {
 // ── Row types ─────────────────────────────────────────────────────────────────
 
 const TYPE_BADGE = {
-  eod_update:    { label: "EOD UPDATE", color: T.mag },
-  trade_note:    { label: "TRADE",      color: T.blue },
-  position_note: { label: "NOTE",       color: T.cyan },
-  roll:          { label: "ROLL",       color: T.cyan },
+  eod_update:    { label: "EOD UPDATE",    color: T.mag },
+  trade_note:    { label: "TRADE NOTE",    color: T.blue },
+  position_note: { label: "POSITION NOTE", color: T.cyan },
+  roll:          { label: "ROLL",          color: T.cyan },
 };
 
 const MOOD_COLOR = {
   focused: T.blue, confident: T.green, neutral: T.tm,
   cautious: T.amber, rattled: T.red, steady: T.green, anxious: T.red,
 };
+
+function Dot() {
+  return <span style={{ color: T.tf }}>·</span>;
+}
 
 function TagChip({ t, small }) {
   const isTicker = /^[A-Z]{2,5}$/.test(t);
@@ -129,7 +133,7 @@ function EodEntry({ e, account, todayTrades, onOpen }) {
   );
 }
 
-function TxnEntry({ e, trades, onUpdate, onDelete }) {
+function TxnEntry({ e, trades, account, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [body, setBody]       = useState(e.body || "");
   const [saving, setSaving]   = useState(false);
@@ -164,10 +168,45 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
   }
 
   const ticker = trade?.ticker || entryTicker;
-  const typeKey = trade?.type || e.entry_type;
-  const typeColor = ({ CSP: T.blue, CC: T.green, LEAPS: "#a476f7", Spread: T.amber })[typeKey]
-    || (TYPE_BADGE[e.entry_type]?.color ?? T.blue);
-  const badgeLabel = trade?.type || TYPE_BADGE[e.entry_type]?.label || "NOTE";
+  const badge = TYPE_BADGE[e.entry_type] || TYPE_BADGE.trade_note;
+
+  // Action verb (Opened / Closed / Rolled / Assigned)
+  let action = null;
+  if (trade) {
+    const sub = (trade.subtype || "").toLowerCase();
+    if (sub.includes("roll"))        action = "Rolled";
+    else if (sub === "assigned")     action = "Assigned";
+    else if (trade.close_date && trade.close_date !== trade.open_date) action = "Closed";
+    else if (trade.open_date)        action = "Opened";
+  }
+
+  const putCallSuffix = trade?.type === "CSP" ? "p"
+    : (trade?.type === "CC" || trade?.type === "LEAPS") ? "c"
+    : "";
+
+  const expiryMmDd = trade?.expiry_date ? trade.expiry_date.slice(5).replace("-", "/") : null;
+
+  // Entry / exit cost (per-share mid, negative on exit means loss realized)
+  const entryCost = trade?.entry_cost ?? null;
+  const exitCost  = trade?.exit_cost  ?? null;
+
+  // Cash % — capital_fronted ÷ account value (rough exposure)
+  const accountValue = account?.account_value ?? null;
+  const cashPct = (trade?.fronted != null && accountValue)
+    ? (trade.fronted / accountValue) * 100
+    : null;
+
+  // DTE display: for closed/rolled/assigned trades show days_held; else days-to-expiry at open
+  let dteDisplay = null;
+  if (trade) {
+    if (action === "Closed" || action === "Rolled" || action === "Assigned") {
+      if (trade.days != null) dteDisplay = `${trade.days}d hold`;
+    } else if (trade.expiry_date && trade.open_date) {
+      const dte = Math.ceil((new Date(trade.expiry_date) - new Date(trade.open_date)) / 86400000);
+      if (dte > 0) dteDisplay = `${dte}d`;
+    }
+  }
+
   const pl = trade?.premium ?? null;
 
   // If we couldn't find a trade but we have a ticker, still render a minimal header
@@ -194,70 +233,108 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
       background: T.surf,
       padding: "10px 14px",
     }}>
-      {/* Header row: badge + time + metadata (if trade-linked) + tags */}
-      <div style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
+      {/* Top row: badge + time + edit */}
+      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{
-          fontSize: T.xs, letterSpacing: "0.1em", color: typeColor,
+          fontSize: T.xs, letterSpacing: "0.1em", color: badge.color,
           fontFamily: T.mono, fontWeight: 600,
-          padding: "2px 6px", border: `1px solid ${typeColor}55`, background: typeColor + "10",
+          padding: "2px 6px", border: `1px solid ${badge.color}55`, background: badge.color + "10",
           whiteSpace: "nowrap",
-        }}>{badgeLabel}</span>
+        }}>{badge.label}</span>
         <span style={{ fontSize: T.xs, color: T.tf, fontFamily: T.mono, whiteSpace: "nowrap" }}>
           {timeOfIso(e.created_at)}
         </span>
-
-        {trade ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
-            <span style={{ color: T.t1, fontSize: T.sm, fontWeight: 600 }}>{trade.ticker}</span>
-            {trade.strike != null && <span style={{ color: T.tm, fontSize: T.xs }}>${trade.strike}</span>}
-            {trade.contracts != null && <span style={{ color: T.tm, fontSize: T.xs }}>· {trade.contracts} ct</span>}
-            {trade.days != null && <span style={{ color: T.tm, fontSize: T.xs }}>· {trade.days}d hold</span>}
-            {pl != null && (
-              <span style={{ color: pl >= 0 ? T.green : T.red, fontSize: T.sm, fontWeight: 600 }}>
-                {pl >= 0 ? "+" : "−"}${Math.abs(pl).toLocaleString()}
-              </span>
-            )}
-            {trade.roi != null && (
-              <span style={{ color: T.tf, fontSize: T.xs }}>
-                ({trade.roi >= 0 ? "+" : ""}{trade.roi.toFixed(1)}% ROI)
-              </span>
-            )}
-            {trade.entry_cost != null && (
-              <span style={{ color: T.tf, fontSize: T.xs }}>
-                · entry ${trade.entry_cost.toFixed(2)}
-              </span>
-            )}
-            {trade.exit_cost != null && (
-              <span style={{ color: T.tf, fontSize: T.xs }}>
-                · exit ${trade.exit_cost.toFixed(2)}
-              </span>
-            )}
-          </div>
-        ) : showTickerOnly ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, flex: 1, minWidth: 0 }}>
-            <span style={{ color: T.t1, fontSize: T.sm, fontWeight: 600 }}>{ticker}</span>
-            {e.title && <span style={{ color: T.tm, fontSize: T.xs }}>· {e.title}</span>}
-          </div>
-        ) : (
-          <span style={{ flex: 1 }} />
+        <span style={{ flex: 1 }} />
+        {!editing && (e.tags || []).filter(t => t !== ticker).slice(0, 2).map(t => <TagChip key={t} t={t} small />)}
+        {!editing && onUpdate && (
+          <button
+            onClick={() => setEditing(true)}
+            title="Edit reflection"
+            style={{
+              border: `1px solid ${T.bd}`, background: "transparent", color: T.tm,
+              padding: "2px 8px", fontSize: T.xs, fontFamily: T.mono,
+              letterSpacing: "0.05em", cursor: "pointer",
+            }}
+          >EDIT</button>
         )}
+      </div>
 
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>
-          {!editing && ticker && <TagChip t={ticker} small />}
-          {!editing && (e.tags || []).filter(t => t !== ticker).slice(0, 2).map(t => <TagChip key={t} t={t} small />)}
-          {!editing && onUpdate && (
-            <button
-              onClick={() => setEditing(true)}
-              title="Edit reflection"
-              style={{
-                border: `1px solid ${T.bd}`, background: "transparent", color: T.tm,
-                padding: "2px 8px", fontSize: T.xs, fontFamily: T.mono,
-                letterSpacing: "0.05em", cursor: "pointer",
-              }}
-            >EDIT</button>
+      {/* Title line: ◆ {ticker} : {type} ${strike} — {action} */}
+      {trade ? (
+        <div style={{
+          marginTop: 8, fontFamily: T.mono, fontSize: T.md,
+          color: T.t1, display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap",
+        }}>
+          <span style={{ color: T.tf, fontSize: T.sm }}>◆</span>
+          <span style={{ fontWeight: 600 }}>{trade.ticker}</span>
+          <span style={{ color: T.tf }}>:</span>
+          <span style={{ color: T.t2 }}>{trade.type}</span>
+          {trade.strike != null && <span style={{ color: T.t2 }}>${trade.strike}</span>}
+          {action && (
+            <>
+              <span style={{ color: T.tf }}>—</span>
+              <span style={{ color: T.t2 }}>{action}</span>
+            </>
           )}
         </div>
-      </div>
+      ) : showTickerOnly ? (
+        <div style={{
+          marginTop: 8, fontFamily: T.mono, fontSize: T.md,
+          color: T.t1, display: "flex", alignItems: "baseline", gap: 6,
+        }}>
+          <span style={{ color: T.tf, fontSize: T.sm }}>◆</span>
+          <span style={{ fontWeight: 600 }}>{ticker}</span>
+          {e.title && (
+            <>
+              <span style={{ color: T.tf }}>—</span>
+              <span style={{ color: T.t2 }}>{e.title}</span>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {/* Metadata line */}
+      {trade && (
+        <div style={{
+          marginTop: 4, fontSize: T.xs, color: T.tm, fontFamily: T.mono,
+          display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline",
+        }}>
+          {trade.strike != null && (
+            <span>${trade.strike}{putCallSuffix}</span>
+          )}
+          {expiryMmDd && <><Dot /><span>exp {expiryMmDd}</span></>}
+          {trade.contracts != null && <><Dot /><span>{trade.contracts} ct</span></>}
+          {entryCost != null && (
+            <>
+              <Dot />
+              <span>
+                @ ${Math.abs(entryCost).toFixed(2)}
+                {exitCost != null && (
+                  <span style={{ color: T.tf }}> → ${Math.abs(exitCost).toFixed(2)}</span>
+                )}
+              </span>
+            </>
+          )}
+          {cashPct != null && <><Dot /><span>{cashPct.toFixed(1)}% cash</span></>}
+          {pl != null && action !== "Opened" && (
+            <>
+              <Dot />
+              <span style={{ color: pl >= 0 ? T.green : T.red, fontWeight: 600 }}>
+                {pl >= 0 ? "+" : "−"}${Math.abs(pl).toLocaleString()}
+              </span>
+            </>
+          )}
+          {trade.roi != null && (
+            <>
+              <Dot />
+              <span style={{ color: trade.roi >= 0 ? T.green : T.red }}>
+                {trade.roi >= 0 ? "+" : ""}{trade.roi.toFixed(2)}% RoR
+              </span>
+            </>
+          )}
+          {dteDisplay && <><Dot /><span>{dteDisplay}</span></>}
+        </div>
+      )}
 
       {/* Body / reflection */}
       {editing ? (
@@ -311,7 +388,7 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
         e.body && (
           <div style={{
             fontSize: T.sm, color: T.t2, lineHeight: 1.55, fontFamily: T.mono,
-            marginTop: (trade || showTickerOnly) ? 6 : 0,
+            marginTop: (trade || showTickerOnly) ? 8 : 4,
             whiteSpace: "pre-wrap",
           }}>
             {e.body}
@@ -529,6 +606,7 @@ export function JournalLedger({ items, account, trades, onOpenEod, onSaveStub, o
                 <TxnEntry
                   key={it.id} e={it.entry}
                   trades={trades}
+                  account={account}
                   onUpdate={onUpdateTxn}
                   onDelete={onDeleteTxn}
                 />
