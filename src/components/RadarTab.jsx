@@ -8,6 +8,7 @@ import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
 import { getVixBand } from "../lib/vixBand";
 import { useRadarSamples } from "../hooks/useRadarSamples";
+import { useIvTrends } from "../hooks/useIvTrends";
 
 // ── Score computation ─────────────────────────────────────────────────────────
 
@@ -16,11 +17,24 @@ function compositeIv(iv, ivRank) {
   return (ivRank / 100 * 0.60) + (Math.min(iv / 1.50, 1.0) * 0.40);
 }
 
-function scannerScore(bbPosition, iv, ivRank) {
+function getTrendState(price, ma50, ma200) {
+  if (price == null) return null;
+  const above200 = ma200 == null || price >= ma200;
+  const above50  = ma50  == null || price >= ma50;
+  if (above200 && above50)   return { state: "uptrend",   label: "Uptrend",    modifier: 1.00 };
+  if (above200 && !above50)  return { state: "pullback",  label: "Pullback",   modifier: 0.90 };
+  if (!above200 && above50)  return { state: "recovering",label: "Recovering", modifier: 0.85 };
+  return                            { state: "downtrend", label: "Downtrend",  modifier: 0.70 };
+}
+
+function scannerScore(bbPosition, iv, ivRank, price, ma50, ma200, ivTrend) {
   if (bbPosition == null) return null;
-  const ivComp = compositeIv(iv, ivRank);
+  const ivComp  = compositeIv(iv, ivRank);
   if (ivComp == null) return null;
-  return (1 - bbPosition) * 0.50 + ivComp * 0.50;
+  const base    = (1 - bbPosition) * 0.50 + ivComp * 0.50;
+  const trend   = getTrendState(price, ma50, ma200);
+  const ivMod   = (ivTrend?.state && ivTrend.state !== "insufficient") ? (ivTrend.modifier ?? 1.0) : 1.0;
+  return base * (trend?.modifier ?? 1.0) * ivMod;
 }
 
 function scoreLabel(score) {
@@ -199,6 +213,76 @@ const IV_EXPLANATIONS = {
     `Composite: ${composite.toFixed(2)}.`,
 };
 
+// Hardcoded hex — intentional exception (like BB_BUCKET_COLORS)
+const TREND_COLORS = {
+  pullback:   { bg: "#2d2600", text: "#e3b341" },
+  recovering: { bg: "#2d2600", text: "#e3b341" },
+  downtrend:  { bg: "#3d1a1a", text: "#f85149" },
+};
+
+const TREND_EXPLANATIONS = {
+  uptrend: (ticker, price, ma50, ma200) =>
+    `${ticker} is above both its 50-day ($${ma50?.toFixed(2)}) and 200-day ($${ma200?.toFixed(2)}) moving averages — ` +
+    `a healthy uptrend. Mean reversion setups work as intended here. No trend penalty applied. Modifier: 1.00×.`,
+
+  pullback: (ticker, price, ma50, ma200) =>
+    `${ticker} is in a pullback within a broader uptrend — price ($${price?.toFixed(2)}) has dropped below its 50-day ($${ma50?.toFixed(2)}) ` +
+    `but remains above its 200-day ($${ma200?.toFixed(2)}). This is typically transient, not a structural breakdown. ` +
+    `CSP entries still have mean-reversion support. Reduce size 10–15% vs a full uptrend setup. ` +
+    `If price breaks below the 200-day, re-evaluate — that's the shift to structural downtrend. Modifier: 0.90×.`,
+
+  recovering: (ticker, price, ma50, ma200) =>
+    `${ticker} is recovering from a downtrend — price ($${price?.toFixed(2)}) has reclaimed its 50-day ($${ma50?.toFixed(2)}) ` +
+    `but remains below its 200-day ($${ma200?.toFixed(2)}). The shorter-term trend has flipped ` +
+    `but the longer-term trend hasn't confirmed yet. Size down 15–20% and watch for price to reclaim the 200-day as confirmation. Modifier: 0.85×.`,
+
+  downtrend: (ticker, price, ma50, ma200) =>
+    `${ticker} is in a structural downtrend — price ($${price?.toFixed(2)}) is below both its 50-day ($${ma50?.toFixed(2)}) ` +
+    `and 200-day ($${ma200?.toFixed(2)}). This is not mean-reversion territory. A name below its lower Bollinger Band ` +
+    `in a downtrend often continues lower rather than reverting. Ryan actively avoids these setups. ` +
+    `Skip unless you have a specific fundamental thesis and are willing to size way down. ` +
+    `Re-evaluate when price reclaims the 50-day MA. Modifier: 0.70×.`,
+};
+
+// Hardcoded hex — intentional exception (like BB_BUCKET_COLORS)
+const IV_TREND_COLORS = {
+  rising:     { bg: "#0d1f0d", text: "#3fb950" },
+  falling:    { bg: "#2d2600", text: "#e3b341" },
+  spiking:    { bg: "#2d2600", text: "#e3b341" },
+  collapsing: { bg: "#2d2600", text: "#e3b341" },
+};
+
+const IV_TREND_EXPLANATIONS = {
+  rising: (ticker, fiveDayChange, oneDayChange, vixSentiment) =>
+    `IV rank has been rising ${fiveDayChange.toFixed(1)} points over the past 5 days — ` +
+    `premium is getting richer on ${ticker}. This is a favorable IV trend for CSP entry: ` +
+    `conditions are improving, not deteriorating. ` +
+    `${vixSentiment ? `Consistent with the broader ${vixSentiment} environment. ` : ""}` +
+    `Scanner score boosted 10%. Enter with confidence if BB position confirms.`,
+
+  falling: (ticker, fiveDayChange) =>
+    `IV rank has dropped ${Math.abs(fiveDayChange).toFixed(1)} points over the past 5 days — ` +
+    `premium is compressing on ${ticker}. The window for rich premium may be narrowing. ` +
+    `If you want this name, enter sooner rather than later. ` +
+    `If IV rank drops below 30, consider waiting for the next vol event before entering. ` +
+    `Scanner score reduced 10%.`,
+
+  spiking: (ticker, fiveDayChange, oneDayChange) =>
+    `IV rank surged ${oneDayChange != null ? oneDayChange.toFixed(1) : fiveDayChange.toFixed(1)} points in the past 24 hours on ${ticker} — ` +
+    `an anomalous move that typically signals a catalyst, news event, or earnings approaching. ` +
+    `Elevated IV creates rich premium, but the cause matters. ` +
+    `Check: is there an earnings date within 14 days? Is there a macro event affecting this sector? ` +
+    `Size down 15% until the catalyst is identified. Scanner score reduced 15%.`,
+
+  collapsing: (ticker, fiveDayChange, oneDayChange) =>
+    `IV rank dropped ${oneDayChange != null ? Math.abs(oneDayChange).toFixed(1) : Math.abs(fiveDayChange).toFixed(1)} points in the past 24 hours on ${ticker} — ` +
+    `a sharp IV crush, typically following an earnings print or major news event. ` +
+    `This is actually Ryan's preferred post-earnings entry setup: IV is still elevated ` +
+    `relative to pre-event baseline but has shed the binary risk premium. ` +
+    `If BB position is favorable, this may be an opportunity. ` +
+    `Scanner score reduced 10% (compressing, but post-crush entries are still valid).`,
+};
+
 // ── VIX context line (new, for ExpandedPanel top) ────────────────────────────
 function vixContextLine(vix, vixBand, ivRank) {
   if (!vix || !vixBand) return null;
@@ -309,11 +393,12 @@ function ScoreBar({ score }) {
 
 // ── Compact row ───────────────────────────────────────────────────────────────
 
-function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm } = row;
+function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, ma_50, ma_200 } = row;
   const bucket   = bbBucket(bb_position);
-  const score    = scannerScore(bb_position, iv, iv_rank);
+  const score    = scannerScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend);
   const ivComp   = compositeIv(iv, iv_rank);
+  const trend    = getTrendState(last, ma_50, ma_200);
   const label    = scoreLabel(score);
   const bucketColors = bucket ? BB_BUCKET_COLORS[bucket] : null;
   const indicators   = getPositionIndicators(ticker, positions);
@@ -395,6 +480,36 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
             </span>
           ) : (
             <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
+          )}
+
+          {/* Trend badge — only shown when not uptrend */}
+          {trend && trend.state !== "uptrend" && TREND_COLORS[trend.state] && (
+            <span style={{
+              fontSize:     theme.size.xs,
+              fontWeight:   600,
+              color:        TREND_COLORS[trend.state].text,
+              background:   TREND_COLORS[trend.state].bg,
+              borderRadius: theme.radius.pill,
+              padding:      "2px 8px",
+              flexShrink:   0,
+            }}>
+              {trend.label}
+            </span>
+          )}
+
+          {/* IV trend badge — only shown when not stable or insufficient */}
+          {ivTrend && ivTrend.state !== "stable" && ivTrend.state !== "insufficient" && IV_TREND_COLORS[ivTrend.state] && (
+            <span style={{
+              fontSize:     theme.size.xs,
+              fontWeight:   600,
+              color:        IV_TREND_COLORS[ivTrend.state].text,
+              background:   IV_TREND_COLORS[ivTrend.state].bg,
+              borderRadius: theme.radius.pill,
+              padding:      "2px 8px",
+              flexShrink:   0,
+            }}>
+              {ivTrend.label}
+            </span>
           )}
 
           {/* Spacer */}
@@ -482,6 +597,7 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
           bucket={bucket}
           score={score}
           account={account}
+          ivTrend={ivTrend}
         />
       )}
     </div>
@@ -490,8 +606,9 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm } = row;
+function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, ma_50, ma_200 } = row;
+  const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
   const sharePos    = (positions?.assigned_shares || []).find(s => s.ticker === ticker) ?? null;
@@ -614,6 +731,86 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         }}>
           {BB_EXPLANATIONS[bucket](ticker, bb_position, vixSentiment, ivLabelForTemplate)}
         </div>
+      )}
+
+      {/* ── Trend Context section ── */}
+      <div style={sectionLabelStyle}>Trend Context</div>
+      {trend ? (
+        <>
+          <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+            {fieldRow("Price",    last   != null ? `$${last.toFixed(2)}`   : null)}
+            {fieldRow("50-day MA", ma_50  != null ? `$${ma_50.toFixed(2)}`  : "—")}
+            {fieldRow("200-day MA",ma_200 != null ? `$${ma_200.toFixed(2)}` : "—")}
+            <span style={{ ...monoStyle }}>
+              <span style={{ color: theme.text.subtle }}>State: </span>
+              <span style={{
+                color: trend.state === "uptrend"   ? theme.green
+                     : trend.state === "downtrend" ? theme.red
+                     : theme.amber,
+                fontWeight: 600,
+              }}>
+                {trend.label}
+              </span>
+              <span style={{ color: theme.text.subtle }}> · {trend.modifier.toFixed(2)}× modifier</span>
+            </span>
+          </div>
+          <div style={{
+            fontSize:     theme.size.sm,
+            color:        theme.text.muted,
+            lineHeight:   1.6,
+            padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+            background:   theme.bg.surface,
+            borderRadius: theme.radius.sm,
+            border:       `1px solid ${theme.border.default}`,
+          }}>
+            {TREND_EXPLANATIONS[trend.state](ticker, last, ma_50, ma_200)}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Trend data pending</div>
+      )}
+
+      {/* ── IV Trend section — only rendered when non-stable/non-null ── */}
+      {ivTrend && ivTrend.state !== "stable" && (
+        <>
+          <div style={sectionLabelStyle}>IV Trend</div>
+          {ivTrend.state === "insufficient" ? (
+            <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
+              Only {ivTrend.dataPoints} data point{ivTrend.dataPoints === 1 ? "" : "s"} available — insufficient history for trend analysis. Check back after 24–48 hours.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+                {fieldRow("IV Rank today", iv_rank != null ? iv_rank.toFixed(1) : null)}
+                {fieldRow("5-day change", ivTrend.fiveDayChange != null ? `${ivTrend.fiveDayChange > 0 ? "+" : ""}${ivTrend.fiveDayChange.toFixed(1)} pts` : null)}
+                {ivTrend.oneDayChange != null && fieldRow("1-day change", `${ivTrend.oneDayChange > 0 ? "+" : ""}${ivTrend.oneDayChange.toFixed(1)} pts`)}
+                <span style={{ ...monoStyle }}>
+                  <span style={{ color: theme.text.subtle }}>State: </span>
+                  <span style={{
+                    color:      IV_TREND_COLORS[ivTrend.state]?.text ?? theme.text.secondary,
+                    fontWeight: 600,
+                  }}>
+                    {ivTrend.label}
+                  </span>
+                  <span style={{ color: theme.text.subtle }}> · {ivTrend.modifier.toFixed(2)}× modifier</span>
+                </span>
+              </div>
+              {IV_TREND_EXPLANATIONS[ivTrend.state] && (
+                <div style={{
+                  fontSize:     theme.size.sm,
+                  color:        theme.text.muted,
+                  lineHeight:   1.6,
+                  padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+                  background:   theme.bg.surface,
+                  borderRadius: theme.radius.sm,
+                  border:       `1px solid ${theme.border.default}`,
+                }}>
+                  {IV_TREND_EXPLANATIONS[ivTrend.state](ticker, ivTrend.fiveDayChange, ivTrend.oneDayChange, vixSentiment)}
+                </div>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {/* ── IV & Premium Quality section ── */}
@@ -751,14 +948,24 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", alignItems: "center" }}>
           {fieldRow("Score", `${score.toFixed(3)} (${label})`)}
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            BB component: {((1 - bb_position) * 0.5).toFixed(3)}
+            BB: {((1 - bb_position) * 0.5).toFixed(3)}
           </span>
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            IV component: {(ivComp * 0.5).toFixed(3)}
+            IV: {(ivComp * 0.5).toFixed(3)}
           </span>
           <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            Combined: {score.toFixed(3)}
+            base: {((1 - bb_position) * 0.5 + ivComp * 0.5).toFixed(3)}
           </span>
+          {trend && trend.modifier !== 1.0 && (
+            <span style={{ ...monoStyle, color: trend.state === "downtrend" ? theme.red : theme.amber }}>
+              ×{trend.modifier.toFixed(2)} ({trend.label})
+            </span>
+          )}
+          {ivTrend && ivTrend.state !== "stable" && ivTrend.state !== "insufficient" && ivTrend.modifier !== 1.0 && (
+            <span style={{ ...monoStyle, color: ivTrend.state === "rising" ? theme.green : theme.amber }}>
+              ×{ivTrend.modifier.toFixed(2)} ({ivTrend.label})
+            </span>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
@@ -867,6 +1074,9 @@ function SortBtn({ id, label, sortBy, setSortBy }) {
 
 export function RadarTab({ positions = null, account = null }) {
   const { rows, loading, error } = useRadar();
+
+  const allTickers = useMemo(() => rows.map(r => r.ticker).filter(Boolean), [rows]);
+  const ivTrendsByTicker = useIvTrends(allTickers);
 
   const [marketContext, setMarketContext]       = useState(null);
   const [bbFilter, setBbFilter]                 = useState("all");
@@ -982,7 +1192,7 @@ export function RadarTab({ positions = null, account = null }) {
       const d = sortBy.dir === "asc" ? 1 : -1;  // multiplier: asc=1, desc=-1
 
       const getVal = {
-        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank),
+        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null),
         bb:           r => r.bb_position,
         iv_rank:      r => r.iv_rank,
         iv_raw:       r => r.iv,
@@ -1003,11 +1213,11 @@ export function RadarTab({ positions = null, account = null }) {
     }
 
     return result;
-  }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext]);
+  }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext, ivTrendsByTicker]);
 
   const strongCount = useMemo(() =>
-    processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank)) === "Strong").length,
-    [processedRows]
+    processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null)) === "Strong").length,
+    [processedRows, ivTrendsByTicker]
   );
 
   const visibleTickers = useMemo(
@@ -1149,6 +1359,7 @@ export function RadarTab({ positions = null, account = null }) {
               onToggle={() => handleRowToggle(row.ticker)}
               sortBy={sortBy}
               account={account}
+              ivTrend={ivTrendsByTicker.get(row.ticker) ?? null}
             />
           ))
         )}

@@ -48,7 +48,9 @@ async function fetchBB(ticker) {
   const closes    = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
   const meta      = data?.chart?.result?.[0]?.meta;
   const price     = meta?.regularMarketPrice;
-  const prevClose = meta?.chartPreviousClose ?? null;
+  const prevClose = meta?.chartPreviousClose    ?? null;
+  const ma50      = meta?.fiftyDayAverage       ?? null;
+  const ma200     = meta?.twoHundredDayAverage  ?? null;
 
   if (!closes || price == null) {
     throw new Error(`Missing closes or price for ${ticker}`);
@@ -69,7 +71,7 @@ async function fetchBB(ticker) {
 
   return {
     bb_position: bbPosition, bb_upper: upper, bb_lower: lower, bb_sma20: sma20,
-    last: price, prev_close: prevClose,
+    last: price, prev_close: prevClose, ma50, ma200,
   };
 }
 
@@ -119,7 +121,7 @@ export default async function handler(req, res) {
       // Return current cached BB data
       const { data: cached, error: cacheError } = await supabase
         .from("quotes")
-        .select("symbol, bb_position, bb_upper, bb_lower, bb_sma20")
+        .select("symbol, bb_position, bb_upper, bb_lower, bb_sma20, ma_50, ma_200")
         .not("bb_position", "is", null)
         .order("symbol");
 
@@ -135,6 +137,8 @@ export default async function handler(req, res) {
           bb_upper:    r.bb_upper,
           bb_lower:    r.bb_lower,
           bb_sma20:    r.bb_sma20,
+          ma_50:       r.ma_50,
+          ma_200:      r.ma_200,
         })),
         errors: [],
       });
@@ -169,6 +173,8 @@ export default async function handler(req, res) {
         bb_refreshed_at: now,
         last:            r.last       ?? null,
         prev_close:      r.prev_close ?? null,
+        ma_50:           r.ma50       ?? null,
+        ma_200:          r.ma200      ?? null,
         refreshed_at:    now,
       }));
 
@@ -190,6 +196,8 @@ export default async function handler(req, res) {
         bb_upper:    r.bb_upper,
         bb_lower:    r.bb_lower,
         bb_sma20:    r.bb_sma20,
+        ma_50:       r.ma50  ?? null,
+        ma_200:      r.ma200 ?? null,
       })),
       errors,
     });
