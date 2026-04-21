@@ -3,6 +3,12 @@ import { T, getVixBand } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
 import { useRadar } from "../../../hooks/useRadar.js";
 import { getDeployContext, clearDeployContext } from "../focus/DeployBlock.jsx";
+import {
+  DEFAULT_FILTERS,
+  applyRadarFilters,
+  useRadarPresets,
+  RadarFilterBar,
+} from "./RadarFilters.jsx";
 
 // ── Score computation (mirrors RadarTab.jsx) ──────────────────────────────────
 function compositeIv(iv, ivRank) {
@@ -42,7 +48,7 @@ function sampleCSP(row) {
   const ror  = prem > 0 ? parseFloat(((prem / coll) * 100).toFixed(2)) : 0;
   return { strike, prem, ror, coll };
 }
-function adaptRow(row, positions, accountValue, earningsMap) {
+function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
   const score0to1 = scannerScore(row.bb_position, row.iv, row.iv_rank);
   const score     = score0to1 != null ? Math.round(score0to1 * 100) : null;
   const bbPct     = row.bb_position;
@@ -77,14 +83,18 @@ function adaptRow(row, positions, accountValue, earningsMap) {
     sector:   row.sector || "—",
     score,
     bbPct:    bbPct ?? 0.5,
+    bb_position: bbPct,           // raw 0..1 scale for filters
     bb,
     ivr:      ivr ?? 0,
     iv:       iv ?? 0,
+    iv_rank:  row.iv_rank ?? null, // 0..100 for filters
+    iv_pct:   row.iv ?? null,      // 0..100 for filters
     earn,
     conc,
     px:       row.last,
     chg:      null,
-    pe:       row.pe_ttm,
+    pe:       row.pe_ttm ?? null,
+    held:     bookSet ? bookSet.has(row.ticker) : false,
     template: toTemplate(bbPct, ivr),
     sample:   sampleCSP(row),
   };
@@ -105,20 +115,13 @@ const TEMPLATE_META = {
   "earnings-hold": { color: T.mag,   label: "HOLD · INSIDE EARNINGS"      },
 };
 
-const BB_FILTERS = [
-  { k: "all",        label: "ALL"       },
-  { k: "below",      label: "BELOW"     },
-  { k: "near_lower", label: "NEAR ↓"   },
-  { k: "mid",        label: "MID"       },
-  { k: "near_upper", label: "NEAR ↑"   },
-];
-
 // ── Main surface ──────────────────────────────────────────────────────────────
 export function RadarSurface({ positions, account, marketContext }) {
   const { rows: rawRows, loading, error } = useRadar();
+  const { presets, savePreset, deletePreset } = useRadarPresets();
   const [selected, setSelected] = useState(null);
-  const [bbFilter, setBbFilter] = useState("all");
-  const [bookOnly, setBookOnly] = useState(false);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [sortKey, setSortKey] = useState("score");
   const [deployCtx, setDeployCtx] = useState(() => getDeployContext());
 
   // On mount, honor a deploy-context handoff from Focus
@@ -126,14 +129,14 @@ export function RadarSurface({ positions, account, marketContext }) {
     const ctx = getDeployContext();
     if (!ctx) return;
     setDeployCtx(ctx);
-    if (ctx.bookOnly) setBookOnly(true);
+    if (ctx.bookOnly) setFilters(prev => ({ ...prev, ownership: "held" }));
     if (ctx.ticker)   setSelected(ctx.ticker);
   }, []);
 
   const clearDeploy = () => {
     clearDeployContext();
     setDeployCtx(null);
-    setBookOnly(false);
+    setFilters(prev => ({ ...prev, ownership: "all" }));
   };
 
   const bookSet = useMemo(() => {
@@ -160,16 +163,11 @@ export function RadarSurface({ positions, account, marketContext }) {
   }, [marketContext]);
 
   const rows = useMemo(() => {
-    let adapted = rawRows
-      .map(r => adaptRow(r, positions, accountValue, earningsMap))
-      .filter(r => r.score != null)
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-
-    if (bbFilter !== "all") adapted = adapted.filter(r => r.bb === bbFilter);
-    if (bookOnly)           adapted = adapted.filter(r => bookSet.has(r.t));
-
-    return adapted;
-  }, [rawRows, bbFilter, bookOnly, bookSet, positions, accountValue, earningsMap]);
+    const adapted = rawRows
+      .map(r => adaptRow(r, positions, accountValue, earningsMap, bookSet))
+      .filter(r => r.score != null);
+    return applyRadarFilters(adapted, filters, sortKey);
+  }, [rawRows, filters, sortKey, bookSet, positions, accountValue, earningsMap]);
 
   if (loading) {
     return (
@@ -212,10 +210,14 @@ export function RadarSurface({ positions, account, marketContext }) {
     }}>
       {/* Left: optional deploy banner + filter bar + list */}
       <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
-        {deployCtx && bookOnly && (
+        {deployCtx && filters.ownership === "held" && (
           <DeployBanner ctx={deployCtx} bookCount={bookSet.size} totalCount={rawRows.length} onClear={clearDeploy} />
         )}
-        <FiltersBar bbFilter={bbFilter} setBbFilter={setBbFilter} count={rows.length} total={rawRows.length} />
+        <RadarFilterBar
+          filters={filters} setFilters={setFilters}
+          sortKey={sortKey} setSortKey={setSortKey}
+          presets={presets} savePreset={savePreset} deletePreset={deletePreset}
+        />
         <RadarList rows={rows} total={rawRows.length} vix={vix} sentiment={sentiment} selected={selected} setSelected={setSelected} />
       </div>
 
@@ -256,29 +258,6 @@ function DeployBanner({ ctx, bookCount, totalCount, onClear }) {
   );
 }
 
-// ── Filters bar ───────────────────────────────────────────────────────────────
-function FiltersBar({ bbFilter, setBbFilter, count, total }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-      padding: "8px 12px", border: `1px solid ${T.bd}`, background: T.surf,
-    }}>
-      <span style={{ fontSize: T.xs, color: T.tf, letterSpacing: "0.12em", marginRight: 4 }}>BB POS</span>
-      {BB_FILTERS.map(f => (
-        <button key={f.k} onClick={() => setBbFilter(f.k)} style={{
-          padding: "3px 10px", fontSize: T.xs, fontFamily: T.mono, letterSpacing: "0.08em",
-          border: `1px solid ${bbFilter === f.k ? T.cyan : T.bd}`,
-          background: bbFilter === f.k ? T.cyan + "18" : "transparent",
-          color: bbFilter === f.k ? T.cyan : T.tm,
-          cursor: "pointer",
-        }}>{f.label}</button>
-      ))}
-      <span style={{ marginLeft: "auto", fontSize: T.xs, color: T.tf, fontFamily: T.mono }}>
-        {count}/{total}
-      </span>
-    </div>
-  );
-}
 
 // ── Row list ──────────────────────────────────────────────────────────────────
 const ROW_COLS = "44px 1fr 110px 88px 70px 92px 90px 48px";
