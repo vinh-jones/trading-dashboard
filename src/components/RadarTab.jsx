@@ -413,75 +413,62 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
           </span>
         </div>
 
-        {/* Row 2: BB value · IV · IVR · IVC · P/E · sample */}
+        {/* Row 2: BB value · IV · IVR · IVC · P/E */}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: theme.space[2] }}>
-          {/* BB value */}
           {bb_position != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("bb") }}>
               BB: {bb_position.toFixed(2)}
             </span>
           )}
-
-          {/* IV */}
           <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_raw") }}>
             {iv != null ? `IV: ${Math.round(iv * 100)}%` : "IV pending"}
           </span>
-
-          {/* IVR */}
           {iv_rank != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_rank") }}>
               IVR: {iv_rank.toFixed(1)}
             </span>
           )}
-
-          {/* Composite IV */}
           {ivComp != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_composite") }}>
               IVC: {ivComp.toFixed(2)}
             </span>
           )}
-
-          {/* P/E */}
           {pe_ttm != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("pe") }}>
               P/E: {pe_ttm.toFixed(1)}
             </span>
           )}
-
-          {/* Sample cell */}
-          {(() => {
-            if (!sample) {
-              return (
-                <span style={{ fontSize: theme.size.sm, color: theme.text.faint, fontFamily: "inherit" }}>—</span>
-              );
-            }
-            if (sample.status === "ok") {
-              const ror = (sample.mid * 100 / sample.collateral) * 100;
-              const collatStr = sample.collateral >= 1000
-                ? `$${(sample.collateral / 1000).toFixed(1)}k`
-                : `$${sample.collateral}`;
-              return (
-                <span style={{ fontSize: theme.size.sm, fontFamily: "inherit", color: theme.text.muted }}>
-                  <span style={{ color: theme.text.primary, fontWeight: 600 }}>${sample.strike}p</span>
-                  {" · "}
-                  <span style={{ color: theme.text.secondary }}>${sample.mid.toFixed(2)}</span>
-                  {" · "}
-                  {ror.toFixed(1)}% RoR
-                  {" · "}
-                  {collatStr}
-                </span>
-              );
-            }
-            if (sample.status === "no_suitable_strike") {
-              return (
-                <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, fontStyle: "italic", fontFamily: "inherit" }}>no 25–35δ</span>
-              );
-            }
-            return (
-              <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, fontFamily: "inherit" }}>—</span>
-            );
-          })()}
         </div>
+
+        {/* Row 3: sample CSP line */}
+        {sample?.status === "ok" ? (() => {
+          const ror = (sample.mid * 100 / sample.collateral) * 100;
+          const collatStr = sample.collateral >= 1000
+            ? `$${(sample.collateral / 1000).toFixed(1)}k`
+            : `$${sample.collateral}`;
+          const deltaLabel = sample.delta != null ? `${Math.round(sample.delta * 100)}Δ` : null;
+          const label = [sample.dte != null ? `${sample.dte}DTE` : null, deltaLabel, "CSP"].filter(Boolean).join(" ");
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
+              <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>
+                {label}:
+              </span>
+              <span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
+                <span style={{ color: theme.text.primary, fontWeight: 600 }}>${sample.strike}p</span>
+                {" · "}
+                <span style={{ color: theme.text.secondary }}>${sample.mid.toFixed(2)}</span>
+                {" · "}
+                {ror.toFixed(1)}% RoR
+                {" · "}
+                {collatStr}
+              </span>
+            </div>
+          );
+        })() : sample?.status === "no_suitable_strike" ? (
+          <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, fontStyle: "italic" }}>
+            CSP: no 25–35δ strike found
+          </div>
+        ) : null}
       </div>
 
       {/* Expanded detail panel */}
