@@ -54,7 +54,7 @@ function CommandPalette({ positions, trades, setSurface, onClose }) {
   useEffect(() => {
     supabase
       .from("journal_entries")
-      .select("id, type, mood, title, body, ticker, created_at")
+      .select("id, entry_type, mood, title, body, ticker, entry_date, created_at")
       .order("created_at", { ascending: false })
       .limit(20)
       .then(({ data }) => { if (data) setJournals(data); })
@@ -317,10 +317,10 @@ function buildJournal(journals, setSurface) {
     group: "journal", groupLabel: "JOURNAL", gColor: T.mag,
     title: j.title || (j.body?.slice(0, 60) + (j.body?.length > 60 ? "…" : "")) || "(no title)",
     subtitle: [
-      typeLabel[j.type] || j.type,
+      typeLabel[j.entry_type] || j.entry_type,
       j.mood ? `◆ ${j.mood}` : null,
       j.ticker,
-      new Date(j.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      new Date(j.entry_date || j.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     ].filter(Boolean).join(" · "),
     run: () => {
       setSurface?.("review");

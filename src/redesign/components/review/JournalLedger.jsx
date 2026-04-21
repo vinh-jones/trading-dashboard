@@ -130,7 +130,7 @@ function EodEntry({ e, account, todayTrades, onOpen }) {
 }
 
 function TxnEntry({ e }) {
-  const badge = TYPE_BADGE[e.type] || TYPE_BADGE.trade_note;
+  const badge = TYPE_BADGE[e.entry_type] || TYPE_BADGE.trade_note;
   const ticker = e.ticker || (e.tags || []).find(t => /^[A-Z]{2,5}$/.test(t));
 
   return (
@@ -264,7 +264,7 @@ function TxnStubEntry({ trade, onSave, saving }) {
 export function buildLedgerItems(entries, trades) {
   const byTradeId = new Set();
   (entries || []).forEach(e => {
-    const id = e.metadata?.trade_id;
+    const id = e.trade_id ?? e.metadata?.trade_id;
     if (id != null) byTradeId.add(String(id));
   });
 
@@ -280,15 +280,19 @@ export function buildLedgerItems(entries, trades) {
       trade: t,
     }));
 
-  const real = (entries || []).map(e => ({
-    kind: e.type === "eod_update" ? "eod" : "txn",
-    id: e.id,
-    date: e.created_at
-      ? new Date(e.created_at).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" })
-      : "—",
-    sortDate: e.created_at ? new Date(e.created_at) : new Date(0),
-    entry: e,
-  }));
+  const real = (entries || []).map(e => {
+    const when = e.entry_date || e.created_at;
+    const dateObj = when ? new Date(when) : new Date(0);
+    return {
+      kind: e.entry_type === "eod_update" ? "eod" : "txn",
+      id: e.id,
+      date: when
+        ? dateObj.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" })
+        : "—",
+      sortDate: dateObj,
+      entry: e,
+    };
+  });
 
   return [...real, ...stubs].sort((a, b) => b.sortDate - a.sortDate);
 }

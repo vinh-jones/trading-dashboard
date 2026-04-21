@@ -48,8 +48,11 @@ export function JournalSurface({ trades, positions, account }) {
   // Reflection on a closed trade → insert journal_entries row with metadata.trade_id
   async function saveStubReflection(trade, body) {
     setSavingTradeId(trade.id);
+    const closeIso = trade.close_date || (trade.closeDate ? trade.closeDate.toISOString().slice(0, 10) : null);
     const payload = {
-      type: "trade_note",
+      entry_type: "trade_note",
+      trade_id: trade.id,
+      entry_date: closeIso || new Date().toISOString().slice(0, 10),
       body,
       ticker: trade.ticker,
       tags: [trade.ticker, trade.type].filter(Boolean),
@@ -77,7 +80,8 @@ export function JournalSurface({ trades, positions, account }) {
       : body.trim();
 
     const payload = {
-      type: "eod_update",
+      entry_type: "eod_update",
+      entry_date: new Date().toISOString().slice(0, 10),
       mood,
       body: fullBody,
       tags: tags || [],
