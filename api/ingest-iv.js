@@ -107,6 +107,22 @@ export default async function handler(req, res) {
       }
 
       console.log(`[api/ingest-iv] Updated IV for: ${results.filter(r => r.ok).map(r => r.symbol).join(", ")}`);
+
+      // Insert IV snapshots for trend tracking (fire-and-forget cleanup, then insert)
+      const okSymbols  = new Set(results.filter(r => r.ok).map(r => r.symbol));
+      const snapshots  = quotes
+        .filter(q => okSymbols.has(q.symbol) && (q.iv != null || q.iv_rank != null))
+        .map(q => ({ ticker: q.symbol, iv: q.iv ?? null, iv_rank: q.iv_rank ?? null, captured_at: now }));
+
+      if (snapshots.length) {
+        supabase.from("iv_snapshots")
+          .delete()
+          .lt("captured_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+          .then(() => {});
+        const { error: snapErr } = await supabase.from("iv_snapshots").insert(snapshots);
+        if (snapErr) console.warn("[api/ingest-iv] snapshot insert failed:", snapErr.message);
+      }
+
       return res.status(200).json({ ok: true, updated: results });
     } catch (err) {
       console.error("[api/ingest-iv POST]", err.message);
