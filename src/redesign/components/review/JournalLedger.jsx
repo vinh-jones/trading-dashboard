@@ -134,19 +134,44 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
   const [body, setBody]       = useState(e.body || "");
   const [saving, setSaving]   = useState(false);
 
-  // Look up the underlying trade (if this reflection was linked to one).
-  // Older entries may have trade_id on the row directly, newer ones stash it in metadata.
+  // Look up the underlying trade. First by explicit trade_id, then fall back to
+  // ticker+date matching (entries predating the trade_id linking or manually
+  // written TRADE notes often have ticker but no trade_id).
   const tradeId = e.trade_id ?? e.metadata?.trade_id ?? null;
-  const trade   = tradeId != null
+  let trade = tradeId != null
     ? (trades || []).find(t => String(t.id) === String(tradeId))
     : null;
 
-  const ticker = trade?.ticker || e.ticker || (e.tags || []).find(t => /^[A-Z]{2,5}$/.test(t));
+  const entryTicker = e.ticker || (e.tags || []).find(t => /^[A-Z]{2,5}$/.test(t));
+  if (!trade && entryTicker && e.entry_date) {
+    const entryMs = new Date(e.entry_date).getTime();
+    // Find the trade for this ticker whose close or open is nearest (within 5 days) to the entry date
+    const WINDOW_MS = 5 * 86400000;
+    const candidates = (trades || [])
+      .filter(t => t.ticker === entryTicker)
+      .map(t => {
+        const closeMs = t.close_date ? new Date(t.close_date).getTime() : null;
+        const openMs  = t.open_date  ? new Date(t.open_date).getTime()  : null;
+        const best = [closeMs, openMs]
+          .filter(x => x != null)
+          .map(x => Math.abs(x - entryMs))
+          .reduce((a, b) => Math.min(a, b), Infinity);
+        return { t, distance: best };
+      })
+      .filter(x => x.distance < WINDOW_MS)
+      .sort((a, b) => a.distance - b.distance);
+    if (candidates.length > 0) trade = candidates[0].t;
+  }
+
+  const ticker = trade?.ticker || entryTicker;
   const typeKey = trade?.type || e.entry_type;
   const typeColor = ({ CSP: T.blue, CC: T.green, LEAPS: "#a476f7", Spread: T.amber })[typeKey]
     || (TYPE_BADGE[e.entry_type]?.color ?? T.blue);
   const badgeLabel = trade?.type || TYPE_BADGE[e.entry_type]?.label || "NOTE";
   const pl = trade?.premium ?? null;
+
+  // If we couldn't find a trade but we have a ticker, still render a minimal header
+  const showTickerOnly = !trade && ticker;
 
   const save = async () => {
     const text = body.trim();
@@ -207,6 +232,11 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
                 · exit ${trade.exit_cost.toFixed(2)}
               </span>
             )}
+          </div>
+        ) : showTickerOnly ? (
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, flex: 1, minWidth: 0 }}>
+            <span style={{ color: T.t1, fontSize: T.sm, fontWeight: 600 }}>{ticker}</span>
+            {e.title && <span style={{ color: T.tm, fontSize: T.xs }}>· {e.title}</span>}
           </div>
         ) : (
           <span style={{ flex: 1 }} />
@@ -281,7 +311,7 @@ function TxnEntry({ e, trades, onUpdate, onDelete }) {
         e.body && (
           <div style={{
             fontSize: T.sm, color: T.t2, lineHeight: 1.55, fontFamily: T.mono,
-            marginTop: trade ? 6 : 0,
+            marginTop: (trade || showTickerOnly) ? 6 : 0,
             whiteSpace: "pre-wrap",
           }}>
             {e.body}
