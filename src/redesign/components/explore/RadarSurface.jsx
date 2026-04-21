@@ -69,13 +69,20 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
     conc = parseFloat(((committed / accountValue) * 100).toFixed(1));
   }
 
-  // Days until next earnings — only available for tickers we hold (from marketContext)
+  // Days until next earnings. Prefer OpenClaw's richer per-ticker data (from
+  // marketContext.positions[].nextEarnings — only held tickers), fall back to
+  // Yahoo calendarEvents cached into quotes.earnings_date by /api/wheel-earnings.
   let earn = null;
-  const earnIso = earningsMap?.[row.ticker];
+  const earnIso = earningsMap?.[row.ticker] ?? row.earnings_date;
   if (earnIso) {
     const days = Math.ceil((new Date(earnIso + "T00:00:00") - new Date()) / 86400000);
     if (days >= 0 && days < 400) earn = days;
   }
+
+  // Intraday % change from yesterday's close (populated by /api/bb alongside BB data)
+  const chg = (row.last != null && row.prev_close != null && row.prev_close !== 0)
+    ? ((row.last - row.prev_close) / row.prev_close) * 100
+    : null;
 
   return {
     t:        row.ticker,
@@ -92,7 +99,7 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
     earn,
     conc,
     px:       row.last,
-    chg:      null,
+    chg,
     pe:       row.pe_ttm ?? null,
     held:     bookSet ? bookSet.has(row.ticker) : false,
     template: toTemplate(bbPct, ivr),

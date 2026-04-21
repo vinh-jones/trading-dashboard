@@ -7,9 +7,11 @@ export function useRadar() {
   const [error, setError]     = useState(null);
 
   useEffect(() => {
-    // Fire-and-forget BB refresh — don't block on it, but log failures so
-    // stale BB data isn't silently hidden during debugging.
+    // Fire-and-forget BB + wheel-earnings refreshes — don't block on them, but
+    // log failures so stale data isn't silently hidden during debugging. Both
+    // endpoints are idempotent and return cached rows inside their stale window.
     fetch("/api/bb").catch(err => console.warn("[useRadar] BB refresh failed:", err));
+    fetch("/api/wheel-earnings").catch(err => console.warn("[useRadar] wheel-earnings refresh failed:", err));
 
     async function fetchData() {
       try {
@@ -31,7 +33,7 @@ export function useRadar() {
         ] = await Promise.all([
           supabase
             .from("quotes")
-            .select("symbol, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at")
+            .select("symbol, last, prev_close, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, earnings_date, earnings_refreshed_at")
             .in("symbol", approvedTickers),
           supabase
             .from("fundamentals")
@@ -57,21 +59,24 @@ export function useRadar() {
           const q = quotesMap[u.ticker] || {};
           const f = fundMap[u.ticker]   || {};
           return {
-            ticker:          u.ticker,
-            company:         u.company,
-            sector:          u.sector,
-            price_category:  u.price_category,
-            last:            q.last            ?? null,
-            iv:              q.iv              ?? null,
-            iv_rank:         q.iv_rank         ?? null,
-            bb_position:     q.bb_position     ?? null,
-            bb_upper:        q.bb_upper        ?? null,
-            bb_lower:        q.bb_lower        ?? null,
-            bb_sma20:        q.bb_sma20        ?? null,
-            bb_refreshed_at: q.bb_refreshed_at ?? null,
-            pe_ttm:          f.pe_ttm           ?? null,
-            pe_annual:       f.pe_annual        ?? null,
-            eps_ttm:         f.eps_ttm          ?? null,
+            ticker:                u.ticker,
+            company:               u.company,
+            sector:                u.sector,
+            price_category:        u.price_category,
+            last:                  q.last            ?? null,
+            prev_close:            q.prev_close      ?? null,
+            iv:                    q.iv              ?? null,
+            iv_rank:               q.iv_rank         ?? null,
+            bb_position:           q.bb_position     ?? null,
+            bb_upper:              q.bb_upper        ?? null,
+            bb_lower:              q.bb_lower        ?? null,
+            bb_sma20:              q.bb_sma20        ?? null,
+            bb_refreshed_at:       q.bb_refreshed_at ?? null,
+            earnings_date:         q.earnings_date   ?? null,
+            earnings_refreshed_at: q.earnings_refreshed_at ?? null,
+            pe_ttm:                f.pe_ttm           ?? null,
+            pe_annual:             f.pe_annual        ?? null,
+            eps_ttm:               f.eps_ttm          ?? null,
           };
         });
 

@@ -45,8 +45,10 @@ async function fetchBB(ticker) {
 
   const data = await r.json();
 
-  const closes = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
-  const price  = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+  const closes    = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+  const meta      = data?.chart?.result?.[0]?.meta;
+  const price     = meta?.regularMarketPrice;
+  const prevClose = meta?.chartPreviousClose ?? null;
 
   if (!closes || price == null) {
     throw new Error(`Missing closes or price for ${ticker}`);
@@ -65,7 +67,10 @@ async function fetchBB(ticker) {
   const lower    = sma20 - 2 * stdDev;
   const bbPosition = (price - lower) / (upper - lower);
 
-  return { bb_position: bbPosition, bb_upper: upper, bb_lower: lower, bb_sma20: sma20 };
+  return {
+    bb_position: bbPosition, bb_upper: upper, bb_lower: lower, bb_sma20: sma20,
+    last: price, prev_close: prevClose,
+  };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -152,7 +157,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 4. Upsert BB columns only — do NOT touch iv/price columns
+    // 4. Upsert BB + price columns — do NOT touch iv columns (owned by ingest-iv)
     if (results.length) {
       const upsertRows = results.map(r => ({
         symbol:          r.ticker,
@@ -162,6 +167,9 @@ export default async function handler(req, res) {
         bb_lower:        r.bb_lower,
         bb_sma20:        r.bb_sma20,
         bb_refreshed_at: now,
+        last:            r.last       ?? null,
+        prev_close:      r.prev_close ?? null,
+        refreshed_at:    now,
       }));
 
       const { error: upsertError } = await supabase
