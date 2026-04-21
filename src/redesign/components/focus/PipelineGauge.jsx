@@ -1,11 +1,16 @@
 import { T } from "../../theme.js";
 import { Frame, Datum } from "../../primitives.jsx";
 
-export function PipelineGauge({ account }) {
-  const mtd      = account?.mtd_premium ?? 0;
-  const pipeline = account?.mtd_pipeline_est ?? account?.mtd_pipeline_gross ?? 0;
-  const base     = account?.baseline_target ?? 15000;
-  const stretch  = account?.stretch_target  ?? 25000;
+export function PipelineGauge({ account, positions }) {
+  const mtd     = account?.month_to_date_premium ?? 0;
+  const base    = account?.monthly_targets?.baseline ?? 15000;
+  const stretch = account?.monthly_targets?.stretch  ?? 25000;
+
+  // Expected pipeline: 60% of open CSP + CC premium (same formula as snapshot.js)
+  const openCSPs = positions?.open_csps ?? [];
+  const openCCs  = (positions?.assigned_shares ?? []).filter(s => s.active_cc).map(s => s.active_cc);
+  const openPremiumGross = [...openCSPs, ...openCCs].reduce((s, p) => s + (p.premium_collected || 0), 0);
+  const pipeline = Math.round(openPremiumGross * 0.60);
 
   const captured = Math.min(mtd / stretch, 1) * 100;
   const pipeW    = Math.min((pipeline / stretch) * 100, 100 - captured);

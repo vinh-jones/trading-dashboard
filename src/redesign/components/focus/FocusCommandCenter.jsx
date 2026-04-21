@@ -59,7 +59,7 @@ export function FocusCommandCenter({ account, positions, focusItems, quoteMap, r
 
       {/* RIGHT — QUIET: MTD | Opportunities | Context */}
       <div style={{ display: "grid", gap: 14, minWidth: 0, alignContent: "start" }}>
-        <PipelineGauge account={acct} />
+        <PipelineGauge account={acct} positions={positions} />
 
         <SectionLabel label="OPPORTUNITIES" right={showDeploy || hasActions ? "active" : "all clear"} />
 
