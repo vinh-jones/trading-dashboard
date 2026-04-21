@@ -88,8 +88,10 @@ export default async function handler(req, res) {
         quotes.map((q) => {
           const { symbol, iv, iv_rank, last, prev_close } = q ?? {};
           if (!symbol) return Promise.resolve({ symbol, ok: false, error: "missing symbol" });
-          const patch = { iv: iv ?? null, iv_rank: iv_rank ?? null, refreshed_at: now };
-          if (last       !== undefined) patch.last       = last       ?? null;
+          const patch = { refreshed_at: now };
+          if (iv        !== undefined) patch.iv        = iv        ?? null;
+          if (iv_rank   !== undefined) patch.iv_rank   = iv_rank   ?? null;
+          if (last      !== undefined) patch.last      = last      ?? null;
           if (prev_close !== undefined) patch.prev_close = prev_close ?? null;
           return supabase
             .from("quotes")
