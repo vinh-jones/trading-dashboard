@@ -54,7 +54,7 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
   const bbPct     = row.bb_position;
   const bb        = toBBEnum(bbPct);
   const ivr       = row.iv_rank != null ? row.iv_rank / 100 : null;
-  const iv        = row.iv != null ? row.iv / 100 : null;
+  const iv        = row.iv ?? null;
 
   // Concentration: positions for this ticker / account value
   let conc = 0;
@@ -101,7 +101,7 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
     ivr:      ivr ?? 0,
     iv:       iv ?? 0,
     iv_rank:  row.iv_rank ?? null, // 0..100 for filters
-    iv_pct:   row.iv ?? null,      // 0..100 for filters
+    iv_pct:   row.iv != null ? row.iv * 100 : null,  // 0..100 for filters
     earn,
     earnHour,
     conc,
