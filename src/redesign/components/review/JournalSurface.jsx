@@ -110,6 +110,31 @@ export function JournalSurface({ trades, positions, account }) {
     setEntries(prev => prev.map(e => e.id === next.id ? next : e));
   }
 
+  // Edit an existing reflection (TxnEntry) body
+  async function updateTxnBody(id, body) {
+    const { error } = await supabase
+      .from("journal_entries")
+      .update({ body, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      console.warn("[JournalSurface] update txn failed:", error.message);
+      return false;
+    }
+    setEntries(prev => prev.map(e => e.id === id ? { ...e, body } : e));
+    return true;
+  }
+
+  // Delete a reflection (TxnEntry) — the stub will reappear for that trade
+  async function deleteTxn(id) {
+    const { error } = await supabase.from("journal_entries").delete().eq("id", id);
+    if (error) {
+      console.warn("[JournalSurface] delete txn failed:", error.message);
+      return false;
+    }
+    setEntries(prev => prev.filter(e => e.id !== id));
+    return true;
+  }
+
   if (loading) {
     return (
       <div style={{ fontSize: T.sm, color: T.tf, fontFamily: T.mono, padding: "40px 0", textAlign: "center" }}>
@@ -168,6 +193,8 @@ export function JournalSurface({ trades, positions, account }) {
         trades={trades}
         onOpenEod={setOpenEntry}
         onSaveStub={saveStubReflection}
+        onUpdateTxn={updateTxnBody}
+        onDeleteTxn={deleteTxn}
         savingTradeId={savingTradeId}
       />
 

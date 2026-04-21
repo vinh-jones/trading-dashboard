@@ -129,32 +129,165 @@ function EodEntry({ e, account, todayTrades, onOpen }) {
   );
 }
 
-function TxnEntry({ e }) {
-  const badge = TYPE_BADGE[e.entry_type] || TYPE_BADGE.trade_note;
-  const ticker = e.ticker || (e.tags || []).find(t => /^[A-Z]{2,5}$/.test(t));
+function TxnEntry({ e, trades, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [body, setBody]       = useState(e.body || "");
+  const [saving, setSaving]   = useState(false);
+
+  // Look up the underlying trade (if this reflection was linked to one).
+  // Older entries may have trade_id on the row directly, newer ones stash it in metadata.
+  const tradeId = e.trade_id ?? e.metadata?.trade_id ?? null;
+  const trade   = tradeId != null
+    ? (trades || []).find(t => String(t.id) === String(tradeId))
+    : null;
+
+  const ticker = trade?.ticker || e.ticker || (e.tags || []).find(t => /^[A-Z]{2,5}$/.test(t));
+  const typeKey = trade?.type || e.entry_type;
+  const typeColor = ({ CSP: T.blue, CC: T.green, LEAPS: "#a476f7", Spread: T.amber })[typeKey]
+    || (TYPE_BADGE[e.entry_type]?.color ?? T.blue);
+  const badgeLabel = trade?.type || TYPE_BADGE[e.entry_type]?.label || "NOTE";
+  const pl = trade?.premium ?? null;
+
+  const save = async () => {
+    const text = body.trim();
+    if (!text || !onUpdate) return;
+    setSaving(true);
+    const ok = await onUpdate(e.id, text);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  const del = async () => {
+    if (!onDelete) return;
+    if (!window.confirm("Delete this reflection?")) return;
+    await onDelete(e.id);
+  };
 
   return (
     <div style={{
       border: `1px solid ${T.bd}`,
-      background: T.surf, padding: "10px 14px",
-      display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap",
+      background: T.surf,
+      padding: "10px 14px",
     }}>
-      <span style={{
-        fontSize: T.xs, letterSpacing: "0.1em", color: badge.color,
-        fontFamily: T.mono, fontWeight: 600,
-        padding: "2px 6px", border: `1px solid ${badge.color}55`, background: badge.color + "10",
-        whiteSpace: "nowrap",
-      }}>{badge.label}</span>
-      <span style={{ fontSize: T.xs, color: T.tf, fontFamily: T.mono, whiteSpace: "nowrap" }}>
-        {timeOfIso(e.created_at)}
-      </span>
-      <span style={{ fontSize: T.sm, color: T.t2, lineHeight: 1.5, fontFamily: T.mono, flex: 1, minWidth: 0 }}>
-        {e.body}
-      </span>
-      <div style={{ display: "flex", gap: 4, flexShrink: 0, flexWrap: "wrap" }}>
-        {ticker && <TagChip t={ticker} small />}
-        {(e.tags || []).filter(t => t !== ticker).slice(0, 2).map(t => <TagChip key={t} t={t} small />)}
+      {/* Header row: badge + time + metadata (if trade-linked) + tags */}
+      <div style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span style={{
+          fontSize: T.xs, letterSpacing: "0.1em", color: typeColor,
+          fontFamily: T.mono, fontWeight: 600,
+          padding: "2px 6px", border: `1px solid ${typeColor}55`, background: typeColor + "10",
+          whiteSpace: "nowrap",
+        }}>{badgeLabel}</span>
+        <span style={{ fontSize: T.xs, color: T.tf, fontFamily: T.mono, whiteSpace: "nowrap" }}>
+          {timeOfIso(e.created_at)}
+        </span>
+
+        {trade ? (
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, fontFamily: T.mono, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
+            <span style={{ color: T.t1, fontSize: T.sm, fontWeight: 600 }}>{trade.ticker}</span>
+            {trade.strike != null && <span style={{ color: T.tm, fontSize: T.xs }}>${trade.strike}</span>}
+            {trade.contracts != null && <span style={{ color: T.tm, fontSize: T.xs }}>· {trade.contracts} ct</span>}
+            {trade.days != null && <span style={{ color: T.tm, fontSize: T.xs }}>· {trade.days}d hold</span>}
+            {pl != null && (
+              <span style={{ color: pl >= 0 ? T.green : T.red, fontSize: T.sm, fontWeight: 600 }}>
+                {pl >= 0 ? "+" : "−"}${Math.abs(pl).toLocaleString()}
+              </span>
+            )}
+            {trade.roi != null && (
+              <span style={{ color: T.tf, fontSize: T.xs }}>
+                ({trade.roi >= 0 ? "+" : ""}{trade.roi.toFixed(1)}% ROI)
+              </span>
+            )}
+            {trade.entry_cost != null && (
+              <span style={{ color: T.tf, fontSize: T.xs }}>
+                · entry ${trade.entry_cost.toFixed(2)}
+              </span>
+            )}
+            {trade.exit_cost != null && (
+              <span style={{ color: T.tf, fontSize: T.xs }}>
+                · exit ${trade.exit_cost.toFixed(2)}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span style={{ flex: 1 }} />
+        )}
+
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>
+          {!editing && ticker && <TagChip t={ticker} small />}
+          {!editing && (e.tags || []).filter(t => t !== ticker).slice(0, 2).map(t => <TagChip key={t} t={t} small />)}
+          {!editing && onUpdate && (
+            <button
+              onClick={() => setEditing(true)}
+              title="Edit reflection"
+              style={{
+                border: `1px solid ${T.bd}`, background: "transparent", color: T.tm,
+                padding: "2px 8px", fontSize: T.xs, fontFamily: T.mono,
+                letterSpacing: "0.05em", cursor: "pointer",
+              }}
+            >EDIT</button>
+          )}
+        </div>
       </div>
+
+      {/* Body / reflection */}
+      {editing ? (
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            value={body}
+            onChange={evt => setBody(evt.target.value)}
+            autoFocus
+            style={{
+              width: "100%", minHeight: 70,
+              padding: 10, background: T.bg, border: `1px solid ${T.bd}`,
+              color: T.t2, fontSize: T.sm, fontFamily: T.mono, lineHeight: 1.5,
+              resize: "vertical", outline: "none", borderRadius: 2,
+              boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <button
+              onClick={del}
+              style={{
+                border: `1px solid ${T.bd}`, background: "transparent", color: T.red,
+                padding: "4px 12px", fontSize: T.xs, fontFamily: T.mono,
+                letterSpacing: "0.05em", cursor: "pointer",
+              }}
+            >Delete</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => { setEditing(false); setBody(e.body || ""); }}
+                style={{
+                  border: `1px solid ${T.bd}`, background: "transparent", color: T.tm,
+                  padding: "4px 12px", fontSize: T.xs, fontFamily: T.mono,
+                  letterSpacing: "0.05em", cursor: "pointer",
+                }}
+              >Cancel</button>
+              <button
+                onClick={save}
+                disabled={!body.trim() || saving}
+                style={{
+                  border: `1px solid ${T.blue}`,
+                  background: body.trim() && !saving ? T.blue + "22" : "transparent",
+                  color: body.trim() && !saving ? T.blue : T.tf,
+                  padding: "4px 12px", fontSize: T.xs, fontFamily: T.mono,
+                  letterSpacing: "0.05em", cursor: body.trim() && !saving ? "pointer" : "default",
+                  fontWeight: 600,
+                }}
+              >{saving ? "SAVING…" : "SAVE"}</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        e.body && (
+          <div style={{
+            fontSize: T.sm, color: T.t2, lineHeight: 1.55, fontFamily: T.mono,
+            marginTop: trade ? 6 : 0,
+            whiteSpace: "pre-wrap",
+          }}>
+            {e.body}
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -297,7 +430,7 @@ export function buildLedgerItems(entries, trades) {
   return [...real, ...stubs].sort((a, b) => b.sortDate - a.sortDate);
 }
 
-export function JournalLedger({ items, account, trades, onOpenEod, onSaveStub, savingTradeId }) {
+export function JournalLedger({ items, account, trades, onOpenEod, onSaveStub, onUpdateTxn, onDeleteTxn, savingTradeId }) {
   // Group by date string (MM/DD)
   const groups = {};
   items.forEach(it => {
@@ -362,7 +495,14 @@ export function JournalLedger({ items, account, trades, onOpenEod, onSaveStub, s
                   />
                 );
               }
-              return <TxnEntry key={it.id} e={it.entry} />;
+              return (
+                <TxnEntry
+                  key={it.id} e={it.entry}
+                  trades={trades}
+                  onUpdate={onUpdateTxn}
+                  onDelete={onDeleteTxn}
+                />
+              );
             })}
           </div>
         </div>
