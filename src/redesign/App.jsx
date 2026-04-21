@@ -143,7 +143,7 @@ function AppShell({ focus, trades, account, positions }) {
               liveVix={focus.liveVix}
             />
           )}
-          {surface === "explore" && <ExploreSurface positions={positions} account={account} />}
+          {surface === "explore" && <ExploreSurface positions={positions} account={account} quoteMap={focus.quoteMap} />}
           {surface === "review"  && <ReviewSurface trades={trades} account={account} positions={positions} />}
         </div>
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { T } from "../../theme.js";
 import { Frame, SectionLabel, Empty } from "../../primitives.jsx";
-import { calcDTE } from "../../../lib/trading.js";
+import { calcDTE, buildOccSymbol, parseShareCount } from "../../../lib/trading.js";
 import { RadarSurface } from "./RadarSurface.jsx";
 
 // Semantic color map for allocation bars — parallel to TYPE_COLORS intentional exception
@@ -108,23 +108,25 @@ function AllocBar({ row, maxPct }) {
 // ── Open Positions table ──────────────────────────────────────────────────────
 
 const CSP_COLS = [
-  { k: "ticker",   label: "TKR",     w: "56px"  },
-  { k: "strike",   label: "STRIKE",  w: "60px",  r: true },
-  { k: "dte",      label: "DTE",     w: "52px",  r: true },
-  { k: "pctOtm",   label: "% OTM",   w: "60px",  r: true },
-  { k: "delta",    label: "Δ",       w: "56px",  r: true },
-  { k: "premium",  label: "PREMIUM", w: "72px",  r: true },
-  { k: "capital",  label: "CAPITAL", w: "72px",  r: true },
-  { k: "roi",      label: "ROI",     w: "52px",  r: true },
+  { k: "ticker",   label: "TKR",    w: "56px"  },
+  { k: "strike",   label: "STRIKE", w: "60px",  r: true },
+  { k: "dte",      label: "DTE",    w: "44px",  r: true },
+  { k: "pctOtm",   label: "% OTM",  w: "64px",  r: true },
+  { k: "delta",    label: "Δ",      w: "44px",  r: true },
+  { k: "premium",  label: "PREM",   w: "68px",  r: true },
+  { k: "glDollar", label: "P/L $",  w: "72px",  r: true },
+  { k: "glPct",    label: "P/L %",  w: "56px",  r: true },
 ];
 
 const CC_COLS = [
   { k: "ticker",   label: "TKR",     w: "56px"  },
   { k: "strike",   label: "STRIKE",  w: "60px",  r: true },
-  { k: "dte",      label: "DTE",     w: "52px",  r: true },
+  { k: "dte",      label: "DTE",     w: "44px",  r: true },
   { k: "basis",    label: "BASIS",   w: "72px",  r: true },
-  { k: "vsBasis",  label: "vs BASIS",w: "72px",  r: true },
-  { k: "premium",  label: "PREMIUM", w: "72px",  r: true },
+  { k: "vsBasis",  label: "vs BASIS",w: "68px",  r: true },
+  { k: "premium",  label: "PREM",    w: "68px",  r: true },
+  { k: "glDollar", label: "P/L $",   w: "72px",  r: true },
+  { k: "glPct",    label: "P/L %",   w: "56px",  r: true },
 ];
 
 const LEAP_COLS = [
@@ -135,7 +137,7 @@ const LEAP_COLS = [
   { k: "cost",     label: "COST",    w: "72px",  r: true },
 ];
 
-export function OpenPositionsTable({ positions }) {
+export function OpenPositionsTable({ positions, quoteMap }) {
   const [view, setView] = useState("CSP");
 
   const csps  = positions?.open_csps || [];
@@ -167,41 +169,61 @@ export function OpenPositionsTable({ positions }) {
         ))}
       </div>
     }>
-      {view === "CSP"  && <PosTable rows={buildCspRows(csps)}  cols={CSP_COLS}  />}
-      {view === "CC"   && <PosTable rows={buildCcRows(ccs)}    cols={CC_COLS}   />}
-      {view === "LEAP" && <PosTable rows={buildLeapRows(leaps)} cols={LEAP_COLS} />}
+      {view === "CSP"  && <PosTable rows={buildCspRows(csps, quoteMap)}  cols={CSP_COLS}  />}
+      {view === "CC"   && <PosTable rows={buildCcRows(ccs, quoteMap)}    cols={CC_COLS}   />}
+      {view === "LEAP" && <PosTable rows={buildLeapRows(leaps)}           cols={LEAP_COLS} />}
     </Frame>
   );
 }
 
-function buildCspRows(csps) {
-  return csps.map(p => ({
-    ticker:  p.ticker,
-    strike:  p.strike ? `$${p.strike}` : "—",
-    dte:     (() => { const d = calcDTE(p.expiry_date); return d != null ? `${d}d` : "—"; })(),
-    pctOtm:  "—",
-    delta:   p.delta != null ? p.delta.toFixed(2) : "—",
-    premium: p.premium_collected ? `$${p.premium_collected.toLocaleString()}` : "—",
-    capital: p.capital_fronted ? `$${p.capital_fronted.toLocaleString()}` : "—",
-    roi:     p.roi != null ? `${p.roi.toFixed(2)}%` : "—",
-    _plColor: null,
-  }));
+function calcGl(ticker, expiryDate, isCall, strike, contracts, premiumCollected, quoteMap) {
+  if (!expiryDate || strike == null || !contracts || !premiumCollected || !quoteMap) return {};
+  const sym = buildOccSymbol(ticker, expiryDate, isCall, strike);
+  const mid = quoteMap.get?.(sym)?.mid;
+  if (mid == null) return {};
+  const glDollar = premiumCollected - mid * contracts * 100;
+  const glPct    = (glDollar / premiumCollected) * 100;
+  return { glDollar, glPct };
 }
 
-function buildCcRows(ccs) {
+function buildCspRows(csps, quoteMap) {
+  return csps.map(p => {
+    const stockQ  = quoteMap?.get?.(p.ticker);
+    const stockPx = stockQ?.last ?? stockQ?.mid ?? null;
+    const rawOtm  = stockPx && p.strike ? (stockPx - p.strike) / p.strike * 100 : null;
+    const { glDollar, glPct } = calcGl(p.ticker, p.expiry_date, false, p.strike, p.contracts, p.premium_collected, quoteMap);
+    return {
+      ticker:   p.ticker,
+      strike:   p.strike ? `$${p.strike}` : "—",
+      dte:      (() => { const d = calcDTE(p.expiry_date); return d != null ? `${d}d` : "—"; })(),
+      pctOtm:   rawOtm != null ? `${rawOtm >= 0 ? "+" : ""}${rawOtm.toFixed(1)}%` : "—",
+      delta:    p.delta != null ? p.delta.toFixed(2) : "—",
+      premium:  p.premium_collected ? `$${p.premium_collected.toLocaleString()}` : "—",
+      glDollar: glDollar != null ? `${glDollar >= 0 ? "+" : "−"}$${Math.abs(Math.round(glDollar))}` : "—",
+      glPct:    glPct    != null ? `${glPct    >= 0 ? "+" : ""}${glPct.toFixed(0)}%` : "—",
+      _glColor: glDollar != null ? (glDollar >= 0 ? T.green : T.red) : null,
+    };
+  });
+}
+
+function buildCcRows(ccs, quoteMap) {
   return ccs.map(p => {
     const basis = p._basis;
     const contracts = p.contracts || 1;
     const basisPerSh = basis && contracts ? basis / (contracts * 100) : null;
     const diff = basisPerSh && p.strike ? p.strike - basisPerSh : null;
     const diffColor = diff == null ? T.tm : diff >= 0 ? T.green : T.red;
+    const { glDollar, glPct } = calcGl(p.ticker, p.expiry_date, true, p.strike, contracts, p.premium_collected, quoteMap);
     return {
-      ticker:  p.ticker,
-      strike:  p.strike ? `$${p.strike}` : "—",
-      dte:     (() => { const d = calcDTE(p.expiry_date); return d != null ? `${d}d` : "—"; })(),
-      basis:   basisPerSh ? `$${basisPerSh.toFixed(2)}/sh` : "—",
-      vsBasis: diff != null ? `${diff >= 0 ? "+" : ""}$${diff.toFixed(2)}` : "—",
-      premium: p.premium_collected ? `$${p.premium_collected.toLocaleString()}` : "—",
+      ticker:   p.ticker,
+      strike:   p.strike ? `$${p.strike}` : "—",
+      dte:      (() => { const d = calcDTE(p.expiry_date); return d != null ? `${d}d` : "—"; })(),
+      basis:    basisPerSh ? `$${basisPerSh.toFixed(2)}/sh` : "—",
+      vsBasis:  diff != null ? `${diff >= 0 ? "+" : ""}$${diff.toFixed(2)}` : "—",
+      premium:  p.premium_collected ? `$${p.premium_collected.toLocaleString()}` : "—",
+      glDollar: glDollar != null ? `${glDollar >= 0 ? "+" : "−"}$${Math.abs(Math.round(glDollar))}` : "—",
+      glPct:    glPct    != null ? `${glPct    >= 0 ? "+" : ""}${glPct.toFixed(0)}%` : "—",
+      _glColor: glDollar != null ? (glDollar >= 0 ? T.green : T.red) : null,
       _vsBasisColor: diffColor,
     };
   });
@@ -244,9 +266,10 @@ function PosTable({ rows, cols }) {
 
 function PosRow({ row, cols, tpl }) {
   const [hover, setHover] = useState(false);
-  const cellColor = (k, v) => {
-    if (k === "ticker") return T.t1;
-    if (k === "vsBasis") return row._vsBasisColor ?? T.t2;
+  const cellColor = (k) => {
+    if (k === "ticker")                    return T.t1;
+    if (k === "vsBasis")                   return row._vsBasisColor ?? T.t2;
+    if (k === "glDollar" || k === "glPct") return row._glColor ?? T.t2;
     return T.t2;
   };
   return (
@@ -262,7 +285,7 @@ function PosRow({ row, cols, tpl }) {
       {cols.map(c => (
         <span key={c.k} style={{
           textAlign: c.r ? "right" : "left",
-          color: cellColor(c.k, row[c.k]),
+          color: cellColor(c.k),
           fontWeight: c.k === "ticker" ? 600 : 400,
         }}>
           {row[c.k] ?? "—"}
@@ -274,7 +297,7 @@ function PosRow({ row, cols, tpl }) {
 
 // ── Assigned Shares ───────────────────────────────────────────────────────────
 
-export function AssignedShares({ positions }) {
+export function AssignedShares({ positions, quoteMap }) {
   const assigned = positions?.assigned_shares || [];
 
   const covered   = assigned.filter(s => s.active_cc != null);
@@ -288,15 +311,22 @@ export function AssignedShares({ positions }) {
       subtitle={`${total} lots${uncovered.length ? ` · ${uncovered.length} uncovered` : ""} · roll analysis when CC below basis`}
     >
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
-        {uncovered.map(s => <UncoveredCard key={s.ticker} s={s} />)}
-        {covered.map(s => <AssignedCard key={s.ticker} s={s} />)}
+        {uncovered.map(s => <UncoveredCard key={s.ticker} s={s} quoteMap={quoteMap} />)}
+        {covered.map(s => <AssignedCard key={s.ticker} s={s} quoteMap={quoteMap} />)}
       </div>
     </Frame>
   );
 }
 
-function UncoveredCard({ s }) {
-  const basis = s.cost_basis_total || 0;
+function UncoveredCard({ s, quoteMap }) {
+  const basis      = s.cost_basis_total || 0;
+  const shares     = (s.positions || []).reduce((sum, lot) => sum + parseShareCount(lot.description), 0);
+  const costPerSh  = shares > 0 ? basis / shares : null;
+  const stockQ     = quoteMap?.get?.(s.ticker);
+  const nowPx      = stockQ?.last ?? stockQ?.mid ?? null;
+  const unrealized = nowPx != null && costPerSh != null ? (nowPx - costPerSh) * shares : null;
+  const plColor    = unrealized == null ? T.tm : unrealized >= 0 ? T.green : T.red;
+
   return (
     <div style={{
       padding: "12px 14px",
@@ -311,7 +341,12 @@ function UncoveredCard({ s }) {
         </span>
       </div>
       <div style={{ fontSize: T.xs, color: T.tm, fontFamily: T.mono, marginTop: 2 }}>
-        {s.notes || "assigned shares"} · no active CC
+        {shares > 0 && <span>{shares} sh · </span>}
+        {costPerSh != null && <span>${costPerSh.toFixed(2)}/sh</span>}
+        {nowPx != null && <span> · now <span style={{ color: T.t2 }}>${nowPx.toFixed(2)}</span></span>}
+        {unrealized != null && (
+          <span style={{ color: plColor }}> ({unrealized >= 0 ? "+" : ""}${Math.round(unrealized).toLocaleString()})</span>
+        )}
       </div>
       <div style={{
         marginTop: 8, padding: "7px 10px",
@@ -325,13 +360,19 @@ function UncoveredCard({ s }) {
   );
 }
 
-function AssignedCard({ s }) {
-  const cc = s.active_cc;
-  const basis = s.cost_basis_total || 0;
-  const basisPerSh = cc && (cc.contracts || 1) ? basis / ((cc.contracts || 1) * 100) : null;
-  const underBasis = basisPerSh && cc.strike ? cc.strike < basisPerSh : false;
-  const dte = calcDTE(cc?.expiry_date);
-  const ccVsBasis = basisPerSh && cc.strike ? cc.strike - basisPerSh : null;
+function AssignedCard({ s, quoteMap }) {
+  const cc         = s.active_cc;
+  const basis      = s.cost_basis_total || 0;
+  const shares     = (s.positions || []).reduce((sum, lot) => sum + parseShareCount(lot.description), 0);
+  const basisPerSh = shares > 0 ? basis / shares : cc ? basis / ((cc.contracts || 1) * 100) : null;
+  const underBasis = basisPerSh && cc?.strike ? cc.strike < basisPerSh : false;
+  const dte        = calcDTE(cc?.expiry_date);
+  const ccVsBasis  = basisPerSh && cc?.strike ? cc.strike - basisPerSh : null;
+
+  const stockQ     = quoteMap?.get?.(s.ticker);
+  const nowPx      = stockQ?.last ?? stockQ?.mid ?? null;
+  const unrealized = nowPx != null && basisPerSh != null ? (nowPx - basisPerSh) * (shares || (cc?.contracts || 1) * 100) : null;
+  const plColor    = unrealized == null ? T.tm : unrealized >= 0 ? T.green : T.red;
 
   return (
     <div style={{
@@ -346,11 +387,14 @@ function AssignedCard({ s }) {
           basis <span style={{ color: T.t1 }}>${basis.toLocaleString()}</span>
         </span>
       </div>
-      {basisPerSh && (
-        <div style={{ fontSize: T.xs, color: T.tm, fontFamily: T.mono, marginTop: 2 }}>
-          ${basisPerSh.toFixed(2)}/sh · {(cc.contracts || 1) * 100} shares
-        </div>
-      )}
+      <div style={{ fontSize: T.xs, color: T.tm, fontFamily: T.mono, marginTop: 2 }}>
+        {shares > 0 && <span>{shares} sh · </span>}
+        {basisPerSh != null && <span>${basisPerSh.toFixed(2)}/sh</span>}
+        {nowPx != null && <span> · now <span style={{ color: T.t2 }}>${nowPx.toFixed(2)}</span></span>}
+        {unrealized != null && (
+          <span style={{ color: plColor }}> ({unrealized >= 0 ? "+" : ""}${Math.round(unrealized).toLocaleString()})</span>
+        )}
+      </div>
       <div style={{
         marginTop: 8, padding: "6px 10px",
         background: underBasis ? T.amber + "12" : T.green + "12",
@@ -387,7 +431,7 @@ const EXPLORE_TABS = [
   { k: "radar",     label: "Radar"     },
 ];
 
-export function ExploreSurface({ positions, account }) {
+export function ExploreSurface({ positions, account, quoteMap }) {
   const [mode, setMode] = useState(() => {
     try { const s = localStorage.getItem("redesign-explore-mode"); return s === "radar" ? "radar" : "portfolio"; }
     catch { return "portfolio"; }
@@ -423,13 +467,13 @@ export function ExploreSurface({ positions, account }) {
         })}
       </div>
 
-      {mode === "portfolio" && <PortfolioView positions={positions} account={account} />}
+      {mode === "portfolio" && <PortfolioView positions={positions} account={account} quoteMap={quoteMap} />}
       {mode === "radar"     && <RadarSurface positions={positions} account={account} />}
     </div>
   );
 }
 
-function PortfolioView({ positions, account }) {
+function PortfolioView({ positions, account, quoteMap }) {
   const allPositions = [
     ...(positions?.open_csps || []),
     ...(positions?.assigned_shares || []),
@@ -450,8 +494,8 @@ function PortfolioView({ positions, account }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <AllocationWidget positions={positions} account={account} />
-      <OpenPositionsTable positions={positions} />
-      <AssignedShares positions={positions} />
+      <OpenPositionsTable positions={positions} quoteMap={quoteMap} />
+      <AssignedShares positions={positions} quoteMap={quoteMap} />
     </div>
   );
 }
