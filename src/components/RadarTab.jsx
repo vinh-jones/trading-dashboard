@@ -391,6 +391,78 @@ function ScoreBar({ score }) {
   );
 }
 
+// ── Scanner score formula display ────────────────────────────────────────────
+
+function ScannerScoreFormula({ bbPosition, ivComp, priceTrend, ivTrend, score, label }) {
+  const base = (1 - bbPosition) * 0.50 + ivComp * 0.50;
+
+  const hasPriceMod = priceTrend != null && priceTrend.modifier !== 1.0;
+  const hasIvMod    = ivTrend != null && ivTrend.state !== "insufficient" && ivTrend.modifier !== 1.0;
+  const hasAnyMod   = hasPriceMod || hasIvMod;
+
+  const labelColor = label === "Strong"   ? theme.green
+                   : label === "Moderate" ? theme.blue
+                   : label === "Neutral"  ? theme.text.muted
+                   : theme.red;
+
+  const monoSm  = { fontFamily: theme.font.mono, fontSize: theme.size.sm };
+  const subStyle = { fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 3, whiteSpace: "nowrap" };
+
+  // Value column: formula term on top, label on bottom
+  const Term = ({ value, sub, valueStyle = {} }) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <span style={{ ...monoSm, color: theme.text.secondary, ...valueStyle }}>{value}</span>
+      <span style={subStyle}>{sub || " "}</span>
+    </div>
+  );
+
+  // Operator: sits at value level, invisible spacer below keeps label row aligned
+  const Op = ({ sym }) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <span style={{ ...monoSm, color: theme.text.subtle }}>{sym}</span>
+      <span style={{ ...subStyle, visibility: "hidden" }}>x</span>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: theme.space[1] }}>
+      <Term value={`(1 − ${bbPosition.toFixed(3)}) × 0.50`} sub="BB component" />
+      <Op sym="+" />
+      <Term value={`${ivComp.toFixed(3)} × 0.50`} sub="IV component" />
+      <Op sym="=" />
+      <Term
+        value={base.toFixed(3)}
+        sub={hasAnyMod ? "base" : ""}
+        valueStyle={{ color: hasAnyMod ? theme.text.muted : theme.text.primary, fontWeight: hasAnyMod ? 400 : 700 }}
+      />
+      {hasPriceMod && <>
+        <Op sym="×" />
+        <Term
+          value={priceTrend.modifier.toFixed(2)}
+          sub={priceTrend.label}
+          valueStyle={{ color: priceTrend.state === "downtrend" ? theme.red : theme.amber }}
+        />
+      </>}
+      {hasIvMod && <>
+        <Op sym="×" />
+        <Term
+          value={ivTrend.modifier.toFixed(2)}
+          sub={ivTrend.label}
+          valueStyle={{ color: ivTrend.modifier > 1.0 ? theme.green : theme.amber }}
+        />
+      </>}
+      {hasAnyMod && <>
+        <Op sym="=" />
+        <Term value={score.toFixed(3)} sub="final" valueStyle={{ color: theme.text.primary, fontWeight: 700 }} />
+      </>}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <span style={{ ...monoSm, color: labelColor, fontWeight: 700, paddingLeft: 4 }}>({label})</span>
+        <span style={{ ...subStyle, visibility: "hidden" }}>x</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Compact row ───────────────────────────────────────────────────────────────
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
@@ -945,28 +1017,14 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
       {/* ── Scanner Score section ── */}
       <div style={sectionLabelStyle}>Scanner Score</div>
       {score != null && bb_position != null && ivComp != null ? (
-        <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", alignItems: "center" }}>
-          {fieldRow("Score", `${score.toFixed(3)} (${label})`)}
-          <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            BB: {((1 - bb_position) * 0.5).toFixed(3)}
-          </span>
-          <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            IV: {(ivComp * 0.5).toFixed(3)}
-          </span>
-          <span style={{ ...monoStyle, color: theme.text.subtle }}>
-            base: {((1 - bb_position) * 0.5 + ivComp * 0.5).toFixed(3)}
-          </span>
-          {trend && trend.modifier !== 1.0 && (
-            <span style={{ ...monoStyle, color: trend.state === "downtrend" ? theme.red : theme.amber }}>
-              ×{trend.modifier.toFixed(2)} ({trend.label})
-            </span>
-          )}
-          {ivTrend && ivTrend.state !== "stable" && ivTrend.state !== "insufficient" && ivTrend.modifier !== 1.0 && (
-            <span style={{ ...monoStyle, color: ivTrend.state === "rising" ? theme.green : theme.amber }}>
-              ×{ivTrend.modifier.toFixed(2)} ({ivTrend.label})
-            </span>
-          )}
-        </div>
+        <ScannerScoreFormula
+          bbPosition={bb_position}
+          ivComp={ivComp}
+          priceTrend={trend}
+          ivTrend={ivTrend}
+          score={score}
+          label={label}
+        />
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
           Insufficient data to compute score
