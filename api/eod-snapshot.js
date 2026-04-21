@@ -19,6 +19,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
+import { getVixBand } from "../src/lib/vixBand.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -286,6 +287,7 @@ export default async function handler(req, res) {
     positionsResult,
     journalResult,
     universeResult,
+    accountSnapshotResult,
   ] = await Promise.allSettled([
     supabase
       .from("daily_snapshots")
@@ -303,6 +305,12 @@ export default async function handler(req, res) {
       .select("ticker, company, sector")
       .eq("list_type", "approved")
       .order("ticker"),
+    supabase
+      .from("account_snapshots")
+      .select("*")
+      .order("snapshot_date", { ascending: false })
+      .limit(1)
+      .single(),
   ]);
 
   const positionRows =
@@ -328,7 +336,7 @@ export default async function handler(req, res) {
 
   // Fetch radar quotes and market quotes in parallel
   const universeTickers = universeRows.map((u) => u.ticker);
-  const [radarQuotesResult, spyResult, qqqResult, macroResult] =
+  const [radarQuotesResult, spyResult, qqqResult, vixResult, macroResult] =
     await Promise.allSettled([
       universeTickers.length
         ? supabase
@@ -338,6 +346,7 @@ export default async function handler(req, res) {
         : Promise.resolve({ data: [] }),
       fetchYahooQuote("SPY"),
       fetchYahooQuote("QQQ"),
+      fetchYahooQuote("^VIX"),
       // Check macro_snapshots for today's cached ai_context first
       supabase
         .from("macro_snapshots")
@@ -397,10 +406,64 @@ export default async function handler(req, res) {
 
   const spyQuote = spyResult.status === "fulfilled" ? spyResult.value : null;
   const qqqQuote = qqqResult.status === "fulfilled" ? qqqResult.value : null;
+  const liveVix  = vixResult.status === "fulfilled"  ? vixResult.value.last : null;
+
+  // Build effective snapshot — prefer today's daily_snapshot (written by 4:30 PM ET cron),
+  // but fall back to live data so Claude always has account context even intraday.
+  const accountSnap =
+    accountSnapshotResult.status === "fulfilled"
+      ? accountSnapshotResult.value.data ?? null
+      : null;
+
+  let effectiveSnapshot = dailySnapshot;
+  if (!effectiveSnapshot && accountSnap) {
+    const vix     = liveVix ?? accountSnap.vix_current ?? null;
+    const band    = getVixBand(vix);
+    const cashPct = accountSnap.free_cash_pct_est ?? null;
+
+    // Pipeline from live positions (CSPs + active CCs)
+    const pipelinePositions = [
+      ...(positions.open_csps ?? []),
+      ...(positions.assigned_shares ?? []).filter((s) => s.active_cc).map((s) => s.active_cc),
+    ];
+    const openPremiumGross    = Math.round(pipelinePositions.reduce((s, p) => s + (p.premium_collected || 0), 0));
+    const openPremiumExpected = Math.round(openPremiumGross * 0.60);
+    const mtd                 = accountSnap.month_to_date_premium ?? 0;
+
+    const allLeaps = [
+      ...(positions.open_leaps ?? []),
+      ...(positions.assigned_shares ?? []).flatMap((s) => s.open_leaps ?? []),
+    ];
+
+    effectiveSnapshot = {
+      account_value:              accountSnap.account_value,
+      free_cash:                  accountSnap.free_cash_est,
+      free_cash_pct:              cashPct,
+      cash_floor_target_pct:      band?.floorPct    ?? null,
+      cash_ceiling_target_pct:    band?.ceilingPct  ?? null,
+      within_band:    band && cashPct != null ? cashPct >= band.floorPct && cashPct <= band.ceilingPct : null,
+      overdeployed:   band && cashPct != null ? cashPct < band.floorPct  : null,
+      underdeployed:  band && cashPct != null ? cashPct > band.ceilingPct : null,
+      mtd_premium_collected:      mtd,
+      open_premium_gross:         openPremiumGross,
+      open_premium_expected:      openPremiumExpected,
+      pipeline_implied_monthly:   mtd + openPremiumExpected,
+      vix,
+      vix_band:                   band?.sentiment ?? null,
+      open_csp_count:             (positions.open_csps ?? []).length,
+      open_cc_count:              (positions.assigned_shares ?? []).filter((s) => s.active_cc).length,
+      open_leaps_count:           allLeaps.length,
+      assigned_share_tickers:     (positions.assigned_shares ?? []).length,
+      ticker_allocations:         null,
+      _source:                    "live",
+    };
+  } else if (effectiveSnapshot) {
+    effectiveSnapshot = { ...effectiveSnapshot, _source: "daily_snapshot" };
+  }
 
   const text = buildTextBlob({
     today,
-    dailySnapshot,
+    dailySnapshot: effectiveSnapshot,
     positions,
     journalEntries,
     macroAiContext,
@@ -416,11 +479,11 @@ export default async function handler(req, res) {
     date:  today,
     text,
     data: {
-      daily_snapshot:  dailySnapshot,
+      account_summary: effectiveSnapshot,
       positions,
       journal_entries: journalEntries,
       macro: { ai_context: macroAiContext, posture: macroPosture },
-      market: { spy: spyQuote, qqq: qqqQuote },
+      market: { spy: spyQuote, qqq: qqqQuote, vix: liveVix },
       radar: radarRows,
     },
   });
