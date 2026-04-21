@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { T } from "../theme.js";
 import { normalizePositions } from "./focus/PositionsMatrix.jsx";
 import { openPosition } from "./PositionDetail.jsx";
+import { supabase } from "../../lib/supabase.js";
 
 // Module-level bridge
 let _setOpen = null;
@@ -41,16 +42,28 @@ export function CommandPaletteHost({ positions, trades, setSurface }) {
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 function CommandPalette({ positions, trades, setSurface, onClose }) {
-  const [query, setQuery] = useState("");
-  const [idx, setIdx]     = useState(0);
+  const [query, setQuery]       = useState("");
+  const [idx, setIdx]           = useState(0);
+  const [journals, setJournals] = useState([]);
   const inputRef = useRef(null);
   const listRef  = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // Fetch recent journal entries on open — silently swallows errors (dev mode or no supabase)
+  useEffect(() => {
+    supabase
+      .from("journal_entries")
+      .select("id, type, mood, title, body, ticker, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => { if (data) setJournals(data); })
+      .catch(() => {});
+  }, []);
+
   const items = useMemo(
-    () => buildItems(query, positions, trades, setSurface),
-    [query, positions, trades, setSurface]
+    () => buildItems(query, positions, trades, journals, setSurface),
+    [query, positions, trades, journals, setSurface]
   );
 
   useEffect(() => { setIdx(0); }, [query]);
@@ -102,7 +115,7 @@ function CommandPalette({ positions, trades, setSurface, onClose }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={onKey}
-            placeholder="Search positions, tickers, actions…  > actions · @ tickers · # tags"
+            placeholder="Search positions, actions, journal, tickers…  > actions · @ tickers · # tags · / journal"
             style={{
               flex: 1, background: "transparent", border: "none", outline: "none",
               color: T.t1, fontSize: 13, fontFamily: T.mono, letterSpacing: "0.02em",
@@ -219,34 +232,43 @@ function PaletteRow({ i, it, selected, onHover, onPick }) {
 }
 
 // ── Item builders ─────────────────────────────────────────────────────────────
-function buildItems(rawQuery, positions, trades, setSurface) {
+function buildItems(rawQuery, positions, trades, journals, setSurface) {
   const q      = rawQuery.trim().toLowerCase();
   let scope    = null;
   let needle   = q;
 
-  if (q.startsWith(">")) { scope = "actions";   needle = q.slice(1).trim(); }
+  if (q.startsWith(">")) { scope = "actions";  needle = q.slice(1).trim(); }
   else if (q.startsWith("@")) { scope = "tickers"; needle = q.slice(1).trim(); }
   else if (q.startsWith("#")) { scope = "tags";    needle = q.slice(1).trim(); }
+  else if (q.startsWith("/")) { scope = "journal"; needle = q.slice(1).trim(); }
 
-  const actions  = buildActions(setSurface);
-  const posItems = buildPositions(positions);
-  const tickers  = buildTickers(positions);
-  const trItems  = buildTrades(trades, setSurface);
+  const actions     = buildActions(setSurface);
+  const posItems    = buildPositions(positions);
+  const tickers     = buildTickers(positions);
+  const trItems     = buildTrades(trades, setSurface);
+  const journalItems = buildJournal(journals, setSurface);
 
   const match = (it, n) => !n || fuzzy((it.title + " " + (it.subtitle || "")).toLowerCase(), n);
   const filt  = (arr) => arr.filter(it => match(it, needle));
 
   if (scope === "actions") return filt(actions);
   if (scope === "tickers") return filt(tickers);
+  if (scope === "journal") return filt(journalItems);
 
   if (!needle) {
-    return [...actions.slice(0, 5), ...posItems.slice(0, 5), ...trItems.slice(0, 3)];
+    return [
+      ...actions.slice(0, 4),
+      ...posItems.slice(0, 6),
+      ...journalItems.slice(0, 3),
+      ...trItems.slice(0, 3),
+    ];
   }
 
   return [
     ...filt(actions),
     ...filt(posItems),
     ...filt(tickers).slice(0, 8),
+    ...filt(journalItems).slice(0, 5),
     ...filt(trItems).slice(0, 5),
   ];
 }
@@ -267,13 +289,41 @@ function buildActions(setSurface) {
     window.dispatchEvent(new CustomEvent("tw-explore-mode", { detail: mode }));
   };
 
+  const openJournal = () => {
+    setSurface?.("review");
+    try { localStorage.setItem("rv2-mode", "journal"); } catch {}
+    window.dispatchEvent(new CustomEvent("tw-review-mode", { detail: "journal" }));
+  };
+
   return [
-    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Focus", subtitle: "current state + action queue", run: () => setSurface?.("focus") },
-    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Portfolio", subtitle: "explore → allocation + positions", run: () => goExplore("portfolio") },
-    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Radar", subtitle: "explore → scanner + BB gauge", run: () => goExplore("radar") },
+    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "New journal entry", subtitle: "open Review → Journal ritual", run: openJournal },
+    { group: "actions", groupLabel: "ACTION", gColor: T.mag,  title: "Open journal",      subtitle: "review → recent entries feed", run: openJournal },
+    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Focus",        subtitle: "current state + action queue", run: () => setSurface?.("focus") },
+    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Portfolio",    subtitle: "explore → allocation + positions", run: () => goExplore("portfolio") },
+    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Radar",        subtitle: "explore → scanner + BB gauge", run: () => goExplore("radar") },
     { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open Monthly Review", subtitle: "review → monthly calendar + pipeline", run: () => setSurface?.("review") },
-    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open YTD Review", subtitle: "review → ticker tiles + hold duration", run: () => setSurface?.("review") },
+    { group: "actions", groupLabel: "ACTION", gColor: T.blue, title: "Open YTD Review",   subtitle: "review → ticker tiles + hold duration", run: () => setSurface?.("review") },
   ];
+}
+
+function buildJournal(journals, setSurface) {
+  if (!journals?.length) return [];
+  const typeLabel = { eod_update: "EOD", trade_note: "TRADE", position_note: "NOTE" };
+  return journals.map(j => ({
+    group: "journal", groupLabel: "JOURNAL", gColor: T.mag,
+    title: j.title || (j.body?.slice(0, 60) + (j.body?.length > 60 ? "…" : "")) || "(no title)",
+    subtitle: [
+      typeLabel[j.type] || j.type,
+      j.mood ? `◆ ${j.mood}` : null,
+      j.ticker,
+      new Date(j.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    ].filter(Boolean).join(" · "),
+    run: () => {
+      setSurface?.("review");
+      try { localStorage.setItem("rv2-mode", "journal"); } catch {}
+      window.dispatchEvent(new CustomEvent("tw-review-mode", { detail: "journal" }));
+    },
+  }));
 }
 
 function buildPositions(positions) {

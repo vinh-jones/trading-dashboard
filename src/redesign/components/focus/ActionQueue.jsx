@@ -62,7 +62,7 @@ export function ActionQueue({ focusItems, positions }) {
   }
 
   return (
-    <Frame accent="warn" title="ACTION QUEUE" subtitle={`${actions.length} items · by urgency`} right={header}>
+    <Frame accent="warn" title="ACTION QUEUE" subtitle={`${actions.length} items · sorted by urgency`} right={header}>
       <div style={{ display: "grid", gap: 1, background: T.bd, border: `1px solid ${T.bd}`, borderRadius: T.rSm }}>
         {actions.map((a, i) => (
           <ActionRow key={i} {...a} onOpen={() => {
@@ -86,7 +86,7 @@ function ActionRow({ pri, ticker, type, verb, reason, due, onOpen }) {
       onMouseLeave={() => setHover(false)}
       style={{
         display: "grid",
-        gridTemplateColumns: "auto auto 1fr auto",
+        gridTemplateColumns: "auto auto 1fr auto auto",
         alignItems: "center",
         gap: 14,
         padding: "12px 14px 12px 10px",
@@ -98,7 +98,7 @@ function ActionRow({ pri, ticker, type, verb, reason, due, onOpen }) {
     >
       <span style={{ fontSize: T.xs, letterSpacing: "0.1em", color: priColor, fontWeight: 700, width: 18 }}>{pri}</span>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, width: 96 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, width: 92 }}>
         <span style={{ fontSize: T.md, fontWeight: 600, color: T.t1, letterSpacing: "0.02em" }}>{ticker}</span>
         {type && (
           <span style={{ fontSize: T.xs, padding: "1px 5px", border: `1px solid ${T.bd}`, color: T.tm, borderRadius: T.rSm }}>
@@ -108,19 +108,19 @@ function ActionRow({ pri, ticker, type, verb, reason, due, onOpen }) {
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: T.sm, color: priColor, fontWeight: 500, letterSpacing: "0.04em" }}>
-          ▸ {verb}
+        <div style={{ fontSize: T.sm, color: T.t1, fontWeight: 500, letterSpacing: "0.04em" }}>
+          <span style={{ color: priColor, marginRight: 10 }}>▸ {verb}</span>
         </div>
         <div style={{ fontSize: T.sm, color: T.tm, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {reason}
         </div>
       </div>
 
-      {due && (
-        <span style={{ fontSize: T.xs, color: T.ts, letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-          {due.toUpperCase()}
-        </span>
-      )}
+      <span style={{ fontSize: T.xs, color: T.ts, letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
+        {due ? due.toUpperCase() : ""}
+      </span>
+
+      <span style={{ fontSize: T.sm, color: hover ? T.blue : T.tf, transition: "color 0.12s" }}>→</span>
     </div>
   );
 }

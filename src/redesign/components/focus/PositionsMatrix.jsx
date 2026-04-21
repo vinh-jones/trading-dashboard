@@ -103,7 +103,7 @@ export function PositionsMatrix({ positions, focusItems, quoteMap }) {
     <Frame
       accent="focus"
       title="POSITIONS"
-      subtitle={`${rows.length} open · sorted by urgency`}
+      subtitle="$-first · proximity bar → target"
       right={
         <div style={{ display: "flex", gap: 4 }}>
           {FILTERS.map(f => (

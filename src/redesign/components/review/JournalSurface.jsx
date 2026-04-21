@@ -30,6 +30,24 @@ function DayStat({ label, value, sub, color }) {
   );
 }
 
+// Format one of today's trades into a human action + P/L diff string
+function describeTradeAction(t) {
+  const subtype = (t.subtype || "").toLowerCase();
+  const premium = t.premium ?? 0;
+  const strikeStr = t.strike ? `$${t.strike}` : "";
+  const diffStr = premium > 0
+    ? `+$${Math.round(premium).toLocaleString()} premium`
+    : premium < 0
+      ? `-$${Math.round(-premium).toLocaleString()}`
+      : null;
+
+  if (subtype.includes("roll"))    return { action: `rolled ${t.type} ${strikeStr}`, diff: diffStr };
+  if (subtype === "assigned")      return { action: `${t.type} ${strikeStr} assigned`, diff: null };
+  if (t.open === t.close)          return { action: `${t.type} ${strikeStr} placed`, diff: diffStr };
+  if (t.close && t.close !== "—")  return { action: `${t.type} ${strikeStr} closed`, diff: diffStr };
+  return { action: `${t.type} ${strikeStr} opened`, diff: diffStr };
+}
+
 function StepReview({ trades, account, positions }) {
   const today = new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
 
@@ -38,20 +56,13 @@ function StepReview({ trades, account, positions }) {
     return close === today || t.open === today;
   });
 
-  const closed   = todayTrades.filter(t => t.close && t.close !== "—" && !["Assigned"].includes(t.subtype)).length;
-  const rolled   = todayTrades.filter(t => t.subtype === "Roll Loss" || (t.subtype && t.subtype.toLowerCase().includes("roll"))).length;
+  const closed   = todayTrades.filter(t => t.close === today && !["Assigned"].includes(t.subtype)).length;
+  const rolled   = todayTrades.filter(t => t.subtype && t.subtype.toLowerCase().includes("roll")).length;
   const opened   = todayTrades.filter(t => t.open === today && (!t.close || t.close === "—")).length;
   const captured = todayTrades.reduce((s, t) => s + (t.premium ?? 0), 0);
 
-  const cashPct  = account?.cash_pct ?? null;
-  const invested = account?.invested_pct ?? null;
-
-  const posRows  = normalizePositions(positions || {});
-  const p1Items  = posRows.filter(p => p.priority === "P1");
-  const expiringThisWeek = posRows.filter(p => {
-    const dte = typeof p.dte === "number" ? p.dte : parseInt(p.dte, 10);
-    return !isNaN(dte) && dte <= 7;
-  });
+  const cashPct  = account?.free_cash_pct_est ?? account?.free_cash_pct ?? null;
+  const invested = cashPct != null ? 1 - cashPct : null;
 
   return (
     <div>
@@ -75,33 +86,34 @@ function StepReview({ trades, account, positions }) {
             <div>
               <div style={{ fontSize: T.xs, color: T.tm, letterSpacing: "0.15em", fontFamily: T.mono }}>INVESTED</div>
               <div style={{ fontSize: 22, color: T.green, fontFamily: T.mono, marginTop: 3, fontWeight: 600 }}>
-                {invested != null ? (invested * 100).toFixed(1) : ((1 - cashPct) * 100).toFixed(1)}%
+                {invested != null ? (invested * 100).toFixed(1) : "—"}%
               </div>
             </div>
           </div>
         </>
       )}
 
-      {expiringThisWeek.length > 0 && (
+      {todayTrades.length > 0 ? (
         <>
-          <div style={{ fontSize: T.xs, color: T.mag, letterSpacing: "0.12em", marginBottom: 10, fontFamily: T.mono }}>▸ EXPIRING THIS WEEK</div>
+          <div style={{ fontSize: T.xs, color: T.mag, letterSpacing: "0.12em", marginBottom: 10, fontFamily: T.mono }}>▸ RESOLVED TODAY</div>
           <div style={{ display: "grid", gap: 1, background: T.bd, border: `1px solid ${T.bd}` }}>
-            {expiringThisWeek.map(p => (
-              <div key={p.id} style={{ display: "grid", gridTemplateColumns: "64px 1fr auto", gap: 12, padding: "10px 14px", background: T.surf, alignItems: "center" }}>
-                <span style={{ fontSize: T.sm, fontWeight: 600, color: T.t1, fontFamily: T.mono }}>{p.ticker}</span>
-                <span style={{ fontSize: T.sm, color: T.t2, fontFamily: T.mono }}>{p.type}{p.strike ? ` $${p.strike}` : ""}</span>
-                <span style={{ fontSize: T.xs, color: typeof p.dte === "number" && p.dte <= 3 ? T.red : T.amber, fontFamily: T.mono }}>
-                  {p.dte}d DTE
-                </span>
-              </div>
-            ))}
+            {todayTrades.map((t, i) => {
+              const { action, diff } = describeTradeAction(t);
+              return (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 12, padding: "10px 14px", background: T.surf, alignItems: "center" }}>
+                  <span style={{ fontSize: T.sm, fontWeight: 600, color: T.t1, fontFamily: T.mono }}>{t.ticker}</span>
+                  <span style={{ fontSize: T.sm, color: T.t2, fontFamily: T.mono }}>{action}</span>
+                  {diff && (
+                    <span style={{ fontSize: T.xs, color: (t.premium ?? 0) >= 0 ? T.green : T.red, fontFamily: T.mono }}>{diff}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </>
-      )}
-
-      {expiringThisWeek.length === 0 && todayTrades.length === 0 && (
+      ) : (
         <div style={{ padding: "20px 0", fontSize: T.sm, color: T.tf, fontFamily: T.mono, textAlign: "center" }}>
-          No activity today — position data pulled from live accounts.
+          No activity today — close a position or open a new CSP to populate the ritual.
         </div>
       )}
     </div>

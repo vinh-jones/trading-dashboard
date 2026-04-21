@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { T } from "../../theme.js";
+import { T, getVixBand } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
 import { useRadar } from "../../../hooks/useRadar.js";
 
@@ -41,7 +41,7 @@ function sampleCSP(row) {
   const ror  = prem > 0 ? parseFloat(((prem / coll) * 100).toFixed(2)) : 0;
   return { strike, prem, ror, coll };
 }
-function adaptRow(row, positions, accountValue) {
+function adaptRow(row, positions, accountValue, earningsMap) {
   const score0to1 = scannerScore(row.bb_position, row.iv, row.iv_rank);
   const score     = score0to1 != null ? Math.round(score0to1 * 100) : null;
   const bbPct     = row.bb_position;
@@ -62,6 +62,14 @@ function adaptRow(row, positions, accountValue) {
     conc = parseFloat(((committed / accountValue) * 100).toFixed(1));
   }
 
+  // Days until next earnings — only available for tickers we hold (from marketContext)
+  let earn = null;
+  const earnIso = earningsMap?.[row.ticker];
+  if (earnIso) {
+    const days = Math.ceil((new Date(earnIso + "T00:00:00") - new Date()) / 86400000);
+    if (days >= 0 && days < 400) earn = days;
+  }
+
   return {
     t:        row.ticker,
     ticker:   row.ticker,
@@ -71,7 +79,7 @@ function adaptRow(row, positions, accountValue) {
     bb,
     ivr:      ivr ?? 0,
     iv:       iv ?? 0,
-    earn:     999,
+    earn,
     conc,
     px:       row.last,
     chg:      null,
@@ -83,11 +91,11 @@ function adaptRow(row, positions, accountValue) {
 
 // ── BB visual metadata ────────────────────────────────────────────────────────
 const BB_META = {
-  below:      { color: T.green, label: "BELOW ↓" },
-  near_lower: { color: T.green, label: "NEAR ↓"  },
-  mid:        { color: T.tm,    label: "MID"      },
-  near_upper: { color: T.red,   label: "NEAR ↑"   },
-  above:      { color: T.red,   label: "ABOVE ↑"  },
+  below:      { color: T.green, label: "BELOW"   },
+  near_lower: { color: T.green, label: "NEAR ↓" },
+  mid:        { color: T.tm,    label: "MID"     },
+  near_upper: { color: T.red,   label: "NEAR ↑" },
+  above:      { color: T.red,   label: "ABOVE"   },
 };
 const TEMPLATE_META = {
   strong:          { color: T.green, label: "STRONG · PRIMARY CSP"       },
@@ -105,21 +113,34 @@ const BB_FILTERS = [
 ];
 
 // ── Main surface ──────────────────────────────────────────────────────────────
-export function RadarSurface({ positions, account }) {
+export function RadarSurface({ positions, account, marketContext }) {
   const { rows: rawRows, loading, error } = useRadar();
   const [selected, setSelected] = useState(null);
   const [bbFilter, setBbFilter] = useState("all");
 
   const accountValue = account?.account_value ?? 0;
+  const vix          = account?.vix_current ?? null;
+  const vixBand      = vix != null ? getVixBand(vix) : null;
+  const sentiment    = vixBand?.sentiment ?? null;
+
+  // Earnings lookup by ticker — sourced from marketContext.positions (Finnhub per-ticker dates).
+  // Only covers tickers we hold; radar covers the wheel universe so many tickers will have no earn date.
+  const earningsMap = useMemo(() => {
+    const map = {};
+    (marketContext?.positions || []).forEach(p => {
+      if (p.ticker && p.nextEarnings?.date) map[p.ticker] = p.nextEarnings.date.slice(0, 10);
+    });
+    return map;
+  }, [marketContext]);
 
   const rows = useMemo(() => {
     const adapted = rawRows
-      .map(r => adaptRow(r, positions, accountValue))
+      .map(r => adaptRow(r, positions, accountValue, earningsMap))
       .filter(r => r.score != null)
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     return bbFilter === "all" ? adapted : adapted.filter(r => r.bb === bbFilter);
-  }, [rawRows, bbFilter, positions, accountValue]);
+  }, [rawRows, bbFilter, positions, accountValue, earningsMap]);
 
   if (loading) {
     return (
@@ -163,7 +184,7 @@ export function RadarSurface({ positions, account }) {
       {/* Left: filter bar + list */}
       <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
         <FiltersBar bbFilter={bbFilter} setBbFilter={setBbFilter} count={rows.length} total={rawRows.length} />
-        <RadarList rows={rows} selected={selected} setSelected={setSelected} />
+        <RadarList rows={rows} total={rawRows.length} vix={vix} sentiment={sentiment} selected={selected} setSelected={setSelected} />
       </div>
 
       {/* Right: detail panel */}
@@ -199,25 +220,32 @@ function FiltersBar({ bbFilter, setBbFilter, count, total }) {
 }
 
 // ── Row list ──────────────────────────────────────────────────────────────────
-function RadarList({ rows, selected, setSelected }) {
-  const subtitle = `${rows.length} tickers · sorted by score`;
+const ROW_COLS = "44px 1fr 110px 88px 70px 92px 90px 48px";
+
+function RadarList({ rows, total, vix, sentiment, selected, setSelected }) {
+  const subtitle = [
+    `${rows.length}/${total} tickers`,
+    vix != null ? `VIX ${vix.toFixed(2)}` : null,
+    sentiment,
+  ].filter(Boolean).join(" · ");
+
   return (
     <Frame accent="radar" title="RADAR" subtitle={subtitle}>
       {/* Column header */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "40px 1fr 100px 80px 64px 80px 1fr 40px",
-        gap: 12, padding: "4px 8px",
-        fontSize: T.xs, color: T.tf, letterSpacing: "0.14em",
+        gridTemplateColumns: ROW_COLS,
+        gap: 14, padding: "4px 8px",
+        fontSize: T.xs, color: T.tf, letterSpacing: "0.15em",
         borderBottom: `1px solid ${T.bd}`,
       }}>
-        <span>SCR</span>
-        <span>TKR / SENTIMENT</span>
+        <span>SCORE</span>
+        <span>TKR / PX / NARRATIVE</span>
         <span>BB 20/2σ</span>
         <span>IV RANK</span>
         <span>RAW IV</span>
+        <span>EARN</span>
         <span style={{ textAlign: "right" }}>CONC</span>
-        <span></span>
         <span></span>
       </div>
 
@@ -244,6 +272,7 @@ function RadarRow({ r, selected, onClick }) {
   const bbInfo = BB_META[r.bb] || BB_META.mid;
   const tpl    = TEMPLATE_META[r.template] || TEMPLATE_META.weak;
   const scoreColor = r.score >= 80 ? T.green : r.score >= 65 ? T.amber : T.ts;
+  const insideEarn = r.earn != null && r.earn <= 21;
 
   return (
     <div
@@ -252,9 +281,9 @@ function RadarRow({ r, selected, onClick }) {
       onMouseLeave={() => setHover(false)}
       style={{
         display: "grid",
-        gridTemplateColumns: "40px 1fr 100px 80px 64px 80px 1fr 40px",
-        gap: 12, alignItems: "center",
-        padding: "11px 8px",
+        gridTemplateColumns: ROW_COLS,
+        gap: 14, alignItems: "center",
+        padding: "12px 8px",
         borderBottom: `1px solid ${T.hair}`,
         borderLeft: `2px solid ${selected ? T.cyan : tpl.color + (hover ? "" : "00")}`,
         background: selected ? T.cyan + "0a" : hover ? T.elev + "60" : "transparent",
@@ -264,27 +293,32 @@ function RadarRow({ r, selected, onClick }) {
       }}
     >
       {/* Score */}
-      <div style={{ fontSize: 17, fontWeight: 600, color: scoreColor, fontFamily: T.mono, letterSpacing: "-0.02em" }}>
+      <div style={{ fontSize: 18, fontWeight: 600, color: scoreColor, fontFamily: T.mono, letterSpacing: "-0.02em" }}>
         {r.score ?? "—"}
       </div>
 
-      {/* Ticker + sentiment */}
+      {/* Ticker + price + change% + narrative */}
       <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: T.md, color: T.t1, fontWeight: 600, letterSpacing: "0.02em" }}>{r.t}</span>
           {r.px != null && (
             <span style={{ fontSize: T.sm, color: T.ts, fontFamily: T.mono }}>
               ${r.px.toFixed(2)}
+              {r.chg != null && (
+                <span style={{ color: r.chg >= 0 ? T.green : T.red, marginLeft: 6 }}>
+                  {r.chg > 0 ? "+" : ""}{r.chg.toFixed(1)}%
+                </span>
+              )}
             </span>
           )}
+          <span style={{ fontSize: T.xs, color: tpl.color, letterSpacing: "0.12em", fontWeight: 600 }}>{tpl.label}</span>
         </div>
-        <div style={{ fontSize: T.xs, color: tpl.color, letterSpacing: "0.1em", marginTop: 1 }}>{tpl.label}</div>
       </div>
 
       {/* BB Gauge */}
       <div>
         <BBGauge pct={r.bbPct} />
-        <div style={{ fontSize: T.xs, color: bbInfo.color, letterSpacing: "0.06em", marginTop: 4 }}>{bbInfo.label}</div>
+        <div style={{ fontSize: T.xs, color: bbInfo.color, letterSpacing: "0.08em", marginTop: 4 }}>{bbInfo.label}</div>
       </div>
 
       {/* IV Rank */}
@@ -293,7 +327,7 @@ function RadarRow({ r, selected, onClick }) {
           fontSize: T.sm, fontFamily: T.mono,
           color: r.ivr >= 0.70 ? T.green : r.ivr >= 0.50 ? T.amber : T.ts,
         }}>
-          {(r.ivr * 100).toFixed(0)}<span style={{ color: T.tf, fontSize: T.xs }}>/100</span>
+          {(r.ivr * 100).toFixed(0)}<span style={{ color: T.tf, fontSize: T.xs }}> / 100</span>
         </div>
         <div style={{ height: 2, background: T.bd, marginTop: 4, borderRadius: 1, overflow: "hidden" }}>
           <div style={{
@@ -314,6 +348,25 @@ function RadarRow({ r, selected, onClick }) {
         </div>
       </div>
 
+      {/* Earnings */}
+      <div>
+        {r.earn != null ? (
+          <>
+            <div style={{ fontSize: T.sm, color: insideEarn ? T.mag : T.ts, fontFamily: T.mono }}>
+              {r.earn}d
+              {insideEarn && (
+                <span style={{ fontSize: T.xs, color: T.mag, letterSpacing: "0.1em", marginLeft: 4 }}>HOLD</span>
+              )}
+            </div>
+            <div style={{ fontSize: T.xs, color: T.tf, marginTop: 2 }}>
+              {insideEarn ? "inside 21d" : "clear"}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: T.sm, color: T.tf, fontFamily: T.mono }}>—</div>
+        )}
+      </div>
+
       {/* Concentration */}
       <div style={{ textAlign: "right" }}>
         <div style={{
@@ -322,12 +375,9 @@ function RadarRow({ r, selected, onClick }) {
         }}>
           {r.conc > 0 ? `${r.conc.toFixed(1)}%` : "—"}
         </div>
-        {r.conc >= 15 && <div style={{ fontSize: T.xs, color: T.red, letterSpacing: "0.08em" }}>CEILING</div>}
-        {r.conc >= 10 && r.conc < 15 && <div style={{ fontSize: T.xs, color: T.amber, letterSpacing: "0.08em" }}>AT TARGET</div>}
+        {r.conc >= 15 && <div style={{ fontSize: T.xs, color: T.red, letterSpacing: "0.1em" }}>CEILING</div>}
+        {r.conc >= 10 && r.conc < 15 && <div style={{ fontSize: T.xs, color: T.amber, letterSpacing: "0.1em" }}>TARGET</div>}
       </div>
-
-      {/* Spacer */}
-      <div />
 
       {/* Chevron */}
       <div style={{ textAlign: "right", fontSize: T.sm, color: selected ? T.cyan : T.tf }}>

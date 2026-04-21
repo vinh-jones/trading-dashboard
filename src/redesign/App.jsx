@@ -82,6 +82,20 @@ const SURFACES = [
   { k: "review",  label: "REVIEW",  key: "V", accent: T.mag   },
 ];
 
+// Market hours check in America/New_York. Equities are open 9:30–16:00 ET, Mon–Fri.
+function isMarketOpenET(nowDate) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", weekday: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(nowDate).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+  const dow = parts.weekday;
+  if (dow === "Sat" || dow === "Sun") return false;
+  const hh = parseInt(parts.hour,   10);
+  const mm = parseInt(parts.minute, 10);
+  const mins = hh * 60 + mm;
+  return mins >= 9 * 60 + 30 && mins < 16 * 60;
+}
+
 function AppShell({ focus, trades, account, positions }) {
   const [surface, setSurface] = useState("focus");
   const [time, setTime] = useState(new Date());
@@ -95,9 +109,15 @@ function AppShell({ focus, trades, account, positions }) {
   useEffect(() => {
     function handler(e) {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "f" || e.key === "F") setSurface("focus");
       if (e.key === "e" || e.key === "E") setSurface("explore");
       if (e.key === "r" || e.key === "R") setSurface("review");
+      if (e.key === "n" || e.key === "N") {
+        setSurface("review");
+        try { localStorage.setItem("rv2-mode", "journal"); } catch {}
+        window.dispatchEvent(new CustomEvent("tw-review-mode", { detail: "journal" }));
+      }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -106,6 +126,15 @@ function AppShell({ focus, trades, account, positions }) {
   const hhmm = time.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const vix = account?.vix_current ?? focus.liveVix ?? null;
   const band = vix ? getVixBand(vix) : null;
+  const marketOpen = isMarketOpenET(time);
+
+  // Footer status: tickers covered + last-quote sync
+  const posCount = (positions?.open_csps?.length || 0)
+    + (positions?.assigned_shares?.length || 0)
+    + (positions?.open_leaps?.length || 0);
+  const lastSync = focus.quotesRefreshedAt
+    ? new Date(focus.quotesRefreshedAt).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
 
   return (
     <div style={{ minHeight: "100vh", position: "relative" }}>
@@ -129,6 +158,7 @@ function AppShell({ focus, trades, account, positions }) {
         <Header
           time={hhmm} surface={surface} setSurface={setSurface}
           vix={vix} band={band} p1Count={focus.p1Count}
+          marketOpen={marketOpen}
         />
 
         <div style={{ maxWidth: 1500, margin: "0 auto", padding: "20px 24px 80px" }}>
@@ -143,11 +173,11 @@ function AppShell({ focus, trades, account, positions }) {
               liveVix={focus.liveVix}
             />
           )}
-          {surface === "explore" && <ExploreSurface positions={positions} account={account} quoteMap={focus.quoteMap} />}
+          {surface === "explore" && <ExploreSurface positions={positions} account={account} quoteMap={focus.quoteMap} marketContext={focus.marketContext} />}
           {surface === "review"  && <ReviewSurface trades={trades} account={account} positions={positions} />}
         </div>
 
-        <Footer />
+        <Footer posCount={posCount} lastSync={lastSync} />
       </div>
 
       <PositionDetailHost
@@ -155,6 +185,7 @@ function AppShell({ focus, trades, account, positions }) {
         trades={trades}
         account={account}
         quoteMap={focus.quoteMap}
+        rollMap={focus.rollMap}
       />
       <CommandPaletteHost
         positions={positions}
@@ -165,7 +196,7 @@ function AppShell({ focus, trades, account, positions }) {
   );
 }
 
-function Header({ time, surface, setSurface, vix, band, p1Count }) {
+function Header({ time, surface, setSurface, vix, band, p1Count, marketOpen }) {
   return (
     <div style={{
       position: "sticky", top: 0, zIndex: 10,
@@ -223,14 +254,17 @@ function Header({ time, surface, setSurface, vix, band, p1Count }) {
               ● P1·{p1Count}
             </span>
           )}
+          <span>
+            <span style={{ color: marketOpen ? T.green : T.amber }}>●</span> MKT {marketOpen ? "OPEN" : "CLOSED"}
+          </span>
+          <span style={{ color: T.t1 }}>{time}</span>
           {vix != null && (
             <span style={{ color: T.post }}>VIX {vix.toFixed(2)}</span>
           )}
           {band && (
             <span style={{ color: T.ts }}>{band.sentiment.toUpperCase()}</span>
           )}
-          <span style={{ color: T.t1 }}>{time}</span>
-          <a href="/" style={{
+          <a href="/" title="Current app" style={{
             background: "transparent", border: `1px solid ${T.bd}`,
             color: T.tm, padding: "4px 8px", fontSize: 10, borderRadius: T.rSm,
             cursor: "pointer", fontFamily: T.mono, lineHeight: 1, textDecoration: "none",
@@ -241,12 +275,21 @@ function Header({ time, surface, setSurface, vix, band, p1Count }) {
   );
 }
 
-function Footer() {
+function Footer({ posCount, lastSync }) {
   const cmds = [
-    { k: "F", label: "Focus" },
-    { k: "E", label: "Explore" },
-    { k: "R", label: "Review" },
+    { k: "⌘K", label: "Command palette" },
+    { k: "F",  label: "Focus" },
+    { k: "E",  label: "Explore" },
+    { k: "R",  label: "Review" },
+    { k: "N",  label: "New journal entry" },
+    { k: "/",  label: "Search tickers" },
   ];
+  const leftBits = [
+    "▸ READY",
+    posCount > 0 ? `${posCount} TICKERS` : null,
+    lastSync ? `LAST SYNC ${lastSync}` : null,
+  ].filter(Boolean).join(" · ");
+
   return (
     <div style={{
       position: "fixed", bottom: 0, left: 0, right: 0,
@@ -257,13 +300,11 @@ function Footer() {
       fontSize: 10, color: T.tf, letterSpacing: "0.15em", fontFamily: T.mono,
       zIndex: 10,
     }}>
-      <div>▸ WHEEL OS TERMINAL · REDESIGN PREVIEW</div>
-      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+      <div>{leftBits}</div>
+      <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
         {cmds.map((c, i) => (
           <span key={i}><span style={{ color: T.tm }}>{c.k}</span> {c.label}</span>
         ))}
-        <span style={{ color: T.bd }}>·</span>
-        <span style={{ color: T.ts }}>⌘K</span>
       </div>
     </div>
   );

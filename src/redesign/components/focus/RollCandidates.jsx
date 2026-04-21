@@ -12,7 +12,21 @@ export function RollCandidates({ positions, rollMap }) {
     <Frame
       accent="quiet"
       title="ROLL CANDIDATES"
-      subtitle="best viable · from roll analysis"
+      subtitle="best viable · 48h fresh"
+      right={
+        <button style={{
+          fontSize: T.xs, color: T.cyan,
+          border: `1px solid ${T.cyan}44`,
+          background: "transparent",
+          padding: "3px 9px",
+          letterSpacing: "0.1em",
+          borderRadius: T.rSm,
+          fontFamily: T.mono,
+          cursor: "pointer",
+        }}>
+          RE-RUN ↻
+        </button>
+      }
     >
       <div style={{ display: "grid", gap: 1, background: T.bd, border: `1px solid ${T.bd}`, borderRadius: T.rSm }}>
         {rolls.map((r, i) => (

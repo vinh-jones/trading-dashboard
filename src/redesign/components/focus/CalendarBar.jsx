@@ -54,7 +54,7 @@ export function CalendarBar({ positions, marketContext }) {
                 padding: 1, gap: 1,
               }}>
                 {expiries.length > 0 && (
-                  <div style={{ height: big ? 16 : 8, width: "100%", background: T.amber, borderRadius: 1 }} />
+                  <div style={{ height: big ? 18 : 8, width: "100%", background: T.amber, borderRadius: 1 }} />
                 )}
                 {earnings.length > 0 && expiries.length === 0 && (
                   <div style={{ height: 4, width: "100%", background: T.mag, borderRadius: 1 }} />
@@ -79,6 +79,7 @@ export function CalendarBar({ positions, marketContext }) {
           <span style={{ display: "inline-block", width: 8, height: 8, background: T.mag, marginRight: 4, verticalAlign: "middle" }} />
           EARNINGS
         </span>
+        <span style={{ color: T.tf }}>· click any day to drill</span>
       </div>
     </Frame>
   );

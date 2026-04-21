@@ -13,7 +13,7 @@ export function MacroGlance({ macroData, marketContext }) {
     <Frame
       accent="quiet"
       title="MACRO"
-      subtitle={`${signals.length} signals`}
+      subtitle={`${signals.length} signals${label ? ` · ${label.toLowerCase()}` : ""}`}
       right={
         score != null ? (
           <span style={{ fontSize: T.xs, color: scoreColor(score), letterSpacing: "0.1em", fontFamily: T.mono }}>

@@ -8,7 +8,7 @@ let _setId = null;
 export function openPosition(id) { _setId?.(id); }
 
 // ── Host — mount once in AppShell ─────────────────────────────────────────────
-export function PositionDetailHost({ positions, trades, account, quoteMap }) {
+export function PositionDetailHost({ positions, trades, account, quoteMap, rollMap }) {
   const [openId, setOpenId] = useState(null);
 
   useEffect(() => {
@@ -73,6 +73,7 @@ export function PositionDetailHost({ positions, trades, account, quoteMap }) {
   const committed = type === "CSP"
     ? (pos.strike || 0) * pos.contracts * 100
     : (pos.costBasis || 0);
+  const rollEntry = rollMap?.[raw.ticker] ?? null;
 
   return (
     <DrawerWrap
@@ -82,6 +83,7 @@ export function PositionDetailHost({ positions, trades, account, quoteMap }) {
       accountValue={accountValue}
       committed={committed}
       currentMid={currentMid}
+      rollEntry={rollEntry}
       onClose={() => setOpenId(null)}
     />
   );
@@ -169,7 +171,7 @@ function computeScenarios(pos, currentMid) {
 }
 
 // ── Drawer shell ──────────────────────────────────────────────────────────────
-function DrawerWrap({ pos, history, scenarios, accountValue, committed, currentMid, onClose }) {
+function DrawerWrap({ pos, history, scenarios, accountValue, committed, currentMid, rollEntry, onClose }) {
   return (
     <>
       <div
@@ -190,7 +192,7 @@ function DrawerWrap({ pos, history, scenarios, accountValue, committed, currentM
         <DetailBody
           pos={pos} history={history} scenarios={scenarios}
           accountValue={accountValue} committed={committed}
-          currentMid={currentMid} onClose={onClose}
+          currentMid={currentMid} rollEntry={rollEntry} onClose={onClose}
         />
       </div>
       <style>{`
@@ -202,7 +204,7 @@ function DrawerWrap({ pos, history, scenarios, accountValue, committed, currentM
 }
 
 // ── Body ──────────────────────────────────────────────────────────────────────
-function DetailBody({ pos, history, scenarios, accountValue, committed, currentMid, onClose }) {
+function DetailBody({ pos, history, scenarios, accountValue, committed, currentMid, rollEntry, onClose }) {
   return (
     <div style={{ paddingBottom: 48 }}>
       <DHeader pos={pos} onClose={onClose} />
@@ -210,11 +212,67 @@ function DetailBody({ pos, history, scenarios, accountValue, committed, currentM
         <CurrentState pos={pos} currentMid={currentMid} />
         {pos.type === "CC" && <UnderlyingShares pos={pos} currentMid={currentMid} />}
         <Scenarios scenarios={scenarios} />
+        <RollCandidatesSection pos={pos} rollEntry={rollEntry} />
         <ConcentrationSection pos={pos} accountValue={accountValue} committed={committed} />
         <HistorySection history={history} ticker={pos.ticker} />
         <JournalSection ticker={pos.ticker} />
       </div>
     </div>
+  );
+}
+
+// ── Roll Candidates section ────────────────────────────────────────────────────
+function RollCandidatesSection({ pos, rollEntry }) {
+  if (!rollEntry) return null;
+
+  const rolls = [
+    { label: "14 DTE", expiry: rollEntry.roll_14dte_expiry, dte: rollEntry.roll_14dte_dte,
+      strike: rollEntry.roll_14dte_strike, mid: rollEntry.roll_14dte_mid,
+      net: rollEntry.roll_14dte_net, viable: rollEntry.roll_14dte_viable },
+    { label: "21 DTE", expiry: rollEntry.roll_21dte_expiry, dte: rollEntry.roll_21dte_dte,
+      strike: rollEntry.roll_21dte_strike, mid: rollEntry.roll_21dte_mid,
+      net: rollEntry.roll_21dte_net, viable: rollEntry.roll_21dte_viable },
+    { label: "28 DTE", expiry: rollEntry.roll_28dte_expiry, dte: rollEntry.roll_28dte_dte,
+      strike: rollEntry.roll_28dte_strike, mid: rollEntry.roll_28dte_mid,
+      net: rollEntry.roll_28dte_net, viable: rollEntry.roll_28dte_viable },
+  ].filter(r => r.strike != null && r.mid != null);
+
+  if (rolls.length === 0) return null;
+
+  const viableCount = rolls.filter(r => r.viable).length;
+  return (
+    <DSection label="ROLL CANDIDATES" right={`${rolls.length} windows · ${viableCount} viable`}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "64px 56px 52px 80px 92px 64px",
+        gap: 8, fontSize: T.xs, color: T.tf, letterSpacing: "0.08em",
+        padding: "4px 10px", background: T.elev, fontFamily: T.mono,
+      }}>
+        <span>WINDOW</span>
+        <span>DTE</span>
+        <span style={{ textAlign: "right" }}>STRIKE</span>
+        <span style={{ textAlign: "right" }}>PREMIUM</span>
+        <span style={{ textAlign: "right" }}>NET CREDIT</span>
+        <span style={{ textAlign: "right" }}>VIABLE</span>
+      </div>
+      {rolls.map((r, i) => (
+        <div key={i} style={{
+          display: "grid", gridTemplateColumns: "64px 56px 52px 80px 92px 64px",
+          gap: 8, fontSize: T.sm, color: T.t2, fontFamily: T.mono,
+          padding: "8px 10px", border: `1px solid ${T.bd}`, borderTop: 0, alignItems: "center",
+        }}>
+          <span style={{ color: T.t1 }}>{r.label}</span>
+          <span>{r.dte}d</span>
+          <span style={{ textAlign: "right", color: T.t1 }}>${r.strike}</span>
+          <span style={{ textAlign: "right" }}>${r.mid.toFixed(2)}</span>
+          <span style={{ textAlign: "right", color: r.net >= 0 ? T.green : T.red }}>
+            {r.net >= 0 ? "+" : ""}${r.net.toFixed(2)}
+          </span>
+          <span style={{ textAlign: "right", color: r.viable ? T.green : T.tf }}>
+            {r.viable ? "✓" : "—"}
+          </span>
+        </div>
+      ))}
+    </DSection>
   );
 }
 
@@ -345,12 +403,18 @@ function CurrentState({ pos, currentMid }) {
               {pos.glPct}% / {pos.targetPct}%
             </span>
           </div>
-          <div style={{ height: 5, background: T.bd, position: "relative", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ height: 6, background: T.bd, position: "relative", borderRadius: 2 }}>
             <div style={{
               position: "absolute", top: 0, left: 0, bottom: 0,
               width: `${Math.max(0, Math.min(100, (pos.glPct / pos.targetPct) * 100))}%`,
               background: pos.glPct >= pos.targetPct ? T.green : pos.glPct < 0 ? T.red : T.amber,
               transition: "width 0.3s",
+              borderRadius: 2,
+            }} />
+            {/* target tick */}
+            <div style={{
+              position: "absolute", top: -2, bottom: -2, left: "100%", width: 1,
+              background: T.t1, marginLeft: -1,
             }} />
           </div>
         </div>

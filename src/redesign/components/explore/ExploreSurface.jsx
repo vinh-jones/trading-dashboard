@@ -431,7 +431,7 @@ const EXPLORE_TABS = [
   { k: "radar",     label: "Radar"     },
 ];
 
-export function ExploreSurface({ positions, account, quoteMap }) {
+export function ExploreSurface({ positions, account, quoteMap, marketContext }) {
   const [mode, setMode] = useState(() => {
     try { const s = localStorage.getItem("redesign-explore-mode"); return s === "radar" ? "radar" : "portfolio"; }
     catch { return "portfolio"; }
@@ -468,7 +468,7 @@ export function ExploreSurface({ positions, account, quoteMap }) {
       </div>
 
       {mode === "portfolio" && <PortfolioView positions={positions} account={account} quoteMap={quoteMap} />}
-      {mode === "radar"     && <RadarSurface positions={positions} account={account} />}
+      {mode === "radar"     && <RadarSurface positions={positions} account={account} marketContext={marketContext} />}
     </div>
   );
 }

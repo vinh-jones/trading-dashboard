@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { T } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
 import { JournalSurface } from "./JournalSurface.jsx";
@@ -53,12 +53,12 @@ function applyFilters(trades, filters) {
     const d = filters.duration;
     out = out.filter(t => {
       const days = t.days ?? 0;
-      if (d === "<1d")   return days < 1;
-      if (d === "1-3d")  return days >= 1  && days <= 3;
-      if (d === "4-7d")  return days >= 4  && days <= 7;
-      if (d === "8-14d") return days >= 8  && days <= 14;
+      if (d === "0-1d")   return days >= 0  && days <= 1;
+      if (d === "2-3d")   return days >= 2  && days <= 3;
+      if (d === "4-7d")   return days >= 4  && days <= 7;
+      if (d === "8-14d")  return days >= 8  && days <= 14;
       if (d === "15-30d") return days >= 15 && days <= 30;
-      if (d === "30+d")  return days > 30;
+      if (d === "30d+")   return days > 30;
       return true;
     });
   }
@@ -81,14 +81,14 @@ function ytdByTicker(trades) {
 }
 
 function holdDurationBuckets(trades) {
-  const KEYS = ["<1d", "1-3d", "4-7d", "8-14d", "15-30d", "30+d"];
+  const KEYS = ["0-1d", "2-3d", "4-7d", "8-14d", "15-30d", "30d+"];
   const bucket = (days) => {
-    if (days < 1)   return "<1d";
-    if (days <= 3)  return "1-3d";
+    if (days <= 1)  return "0-1d";
+    if (days <= 3)  return "2-3d";
     if (days <= 7)  return "4-7d";
     if (days <= 14) return "8-14d";
     if (days <= 30) return "15-30d";
-    return "30+d";
+    return "30d+";
   };
   const init = () => Object.fromEntries(Object.keys(TYPE_COLORS).map(t => [t, 0]));
   const data = Object.fromEntries(KEYS.map(k => [k, { key: k, count: 0, pl: 0, byType: init() }]));
@@ -628,6 +628,16 @@ export function ReviewSurface({ trades, account, positions }) {
     setMode(m);
     try { localStorage.setItem("rv2-mode", m); } catch {}
   };
+
+  // Command palette / keyboard shortcuts fire this to jump to journal mode
+  useEffect(() => {
+    const h = (e) => {
+      const v = e.detail;
+      if (v === "journal" || v === "monthly" || v === "ytd") setMode(v);
+    };
+    window.addEventListener("tw-review-mode", h);
+    return () => window.removeEventListener("tw-review-mode", h);
+  }, []);
 
   const [filters, setFiltersRaw] = useState({ type: null, ticker: null, duration: null });
   const setFilters = (f) => setFiltersRaw(typeof f === "function" ? f(filters) : f);
