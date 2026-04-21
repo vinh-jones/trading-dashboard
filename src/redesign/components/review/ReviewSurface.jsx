@@ -432,12 +432,17 @@ function MonthCalendar({ monthIdx, trades, selectedDay, setSelectedDay }) {
 
 // ── Premium Pipeline ──────────────────────────────────────────────────────────
 
-function PremiumPipeline({ account }) {
+function PremiumPipeline({ account, positions }) {
   const [captureRate, setCaptureRate] = useState(0.60);
-  const grossOpen    = account?.mtd_pipeline_gross ?? 0;
-  const mtdCollected = account?.mtd_premium        ?? 0;
-  const baseline     = account?.baseline_target    ?? 15000;
-  const stretch      = account?.stretch_target     ?? 25000;
+
+  // Gross open premium: sum of open CSP + CC premium_collected (same formula as api/snapshot.js:149)
+  const openCSPs = positions?.open_csps ?? [];
+  const openCCs  = (positions?.assigned_shares ?? []).filter(s => s.active_cc).map(s => s.active_cc);
+  const grossOpen = [...openCSPs, ...openCCs].reduce((s, p) => s + (p.premium_collected || 0), 0);
+
+  const mtdCollected = account?.month_to_date_premium     ?? 0;
+  const baseline     = account?.monthly_targets?.baseline ?? 15000;
+  const stretch      = account?.monthly_targets?.stretch  ?? 25000;
   const expected     = grossOpen * captureRate;
   const implied      = mtdCollected + expected;
   const gap          = implied - baseline;
@@ -481,7 +486,7 @@ function PremiumPipeline({ account }) {
 
 // ── Monthly mode ──────────────────────────────────────────────────────────────
 
-function ReviewMonthly({ trades, account, filters, toggleFilter }) {
+function ReviewMonthly({ trades, account, positions, filters, toggleFilter }) {
   const [monthIdx, setMonthIdx] = useState(() => {
     const maxMonth = Math.max(...trades.map(t => tradeMonth(t)).filter(m => m >= 0));
     return maxMonth >= 0 ? maxMonth : 3;
@@ -505,7 +510,7 @@ function ReviewMonthly({ trades, account, filters, toggleFilter }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <PremiumPipeline account={account} />
+      <PremiumPipeline account={account} positions={positions} />
 
       {/* Month tabs */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -666,7 +671,7 @@ export function ReviewSurface({ trades, account, positions }) {
       )}
 
       {mode === "monthly" && (
-        <ReviewMonthly trades={closedTrades} account={account} filters={filters} toggleFilter={toggleFilter} />
+        <ReviewMonthly trades={closedTrades} account={account} positions={positions} filters={filters} toggleFilter={toggleFilter} />
       )}
       {mode === "ytd" && (
         <ReviewYTD trades={closedTrades} filters={filters} toggleFilter={toggleFilter} />
