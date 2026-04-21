@@ -71,12 +71,18 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
 
   // Days until next earnings. Prefer OpenClaw's richer per-ticker data (from
   // marketContext.positions[].nextEarnings — only held tickers), fall back to
-  // Yahoo calendarEvents cached into quotes.earnings_date by /api/wheel-earnings.
+  // OpenClaw wheel earnings (quotes.earnings_date + earnings_meta) and finally
+  // the Yahoo lazy fallback in /api/wheel-earnings.
   let earn = null;
-  const earnIso = earningsMap?.[row.ticker] ?? row.earnings_date;
+  let earnHour = null;
+  const mcEntry = earningsMap?.[row.ticker];
+  const earnIso = (typeof mcEntry === "object" ? mcEntry.date : mcEntry) ?? row.earnings_date;
   if (earnIso) {
     const days = Math.ceil((new Date(earnIso + "T00:00:00") - new Date()) / 86400000);
     if (days >= 0 && days < 400) earn = days;
+    earnHour = (typeof mcEntry === "object" && mcEntry?.time)
+      ? mcEntry.time
+      : row.earnings_meta?.hour ?? null;
   }
 
   // Intraday % change from yesterday's close (populated by /api/bb alongside BB data)
@@ -97,6 +103,7 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
     iv_rank:  row.iv_rank ?? null, // 0..100 for filters
     iv_pct:   row.iv ?? null,      // 0..100 for filters
     earn,
+    earnHour,
     conc,
     px:       row.last,
     chg,
@@ -159,12 +166,19 @@ export function RadarSurface({ positions, account, marketContext }) {
   const vixBand      = vix != null ? getVixBand(vix) : null;
   const sentiment    = vixBand?.sentiment ?? null;
 
-  // Earnings lookup by ticker — sourced from marketContext.positions (Finnhub per-ticker dates).
-  // Only covers tickers we hold; radar covers the wheel universe so many tickers will have no earn date.
+  // Earnings lookup by ticker — sourced from marketContext.positions (Finnhub
+  // per-ticker dates, richer metadata including bmo/amc hour + estimates).
+  // Only covers tickers we hold; full universe falls back to quotes.earnings_*.
   const earningsMap = useMemo(() => {
     const map = {};
     (marketContext?.positions || []).forEach(p => {
-      if (p.ticker && p.nextEarnings?.date) map[p.ticker] = p.nextEarnings.date.slice(0, 10);
+      if (p.ticker && p.nextEarnings?.date) {
+        map[p.ticker] = {
+          date: p.nextEarnings.date.slice(0, 10),
+          time: p.nextEarnings.time ?? null,
+          epsEstimate: p.nextEarnings.epsEstimate ?? null,
+        };
+      }
     });
     return map;
   }, [marketContext]);
@@ -407,6 +421,11 @@ function RadarRow({ r, selected, onClick }) {
             </div>
             <div style={{ fontSize: T.xs, color: T.tf, marginTop: 2 }}>
               {insideEarn ? "inside 21d" : "clear"}
+              {r.earnHour && r.earnHour !== "" && (
+                <span style={{ color: T.ts, marginLeft: 4 }}>
+                  · {r.earnHour.toLowerCase() === "bmo" ? "bmo" : r.earnHour.toLowerCase() === "amc" ? "amc" : r.earnHour}
+                </span>
+              )}
             </div>
           </>
         ) : (

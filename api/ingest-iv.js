@@ -12,10 +12,20 @@
  * POST body shape:
  *   {
  *     quotes: [
- *       { symbol: "PLTR", iv: 0.728, iv_rank: 46.75 },
+ *       {
+ *         symbol:     "PLTR",
+ *         iv:         0.728,
+ *         iv_rank:    46.75,
+ *         last:       108.40,   // optional — intraday stock price
+ *         prev_close: 110.74,   // optional — yesterday's close, for Radar change %
+ *       },
  *       ...
  *     ]
  *   }
+ *
+ * last and prev_close are optional for backward compat. When provided they
+ * keep the Radar row's price + change % fresh at the ingest cadence (~15 min)
+ * rather than waiting for /api/bb's 2h refresh.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -75,11 +85,15 @@ export default async function handler(req, res) {
       const now      = new Date().toISOString();
 
       const results = await Promise.all(
-        quotes.map(({ symbol, iv, iv_rank }) => {
+        quotes.map((q) => {
+          const { symbol, iv, iv_rank, last, prev_close } = q ?? {};
           if (!symbol) return Promise.resolve({ symbol, ok: false, error: "missing symbol" });
+          const patch = { iv: iv ?? null, iv_rank: iv_rank ?? null, refreshed_at: now };
+          if (last       !== undefined) patch.last       = last       ?? null;
+          if (prev_close !== undefined) patch.prev_close = prev_close ?? null;
           return supabase
             .from("quotes")
-            .update({ iv: iv ?? null, iv_rank: iv_rank ?? null, refreshed_at: now })
+            .update(patch)
             .eq("symbol", symbol)
             .then(({ error }) => ({ symbol, ok: !error, error: error?.message }));
         })
