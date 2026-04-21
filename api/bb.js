@@ -30,7 +30,7 @@ function delay(ms) {
 // ── Fetch + compute BB for a single ticker ────────────────────────────────────
 
 async function fetchBB(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1mo`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1y`;
 
   const r = await fetch(url, {
     headers: {
@@ -48,9 +48,7 @@ async function fetchBB(ticker) {
   const closes    = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
   const meta      = data?.chart?.result?.[0]?.meta;
   const price     = meta?.regularMarketPrice;
-  const prevClose = meta?.chartPreviousClose    ?? null;
-  const ma50      = meta?.fiftyDayAverage       ?? null;
-  const ma200     = meta?.twoHundredDayAverage  ?? null;
+  const prevClose = meta?.chartPreviousClose ?? null;
 
   if (!closes || price == null) {
     throw new Error(`Missing closes or price for ${ticker}`);
@@ -68,6 +66,11 @@ async function fetchBB(ticker) {
   const upper    = sma20 + 2 * stdDev;
   const lower    = sma20 - 2 * stdDev;
   const bbPosition = (price - lower) / (upper - lower);
+
+  const last50  = validCloses.slice(-50);
+  const last200 = validCloses.slice(-200);
+  const ma50    = last50.length  >= 50  ? last50.reduce((a, b) => a + b, 0)  / 50  : null;
+  const ma200   = last200.length >= 200 ? last200.reduce((a, b) => a + b, 0) / 200 : null;
 
   return {
     bb_position: bbPosition, bb_upper: upper, bb_lower: lower, bb_sma20: sma20,
