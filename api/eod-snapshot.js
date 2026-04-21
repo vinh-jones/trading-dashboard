@@ -435,8 +435,25 @@ export default async function handler(req, res) {
       ...(positions.assigned_shares ?? []).flatMap((s) => s.open_leaps ?? []),
     ];
 
+    // Per-ticker allocations — same logic as api/snapshot.js
+    // Uses raw positionRows so we get capital_fronted directly off each flat row
+    const accountValue = accountSnap.account_value ?? 0;
+    const tickerTotals = {};
+    for (const p of positionRows) {
+      const fronted = p.capital_fronted || 0;
+      if (p.ticker && fronted > 0) {
+        tickerTotals[p.ticker] = (tickerTotals[p.ticker] || 0) + fronted;
+      }
+    }
+    const tickerAllocations = {};
+    for (const [ticker, amount] of Object.entries(tickerTotals)) {
+      tickerAllocations[ticker] = accountValue > 0
+        ? Math.round((amount / accountValue) * 10000) / 10000
+        : 0;
+    }
+
     effectiveSnapshot = {
-      account_value:              accountSnap.account_value,
+      account_value:              accountValue,
       free_cash:                  accountSnap.free_cash_est,
       free_cash_pct:              cashPct,
       cash_floor_target_pct:      band?.floorPct    ?? null,
@@ -454,7 +471,7 @@ export default async function handler(req, res) {
       open_cc_count:              (positions.assigned_shares ?? []).filter((s) => s.active_cc).length,
       open_leaps_count:           allLeaps.length,
       assigned_share_tickers:     (positions.assigned_shares ?? []).length,
-      ticker_allocations:         null,
+      ticker_allocations:         Object.keys(tickerAllocations).length ? tickerAllocations : null,
       _source:                    "live",
     };
   } else if (effectiveSnapshot) {
