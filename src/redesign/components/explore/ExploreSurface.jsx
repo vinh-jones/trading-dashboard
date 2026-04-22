@@ -473,7 +473,7 @@ export function ExploreSurface({ positions, account, quoteMap, marketContext }) 
 
       {mode === "portfolio" && <PortfolioView positions={positions} account={account} quoteMap={quoteMap} />}
       {mode === "radar"     && <RadarSurface positions={positions} account={account} marketContext={marketContext} />}
-      {mode === "earnings"  && <EarningsSurface />}
+      {mode === "earnings"  && <EarningsSurface positions={positions} account={account} />}
     </div>
   );
 }

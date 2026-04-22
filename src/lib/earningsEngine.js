@@ -1,21 +1,24 @@
 /**
- * earningsEngine.js
+ * earningsEngine.js — pure helpers for the Earnings Play Tool.
  *
- * Pure helpers for the Earnings Play Tool. No React, no fetch — all inputs
- * come in, all outputs go out. Callers are responsible for hitting
- * /api/earnings-chain and assembling chains by expiry.
+ * Four documented Ryan Hildreth CSP patterns around an earnings event:
  *
- * Four paths (Ryan Hildreth CSP patterns around an earnings event):
- *   A — Avoid            : skip entirely (informational)
- *   B — Defensive        : pre-earnings expiry, low delta, captures decay w/o event
- *   C — Standard         : post-earnings expiry 30–45 DTE, standard delta
- *   D — Aggressive       : earnings-week expiry, higher delta, harvest IV crush
+ *   A — Avoid       pre-earnings Friday, below lower bound, 15–20Δ
+ *                   (skip the event, play the setup)
+ *   B — Defensive   earnings-week, 3–8% below lower bound, 13–19Δ
+ *                   (premium without likely assignment)
+ *   C — Standard    earnings-week, AT lower bound, 20–25Δ
+ *                   (happy to be assigned at the expected discount)
+ *   D — Aggressive  earnings-week, ABOVE lower bound (inside EM), 25–30Δ
+ *                   (high-conviction bullish, closer to current price)
  *
- * The conviction selector shifts the delta band (safer vs spicier).
+ * The conviction picker (Low/Standard/High) does NOT shift deltas — paths
+ * are fixed by the spec. Conviction controls which two paths the UI surfaces
+ * prominently. See buildEarningsPaths() + CONVICTION_PROMINENCE below.
  */
 
 // ── Expected move ────────────────────────────────────────────────────────────
-// EM = S * IV * sqrt(DTE / 365). Use the earnings-week ATM IV.
+// EM = S · IV · sqrt(T/365), using the earnings-week ATM IV.
 export function computeExpectedMove(spot, iv, dte) {
   if (spot == null || iv == null || dte == null || dte <= 0) return null;
   return spot * iv * Math.sqrt(dte / 365);
@@ -44,7 +47,6 @@ export function getUpcomingFridays(fromIso, days = 70) {
   return out;
 }
 
-// Pre-earnings: nearest Friday strictly before earningsDate
 export function pickPreEarningsExpiry(fridays, earningsIso) {
   const eDate = new Date(earningsIso + "T00:00:00Z").getTime();
   let best = null;
@@ -55,7 +57,6 @@ export function pickPreEarningsExpiry(fridays, earningsIso) {
   return best;
 }
 
-// Earnings-week: nearest Friday on/after earnings date
 export function pickEarningsWeekExpiry(fridays, earningsIso) {
   const eDate = new Date(earningsIso + "T00:00:00Z").getTime();
   for (const f of fridays) {
@@ -65,165 +66,239 @@ export function pickEarningsWeekExpiry(fridays, earningsIso) {
   return null;
 }
 
-// Post-earnings standard: first Friday that's >= earnings+7 AND within targetDTE band
-export function pickPostEarningsExpiry(fridays, earningsIso, targetDTE = 35) {
-  const eDate = new Date(earningsIso + "T00:00:00Z").getTime();
-  const eligible = fridays.filter(f => {
-    const fDate = new Date(f.expiry + "T00:00:00Z").getTime();
-    return fDate >= eDate + 7 * 86400000;
-  });
-  if (!eligible.length) return null;
-  let best = eligible[0], bestDiff = Math.abs(eligible[0].dte - targetDTE);
-  for (const f of eligible) {
-    const diff = Math.abs(f.dte - targetDTE);
-    if (diff < bestDiff) { best = f; bestDiff = diff; }
-  }
-  return best;
-}
-
 // ── Strike selection ─────────────────────────────────────────────────────────
-// Pick the strike whose |delta| is closest to targetDelta. Ties go lower.
-export function selectStrikeByDelta(strikes, targetDelta) {
-  const withDelta = strikes.filter(s => s.delta != null);
-  if (!withDelta.length) return null;
-  let best = withDelta[0];
-  let bestDiff = Math.abs(best.delta - targetDelta);
-  for (const s of withDelta) {
-    const diff = Math.abs(s.delta - targetDelta);
-    if (diff < bestDiff || (diff === bestDiff && s.strike < best.strike)) {
-      best = s; bestDiff = diff;
-    }
-  }
-  return best;
-}
+// Each path has its own delta target + price target + price constraint.
+// Scoring weights delta-match ~10× price-match — delta dominates per spec.
 
-// ── Conviction delta bands ───────────────────────────────────────────────────
-// Shift the three usable deltas (B/C/D) up or down based on conviction.
-export const CONVICTION_DELTAS = {
-  low:      { defensive: 0.10, standard: 0.15, aggressive: 0.20 },
-  standard: { defensive: 0.15, standard: 0.20, aggressive: 0.25 },
-  high:     { defensive: 0.20, standard: 0.25, aggressive: 0.30 },
+const PATH_RULES = {
+  A: { targetDelta: 0.17, priceTarget: "lowerBound",         priceConstraint: "below" },
+  B: { targetDelta: 0.16, priceTarget: "lowerBoundMinus5",   priceConstraint: "below" },
+  C: { targetDelta: 0.23, priceTarget: "lowerBound",         priceConstraint: "near"  },
+  D: { targetDelta: 0.27, priceTarget: "aggressiveTarget",   priceConstraint: "above" },
 };
 
-// ── Conviction-factor signals (for the UI's conviction-factor panel) ─────────
-// All factors return 1 point each; total 0–5. The UI decides how to bucket
-// into low/standard/high.
-export function scoreConvictionFactors({
-  ivRank,         // 0..1
-  bbPct,          // 0..1 (position within BBands)
-  sectorBias,     // -1..1 (positive = tailwind)
-  recentBeat,     // boolean
-  guidanceRaised, // boolean
-}) {
-  let score = 0;
-  const factors = [];
-  if (ivRank != null && ivRank >= 0.5) { score++; factors.push({ label: "IV rank ≥ 50", on: true }); }
-  else                                  factors.push({ label: "IV rank ≥ 50", on: false });
-  if (bbPct != null && bbPct <= 0.35)  { score++; factors.push({ label: "Price near lower band", on: true }); }
-  else                                  factors.push({ label: "Price near lower band", on: false });
-  if (sectorBias != null && sectorBias > 0) { score++; factors.push({ label: "Sector tailwind", on: true }); }
-  else                                       factors.push({ label: "Sector tailwind", on: false });
-  if (recentBeat)     { score++; factors.push({ label: "Recent earnings beat", on: true }); }
-  else                 factors.push({ label: "Recent earnings beat", on: false });
-  if (guidanceRaised) { score++; factors.push({ label: "Guidance raised", on: true }); }
-  else                 factors.push({ label: "Guidance raised", on: false });
+export function selectStrikeForPath(pathKey, spot, lowerBound, strikes) {
+  const valid = (strikes || []).filter(s => s.delta != null && s.strike != null);
+  if (!valid.length || lowerBound == null) return null;
 
-  let bucket = "standard";
-  if (score <= 1) bucket = "low";
-  else if (score >= 4) bucket = "high";
-  return { score, bucket, factors };
+  const rule = PATH_RULES[pathKey];
+  if (!rule) return null;
+
+  const priceTargets = {
+    lowerBound:         lowerBound,
+    lowerBoundMinus5:   lowerBound * 0.95,
+    aggressiveTarget:   lowerBound + (spot - lowerBound) * 0.3,
+  };
+  const targetPrice = priceTargets[rule.priceTarget];
+
+  const scored = valid.map(s => {
+    const deltaDist = Math.abs(s.delta - rule.targetDelta);
+    const priceDist = Math.abs(s.strike - targetPrice) / spot;
+    let penalty = 0;
+    if (rule.priceConstraint === "below" && s.strike > lowerBound)       penalty = 0.5;
+    if (rule.priceConstraint === "above" && s.strike < lowerBound)       penalty = 0.5;
+    return { s, score: deltaDist * 10 + priceDist + penalty };
+  });
+  scored.sort((a, b) => a.score - b.score);
+  return scored[0].s;
 }
 
-// ── Main: build the four paths ───────────────────────────────────────────────
+// ── Conviction-factor signal aggregator ──────────────────────────────────────
+// Returns { factors: [...], suggested: "LOW" | "STANDARD" | "HIGH" | ... }
+// Inputs are optional — missing signals are simply skipped.
+export function scoreConvictionFactors({ bbPosition, ivRank, concentration, recentEarnings }) {
+  const factors = [];
+  let lowCount = 0, highCount = 0, standardCount = 0;
+
+  if (bbPosition != null) {
+    if (bbPosition < 0.20) {
+      factors.push({ label: "BB Position", value: `${bbPosition.toFixed(2)} (at/below lower band)`, suggests: "High" });
+      highCount++;
+    } else if (bbPosition > 0.80) {
+      factors.push({ label: "BB Position", value: `${bbPosition.toFixed(2)} (near upper band)`, suggests: "Low" });
+      lowCount++;
+    } else {
+      factors.push({ label: "BB Position", value: `${bbPosition.toFixed(2)} (mid-range)`, suggests: "Standard" });
+      standardCount++;
+    }
+  }
+
+  if (recentEarnings) {
+    const { beatEPS, beatRevenue } = recentEarnings;
+    if (beatEPS && beatRevenue) {
+      factors.push({ label: "Last earnings", value: "Beat EPS + revenue", suggests: "Standard or High" });
+      highCount++;
+    } else if (beatEPS || beatRevenue) {
+      factors.push({ label: "Last earnings", value: "Mixed result", suggests: "Standard" });
+      standardCount++;
+    } else {
+      factors.push({ label: "Last earnings", value: "Missed EPS + revenue", suggests: "Low" });
+      lowCount++;
+    }
+  }
+
+  if (concentration != null) {
+    const pct = concentration * 100;
+    if (concentration < 0.05) {
+      factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (underweight)`, suggests: "Standard or High" });
+      highCount++;
+    } else if (concentration > 0.10) {
+      factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (at/above 10% target)`, suggests: "Low" });
+      lowCount++;
+    } else {
+      factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (within target)`, suggests: "Standard" });
+      standardCount++;
+    }
+  }
+
+  if (ivRank != null) {
+    const ctx = ivRank >= 70 ? "elevated" : ivRank >= 40 ? "moderate" : "low";
+    factors.push({
+      label: "IV Rank", value: `${Math.round(ivRank)} (${ctx})`,
+      suggests: "Rich premium context — applies to any path",
+    });
+  }
+
+  let suggested;
+  if (highCount > lowCount && highCount >= standardCount)      suggested = "STANDARD with room for HIGH";
+  else if (lowCount > highCount && lowCount >= standardCount)  suggested = "LOW with room for STANDARD";
+  else                                                         suggested = "STANDARD";
+
+  return { factors, suggested, lowCount, standardCount, highCount };
+}
+
+// ── Path metadata (static, for rendering) ────────────────────────────────────
+export const PATH_META = {
+  A: {
+    label:       "Avoid Earnings",
+    tagline:     "Skip the event entirely",
+    description: "Pre-earnings Friday expiry, strike below the expected lower bound. Play the setup, not the event.",
+    evidence: [
+      { trade: "CDE Feb 13",  quote: "I went a bit shorter on expiration to avoid earnings" },
+      { trade: "TSM Apr 17",  quote: "Will avoid earnings and free up cash" },
+      { trade: "COHR $260p",  quote: "Avoiding earnings" },
+    ],
+  },
+  B: {
+    label:       "Defensive",
+    tagline:     "Outside expected move",
+    description: "Earnings-week expiry, 3–8% below the implied lower bound. Collect IV premium without likely assignment. Only accept assignment at a meaningful discount.",
+    evidence: [
+      { trade: "LRCX $240p at 16Δ", quote: "Went right outside the expected move for a fun earnings play" },
+      { trade: "GLW $136p at 13Δ",  quote: "Solid company. I'm outside of the expected move, but I don't mind getting assigned at these levels" },
+      { trade: "STX",               quote: "Take the expected move… go below that. Maybe I'd go to 97 and 1/2" },
+    ],
+  },
+  C: {
+    label:       "Standard",
+    tagline:     "At expected lower bound",
+    description: "Earnings-week expiry, strike placed right at the market-maker implied lower bound. Happy to be assigned at a discount.",
+    evidence: [
+      { trade: "WDC $320p at 20Δ", quote: "20 delta. This put completes my 10% allocation. Happy to get assigned here" },
+      { trade: "AA $62p at 15Δ",   quote: "Went out two weeks for more premium which allowed me to get further away from the stock" },
+      { trade: "CLS $275p at 21Δ", quote: "Wanted more delta exposure for CLS earnings as I really like the company" },
+    ],
+  },
+  D: {
+    label:       "Aggressive",
+    tagline:     "Inside expected move",
+    description: "Earnings-week expiry, strike above the lower bound (closer to current). High-conviction bullish; underweight or fresh-entry names.",
+    evidence: [
+      { trade: "COHR $300p at 24Δ", quote: "Really aggressive on my strike price here as the stock looks really strong" },
+      { trade: "CLS $310p at 26Δ",  quote: "That is why I'm going aggressive on these for earnings" },
+      { trade: "NVDA $175p at 27Δ", quote: "Maintaining position in NVDA after strong earnings" },
+    ],
+  },
+};
+
+// ── Prominence: which 2 paths are surfaced prominently per conviction ────────
+export const CONVICTION_PROMINENCE = {
+  low:      ["A", "B"],
+  standard: ["B", "C"],
+  high:     ["C", "D"],
+};
+
+// ── Main: build the four paths + expected move summary ──────────────────────
 // Inputs:
-//   ticker, earningsIso, todayIso
-//   conviction: "low" | "standard" | "high"
-//   chainByExpiry: { [expiryIso]: { atmIV, strikes: [{ strike, delta, iv, bid, ask, mid }] } }
-// Output:
-//   {
-//     expectedMove: { emDollars, emPct, atmIV, dteToEarnings, earningsWeekExpiry },
-//     paths: { A, B, C, D }  each with { label, expiry, dte, strike, delta, mid, premium, pctBelow, reason }
-//   }
-export function buildEarningsPaths({
-  ticker,
-  earningsIso,
-  todayIso,
-  spot,
-  conviction = "standard",
-  chainByExpiry = {},
-}) {
+//   ticker, earningsIso, todayIso, spot
+//   chainByExpiry: { [expiryIso]: { atmIV, strikes: [...] } }
+//     Must include both the pre-earnings Friday (for Path A) and the
+//     earnings-week Friday (for Paths B/C/D).
+export function buildEarningsPaths({ ticker, earningsIso, todayIso, spot, chainByExpiry = {} }) {
   const fridays = getUpcomingFridays(todayIso, 70);
   const earningsFriday = pickEarningsWeekExpiry(fridays, earningsIso);
   const preFriday      = pickPreEarningsExpiry(fridays, earningsIso);
-  const postFriday     = pickPostEarningsExpiry(fridays, earningsIso, 35);
 
-  // Expected move from earnings-week ATM IV (most informative)
   const earningsWeekChain = earningsFriday ? chainByExpiry[earningsFriday.expiry] : null;
+  const preChain          = preFriday      ? chainByExpiry[preFriday.expiry]      : null;
+
   const atmIV = earningsWeekChain?.atmIV ?? null;
   const dteToEarnings = daysBetween(todayIso, earningsIso);
   const em = computeExpectedMove(spot, atmIV, Math.max(dteToEarnings, 1));
-  const emPct = em != null && spot ? (em / spot) * 100 : null;
+  const emPct      = em != null && spot ? (em / spot) * 100 : null;
+  const lowerBound = em != null && spot ? spot - em : null;
+  const upperBound = em != null && spot ? spot + em : null;
 
-  const deltas = CONVICTION_DELTAS[conviction] || CONVICTION_DELTAS.standard;
-
-  const buildLeg = (friday, targetDelta, labelForReason) => {
-    if (!friday) return null;
-    const chain = chainByExpiry[friday.expiry];
-    if (!chain || !chain.strikes?.length) return null;
-    const pick = selectStrikeByDelta(chain.strikes, targetDelta);
+  const buildLeg = (pathKey, friday, chain) => {
+    if (!friday || !chain || !chain.strikes?.length || lowerBound == null) return null;
+    const pick = selectStrikeForPath(pathKey, spot, lowerBound, chain.strikes);
     if (!pick) return null;
-    const premium = pick.mid != null ? pick.mid * 100 : null; // per contract
-    const pctBelow = spot ? ((spot - pick.strike) / spot) * 100 : null;
+    const premium       = pick.mid != null ? pick.mid * 100 : null;
+    const collateral    = pick.strike * 100;
+    const roi           = premium != null && collateral ? (premium / collateral) * 100 : null;
+    const pctBelowSpot  = spot ? ((spot - pick.strike) / spot) * 100 : null;
+    const strikeVsLower = pick.strike - lowerBound;
     return {
-      expiry:   friday.expiry,
-      dte:      friday.dte,
-      strike:   pick.strike,
-      delta:    pick.delta,
-      iv:       pick.iv,
-      bid:      pick.bid,
-      ask:      pick.ask,
-      mid:      pick.mid,
-      premium,
-      pctBelow,
-      osi:      pick.osi,
-      targetDelta,
-      reason:   labelForReason,
+      expiry: friday.expiry, dte: friday.dte,
+      strike: pick.strike, delta: pick.delta, iv: pick.iv,
+      bid: pick.bid, ask: pick.ask, mid: pick.mid, osi: pick.osi,
+      premium, collateral, roi,
+      pctBelowSpot, strikeVsLower,
     };
   };
 
-  const A = {
-    label:  "Avoid",
-    tagline:"Skip the event",
-    reason: `Earnings in ${dteToEarnings}d. IV rank or thesis too thin to underwrite a binary move.`,
-    expiry: null, dte: null, strike: null, delta: null, premium: null, pctBelow: null,
-  };
-
-  const Bleg = buildLeg(preFriday, deltas.defensive,
-    `Pre-earnings expiry — captures theta decay, closes before the event (${conviction} conviction: ${(deltas.defensive * 100).toFixed(0)}Δ)`);
-  const B = Bleg ? { label: "Defensive", tagline: "Pre-earnings decay", ...Bleg } : null;
-
-  const Cleg = buildLeg(postFriday, deltas.standard,
-    `Post-earnings ~30–45 DTE — standard premium once event risk is past (${conviction}: ${(deltas.standard * 100).toFixed(0)}Δ)`);
-  const C = Cleg ? { label: "Standard", tagline: "Post-earnings standard", ...Cleg } : null;
-
-  const Dleg = buildLeg(earningsFriday, deltas.aggressive,
-    `Earnings-week expiry — harvest IV crush, accept assignment risk (${conviction}: ${(deltas.aggressive * 100).toFixed(0)}Δ)`);
-  const D = Dleg ? { label: "Aggressive", tagline: "IV crush harvest", ...Dleg } : null;
+  const paths = {};
+  for (const key of ["A", "B", "C", "D"]) {
+    const friday = key === "A" ? preFriday           : earningsFriday;
+    const chain  = key === "A" ? preChain            : earningsWeekChain;
+    const leg    = buildLeg(key, friday, chain);
+    paths[key] = { key, ...PATH_META[key], ...(leg || {}), available: !!leg };
+  }
 
   return {
-    ticker,
-    earningsIso,
-    todayIso,
-    conviction,
+    ticker, earningsIso, todayIso, spot,
     expectedMove: {
-      emDollars:         em,
-      emPct,
-      atmIV,
-      dteToEarnings,
+      emDollars: em, emPct, atmIV,
+      dteToEarnings, lowerBound, upperBound,
       earningsWeekExpiry: earningsFriday?.expiry ?? null,
       preExpiry:          preFriday?.expiry      ?? null,
-      postExpiry:         postFriday?.expiry     ?? null,
     },
-    paths: { A, B, C, D },
+    paths,
   };
+}
+
+// ── Concentration math (reusable across Radar + Earnings tool) ───────────────
+// Returns the current ticker's share of account value in [0,1].
+export function computeTickerConcentration(ticker, positions, accountValue) {
+  if (!ticker || !positions || !accountValue) return null;
+  let exposure = 0;
+  for (const p of positions.open_csps || []) {
+    if (p.ticker === ticker) exposure += (p.strike || 0) * (p.contracts || 1) * 100;
+  }
+  for (const s of positions.assigned_shares || []) {
+    if (s.ticker === ticker) {
+      exposure += s.cost_basis_total || 0;
+      for (const l of s.open_leaps || []) exposure += l.entry_cost || 0;
+    }
+  }
+  for (const l of positions.open_leaps || []) {
+    if (l.ticker === ticker) exposure += l.entry_cost || 0;
+  }
+  return exposure / accountValue;
+}
+
+// Projected concentration if the CSP were assigned (strike × 100 added).
+export function projectedConcentration(currentConcentration, strike, accountValue) {
+  if (currentConcentration == null || !strike || !accountValue) return null;
+  return currentConcentration + (strike * 100) / accountValue;
 }
