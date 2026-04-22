@@ -65,19 +65,23 @@ function alertBelongsToRow(item, pos, type) {
   // LEAP-only rules
   if (rule === "leaps_low_dte" || rule === "leaps_profit_target") return type === "LEAP";
 
-  // Expiry-scoped rules — all these IDs end with the ISO expiry "YYYY-MM-DD"
-  const expiryFromId = id.split("-").slice(-3).join("-");
-
-  if (rule === "csp_itm_urgency") return type === "CSP" && expiryFromId === pos.expiry_date;
+  // Expiry+strike scoped rules — match on fields added to each item by focusEngine
+  if (rule === "csp_itm_urgency") {
+    return type === "CSP"
+      && item.expiry_date === pos.expiry_date
+      && item.strike === pos.strike;
+  }
 
   if (rule === "expiring_soon") {
     if (id.startsWith("expiring-CC-")  && type !== "CC")  return false;
     if (id.startsWith("expiring-CSP-") && type !== "CSP") return false;
-    return expiryFromId === pos.expiry_date;
+    return item.expiry_date === pos.expiry_date && item.strike === pos.strike;
   }
 
   if (rule === "near_worthless" || rule === "rule_60_60") {
-    return type !== "LEAP" && expiryFromId === pos.expiry_date;
+    return type !== "LEAP"
+      && item.expiry_date === pos.expiry_date
+      && item.strike === pos.strike;
   }
 
   // Ticker-wide rules (earnings_before_expiry, macro_overlap, expiry_cluster)

@@ -106,14 +106,16 @@ function ruleExpiringSoon(positions) {
     const dteLabel = dte === 0 ? "today" : dte === 1 ? "tomorrow" : `${dte}d`;
     const typeLabel = opt.type === "CC" ? "CC" : "CSP";
     items.push({
-      id:       `expiring-${opt.type}-${opt.ticker}-${opt.expiry_date}`,
+      id:          `expiring-${opt.type}-${opt.ticker}-${opt.strike}-${opt.expiry_date}`,
       priority,
-      rule:     "expiring_soon",
-      ticker:   opt.ticker,
+      rule:        "expiring_soon",
+      ticker:      opt.ticker,
+      strike:      opt.strike,
+      expiry_date: opt.expiry_date,
       dte,
-      urgency:  dte,
-      title:    `${opt.ticker} ${typeLabel} $${opt.strike} expires ${dteLabel}`,
-      detail:   `${opt.contracts} contract${opt.contracts !== 1 ? "s" : ""}, $${opt.premium_collected} premium collected. Expiry: ${formatExpiry(opt.expiry_date)}.`,
+      urgency:     dte,
+      title:       `${opt.ticker} ${typeLabel} $${opt.strike} expires ${dteLabel}`,
+      detail:      `${opt.contracts} contract${opt.contracts !== 1 ? "s" : ""}, $${opt.premium_collected} premium collected. Expiry: ${formatExpiry(opt.expiry_date)}.`,
     });
   }
   return items;
@@ -247,12 +249,14 @@ function ruleCSPITMUrgency(positions, quoteMap) {
     const urgencyDisplay    = (urgencyScore * 100).toFixed(1);
 
     items.push({
-      id:       `csp-itm-${pos.ticker}-${pos.expiry_date}`,
+      id:          `csp-itm-${pos.ticker}-${pos.strike}-${pos.expiry_date}`,
       priority,
-      rule:     "csp_itm_urgency",
-      ticker:   pos.ticker,
-      dte:      remainingDTE,
-      urgency:  urgencyScore * 100,
+      rule:        "csp_itm_urgency",
+      ticker:      pos.ticker,
+      strike:      pos.strike,
+      expiry_date: pos.expiry_date,
+      dte:         remainingDTE,
+      urgency:     urgencyScore * 100,
       title:    `${pos.ticker} CSP $${pos.strike} — ${itmPctDisplay}% ITM`,
       detail:   `Stock at $${stockPrice.toFixed(2)} vs strike $${pos.strike}. `
         + `${dteElapsedDisplay}% of DTE elapsed. `
@@ -292,12 +296,14 @@ function ruleNearWorthlessOption(positions, quoteMap) {
     const typeLabel    = pos.isCall ? "CC" : "CSP";
 
     items.push({
-      id:       `near-worthless-${pos.ticker}-${pos.expiry_date}`,
-      priority: "P2",
-      rule:     "near_worthless",
-      ticker:   pos.ticker,
-      dte:      daysToExpiry,
-      urgency:  daysToExpiry,
+      id:          `near-worthless-${pos.ticker}-${pos.strike}-${pos.expiry_date}`,
+      priority:    "P2",
+      rule:        "near_worthless",
+      ticker:      pos.ticker,
+      strike:      pos.strike,
+      expiry_date: pos.expiry_date,
+      dte:         daysToExpiry,
+      urgency:     daysToExpiry,
       title:    `${pos.ticker} ${typeLabel} $${pos.strike} — worth $${currentMid.toFixed(2)}`,
       detail:   `${capturedPct}% of premium already captured. `
         + `Current mid $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
@@ -344,12 +350,14 @@ function rule6060(positions, quoteMap) {
     const typeLabel     = pos.isCall ? "CC" : "CSP";
 
     items.push({
-      id:       `60-60-${pos.ticker}-${pos.expiry_date}`,
-      priority: "P2",
-      rule:     "rule_60_60",
-      ticker:   pos.ticker,
-      dte:      remainingDTE,
-      urgency:  remainingDTE,
+      id:          `60-60-${pos.ticker}-${pos.strike}-${pos.expiry_date}`,
+      priority:    "P2",
+      rule:        "rule_60_60",
+      ticker:      pos.ticker,
+      strike:      pos.strike,
+      expiry_date: pos.expiry_date,
+      dte:         remainingDTE,
+      urgency:     remainingDTE,
       title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 threshold met`,
       detail:   `${profitDisplay}% of premium captured with ${dteDisplay}% DTE remaining. `
         + `Current mark $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `

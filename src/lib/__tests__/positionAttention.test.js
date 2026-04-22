@@ -50,8 +50,8 @@ describe("buildAttentionList", () => {
     premium_collected: 300,
   };
   const items = [
-    { id: "csp-itm-NVDA-2026-05-01", priority: "P1", rule: "csp_itm_urgency", ticker: "NVDA", title: "NVDA CSP ITM" },
-    { id: "60-60-TSLA-2026-05-01",   priority: "P2", rule: "rule_60_60",      ticker: "TSLA", title: "TSLA 60/60 hit" },
+    { id: "csp-itm-NVDA-450-2026-05-01", priority: "P1", rule: "csp_itm_urgency", ticker: "NVDA", strike: 450, expiry_date: "2026-05-01", title: "NVDA CSP ITM" },
+    { id: "60-60-TSLA-450-2026-05-01",   priority: "P2", rule: "rule_60_60",      ticker: "TSLA", strike: 450, expiry_date: "2026-05-01", title: "TSLA 60/60 hit" },
   ];
 
   it("emits one entry per open position", () => {
@@ -81,7 +81,7 @@ describe("buildAttentionList", () => {
     const high  = { ...baseCsp, ticker: "B", expiry_date: "2026-04-30" };
     const urgent = { ...baseCsp, ticker: "C", expiry_date: "2026-05-10" };
     const itemsMixed = [
-      { id: "expiring-CSP-C-2026-05-10", priority: "P1", rule: "expiring_soon", ticker: "C", title: "C expiring" },
+      { id: "expiring-CSP-C-450-2026-05-10", priority: "P1", rule: "expiring_soon", ticker: "C", strike: 450, expiry_date: "2026-05-10", title: "C expiring" },
     ];
     const positions = { open_csps: [low, high, urgent], open_leaps: [], open_spreads: [], assigned_shares: [] };
     const out = buildAttentionList(positions, new Map(), itemsMixed);
