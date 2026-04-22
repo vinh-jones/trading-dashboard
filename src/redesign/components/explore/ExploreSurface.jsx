@@ -3,6 +3,7 @@ import { T } from "../../theme.js";
 import { Frame, SectionLabel, Empty } from "../../primitives.jsx";
 import { calcDTE, buildOccSymbol, parseShareCount } from "../../../lib/trading.js";
 import { RadarSurface } from "./RadarSurface.jsx";
+import { EarningsSurface } from "./EarningsSurface.jsx";
 
 // Semantic color map for allocation bars — parallel to TYPE_COLORS intentional exception
 const ALLOC_COLORS = { Shares: T.green, LEAPS: T.amber, CSP: T.blue };
@@ -429,11 +430,14 @@ function AssignedCard({ s, quoteMap }) {
 const EXPLORE_TABS = [
   { k: "portfolio", label: "Portfolio" },
   { k: "radar",     label: "Radar"     },
+  { k: "earnings",  label: "Earnings"  },
 ];
+
+const VALID_MODES = new Set(EXPLORE_TABS.map(t => t.k));
 
 export function ExploreSurface({ positions, account, quoteMap, marketContext }) {
   const [mode, setMode] = useState(() => {
-    try { const s = localStorage.getItem("redesign-explore-mode"); return s === "radar" ? "radar" : "portfolio"; }
+    try { const s = localStorage.getItem("redesign-explore-mode"); return VALID_MODES.has(s) ? s : "portfolio"; }
     catch { return "portfolio"; }
   });
 
@@ -443,7 +447,7 @@ export function ExploreSurface({ positions, account, quoteMap, marketContext }) 
   };
 
   useEffect(() => {
-    const h = (e) => { if (e.detail === "portfolio" || e.detail === "radar") switchMode(e.detail); };
+    const h = (e) => { if (VALID_MODES.has(e.detail)) switchMode(e.detail); };
     window.addEventListener("tw-explore-mode", h);
     return () => window.removeEventListener("tw-explore-mode", h);
   }, []);
@@ -469,6 +473,7 @@ export function ExploreSurface({ positions, account, quoteMap, marketContext }) 
 
       {mode === "portfolio" && <PortfolioView positions={positions} account={account} quoteMap={quoteMap} />}
       {mode === "radar"     && <RadarSurface positions={positions} account={account} marketContext={marketContext} />}
+      {mode === "earnings"  && <EarningsSurface />}
     </div>
   );
 }
