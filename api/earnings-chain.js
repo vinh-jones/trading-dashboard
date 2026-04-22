@@ -24,6 +24,7 @@
  * as api/radar-sample.js).
  */
 import { createClient } from "@supabase/supabase-js";
+import { isMarketOpen } from "./_marketHours.js";
 
 const PUBLIC_COM_BASE        = "https://api.public.com";
 const ACCOUNT_ID             = process.env.PUBLIC_COM_ACCOUNT_ID;
@@ -108,6 +109,22 @@ async function fetchStockQuote(token, ticker) {
   return last;
 }
 
+// Returns true if `d` is before 9:30 AM ET today, using Intl for correct DST.
+// Caller should also check isMarketOpen() — that guarantees current ET time >= 9:30.
+function predatesMarketOpen(d) {
+  const fmt = (date) => new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(date).reduce((a, p) => ({ ...a, [p.type]: p.value }), {});
+  const nowP = fmt(new Date());
+  const fetP = fmt(d);
+  // "YYYY-MM-DD HH:MM" strings are lexicographically comparable
+  const todayOpen   = `${nowP.year}-${nowP.month}-${nowP.day} 09:30`;
+  const fetchedWhen = `${fetP.year}-${fetP.month}-${fetP.day} ${fetP.hour}:${fetP.minute}`;
+  return fetchedWhen < todayOpen;
+}
+
 function strikeFromOCC(occSymbol) {
   return parseInt(occSymbol.slice(-8), 10) / 1000;
 }
@@ -145,7 +162,14 @@ export default async function handler(req, res) {
   if (cachedRow?.value && new Date(cachedRow.expires_at).getTime() > Date.now()) {
     try {
       const parsed = typeof cachedRow.value === "string" ? JSON.parse(cachedRow.value) : cachedRow.value;
-      return res.status(200).json({ ...parsed, cached: true });
+      // If the market has opened since the cache was written, force a fresh pull
+      // so deltas reflect the live session price rather than yesterday's close.
+      const fetchedAt = parsed.fetchedAt ? new Date(parsed.fetchedAt) : null;
+      if (fetchedAt && isMarketOpen() && predatesMarketOpen(fetchedAt)) {
+        // Cache predates today's open — fall through to refetch
+      } else {
+        return res.status(200).json({ ...parsed, cached: true });
+      }
     } catch (_) { /* fall through to refetch */ }
   }
 
