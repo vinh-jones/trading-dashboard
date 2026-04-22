@@ -270,11 +270,15 @@ describe("forecast uncertainty (this_month_std)", () => {
     expect(r.forecast_this_month_std).toBeCloseTo(150, 0);
   });
 
-  it("uses lifetime σ (premium × σ_c) for cross-month positions, not scaled by thisMonthShare", () => {
-    // Underwater cross-month CC in the default bucket. Expected realization
-    // this month is only 15% of remaining, but σ is the full lifetime std —
-    // realization is really bimodal (closes early at ~full, or doesn't → $0),
-    // so the Bernoulli-mixture σ is closer to lifetime σ than to 15% of it.
+  it("uses Bernoulli-mixture σ for cross-month positions (between-states + within-close)", () => {
+    // Underwater cross-month CC in the default bucket.
+    //   premium = $915, σ_c = 0.59, capture = 0.75 → remaining ≈ $686
+    //   thisMonth = remaining × 0.15 ≈ $103, so p ≈ 0.15
+    //   Var = p(1-p) × remaining² + p × (premium × σ_c)²
+    //       ≈ 0.1275 × 686² + 0.15 × 540²
+    //       ≈ 60,045 + 43,740 = 103,785 → σ ≈ $322
+    // Bernoulli-mixture sits between deterministic-thisMonthShare ($81)
+    // and lifetime σ ($540) — this is the correct April-specific σ.
     const occ = "IREN261219C00015000";
     const calCC = { cc: { default: 0.75 } };
     const stdCC = { cc: { default: 0.59 } };
@@ -283,17 +287,35 @@ describe("forecast uncertainty (this_month_std)", () => {
         { ticker: "IREN", type: "CC", strike: 15, contracts: 10, expiry_date: "2026-12-19", premium_collected: 915 },
       ],
       costBasisByTicker: { IREN: 14 },
-      quoteBySymbol: { IREN: { mid: 14.5 }, [occ]: { mid: 1.0 } },  // mild profit, cross-month
+      quoteBySymbol: { IREN: { mid: 14.5 }, [occ]: { mid: 1.0 } },
       calibration: calCC,
       calibrationStd: stdCC,
       mtdRealized: 0,
       monthlyTarget: 15000,
       today,
     });
-    // Lifetime σ = 915 × 0.59 ≈ $540. One position → portfolio σ ≈ $540.
-    // Old math (scaled by thisMonthShare=0.15) would give ≈ $81 — we want ≈ $540.
-    expect(r.forecast_this_month_std).toBeGreaterThan(500);
-    expect(r.forecast_this_month_std).toBeLessThan(600);
+    expect(r.forecast_this_month_std).toBeGreaterThan(280);
+    expect(r.forecast_this_month_std).toBeLessThan(360);
+  });
+
+  it("collapses to lifetime σ when position expires this month (p=1)", () => {
+    // Same-month CSP at ≥60% profit → p=1 → Var = (premium × σ_c)² (no
+    // Bernoulli between-states uncertainty — the outcome will land this month).
+    const occ = "AAA260425P00010000";
+    const r = computePipelineForecast({
+      openPositions: [
+        { ticker: "AAA", type: "CSP", strike: 10, contracts: 10, expiry_date: "2026-04-25", premium_collected: 1000 },
+      ],
+      costBasisByTicker: {},
+      quoteBySymbol: { AAA: { mid: 8 }, [occ]: { mid: 0.35 } },
+      calibration: cal,
+      calibrationStd: { csp: { profit_60_plus: 0.158 } },
+      mtdRealized: 0,
+      monthlyTarget: 15000,
+      today,
+    });
+    // σ = premium × σ_c = 1000 × 0.158 = $158
+    expect(r.forecast_this_month_std).toBeCloseTo(158, 0);
   });
 
   it("contributes 0 variance when thisMonth = 0 (deeply underwater, no path)", () => {

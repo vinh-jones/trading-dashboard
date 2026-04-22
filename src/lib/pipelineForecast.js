@@ -339,17 +339,26 @@ export function computePipelineForecast({
     const remaining = expectedRemainingRealization(state, calibration);
     const thisMonth = realizationThisMonth(state, today, calibration, vix);
 
-    // Per-position uncertainty: σ_$ = premium × σ_c (lifetime std). Independence
-    // assumed across positions. For cross-month positions, realization is really
-    // bimodal (close early → full remaining, or don't → $0) — the Bernoulli-
-    // mixture std is larger than a deterministic thisMonthShare scaling would
-    // suggest, so we use the lifetime std as a conservative approximation for
-    // any position that has a non-zero path to land this month. Positions with
-    // thisMonth=0 (deeply underwater, no path) contribute 0 variance.
+    // Per-position uncertainty for THIS MONTH's realization (not lifetime).
+    // Modeled as a Bernoulli mixture: with probability p the position closes
+    // this month and realization ≈ remaining ± (premium × σ_c); with
+    // probability 1-p it doesn't and realization = 0. Then:
+    //   Var(thisMonth) = p(1-p) × remaining² + p × (premium × σ_c)²
+    //                    └────── between-states ─┘   └─ within-close std ─┘
+    // p is read off the model's own early-close attribution:
+    //   p = |thisMonth| / |remaining|   (clamped to [0,1])
+    // Same-month expiries (p=1) collapse to Var = (premium × σ_c)² (lifetime
+    // std). Zero-path positions (thisMonth=0) contribute 0 variance.
+    // Independence assumed across positions.
     const sigmaC = bucketStd(state.type, bucket, calibrationStd);
     const premium = state.premiumAtOpen ?? 0;
-    const sigmaThisMonth = thisMonth !== 0 ? premium * sigmaC : 0;
-    thisMonthVariance += sigmaThisMonth * sigmaThisMonth;
+    const remainingAbs = Math.abs(remaining);
+    const thisMonthAbs = Math.abs(thisMonth);
+    const p = remainingAbs > 0 ? Math.min(thisMonthAbs / remainingAbs, 1) : 0;
+    const sigmaWithin = premium * sigmaC;
+    const positionVariance = p * (1 - p) * remainingAbs * remainingAbs
+                           + p * sigmaWithin * sigmaWithin;
+    thisMonthVariance += positionVariance;
 
     thisMonthRemaining += thisMonth;
     forwardTotal += remaining;
