@@ -446,7 +446,7 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
               </div>
 
               <div>
-                <SectionLabel label="Ryan's Pattern" />
+                <SectionLabel label="Trade Rationale" />
                 <p style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.secondary,
                             lineHeight: 1.55, margin: 0 }}>
                   {path.description}
@@ -599,7 +599,7 @@ export function EarningsTab({ positions, account, trades }) {
       <Panel>
         <PanelHeader
           label="Earnings Play Tool"
-          sub="Four Ryan Hildreth CSP patterns around a scheduled earnings event (0–21 DTE)"
+          sub="Four documented wheel CSP patterns around a scheduled earnings event (0–21 DTE)"
         />
         {uniLoading ? (
           <div style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.muted }}>Loading earnings calendar…</div>

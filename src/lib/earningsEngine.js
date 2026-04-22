@@ -3,7 +3,7 @@ import { getVixBand } from "./vixBand.js";
 /**
  * earningsEngine.js — pure helpers for the Earnings Play Tool.
  *
- * Four documented Ryan Hildreth CSP patterns around an earnings event:
+ * Four documented wheel CSP patterns around an earnings event:
  *
  *   A — Avoid       pre-earnings Friday, below lower bound, 15–20Δ
  *                   (skip the event, play the setup)
@@ -250,7 +250,7 @@ export const PATH_META = {
   A: {
     label:       "Avoid Earnings",
     tagline:     "Skip the event entirely",
-    description: "Ryan uses this structure when he likes the ticker's setup but has no strong view on the earnings event itself — a fading name, an upper-band chart, or a position already at allocation target. The expiry is shortened to close before the report, so the trade collects theta without taking any event risk. Strike sits at or below the implied lower bound at 15–20Δ — a normal wheel entry that just happens to dodge the binary.",
+    description: "Use this structure when the ticker's setup looks favorable but there's no strong view on the event itself — a fading name, an upper-band chart, or a position already at allocation target. The expiry is shortened to close before the report, collecting theta without taking any event risk. Strike sits at or below the implied lower bound at 15–20Δ — a normal wheel entry that simply dodges the binary.",
     evidence: [
       { trade: "CDE Feb 13",  quote: "I went a bit shorter on expiration to avoid earnings" },
       { trade: "TSM Apr 17",  quote: "Will avoid earnings and free up cash" },
@@ -260,7 +260,7 @@ export const PATH_META = {
   B: {
     label:       "Defensive",
     tagline:     "Outside expected move",
-    description: "Ryan uses this structure when he likes the name long-term but doesn't want to underwrite the binary move. The strike is placed 3–8% below the market-maker implied lower bound, giving a cushion beyond the expected move in exchange for reduced premium. It's the \"collect IV without inviting assignment\" pattern — typical when IV rank is elevated but conviction on the event outcome is moderate.",
+    description: "Use this structure when the name looks good long-term but you don't want to underwrite the binary move. The strike is placed 3–8% below the market-maker implied lower bound, giving a cushion beyond the expected move in exchange for reduced premium. It's the \"collect IV without inviting assignment\" pattern — typical when IV rank is elevated but conviction on the event outcome is moderate.",
     evidence: [
       { trade: "GLW $136p at 13Δ",  quote: "Solid company. I'm outside of the expected move, but I don't mind getting assigned at these levels" },
       { trade: "LRCX $240p at 16Δ", quote: "Went right outside the expected move for a fun earnings play" },
@@ -270,7 +270,7 @@ export const PATH_META = {
   C: {
     label:       "Standard",
     tagline:     "At expected lower bound",
-    description: "This path places the strike exactly at the market-maker implied lower bound — the level the options market is pricing as a 1σ downside by expiration. Ryan uses it when he's within allocation limits on a name he wants to own long-term and is actively willing to accept assignment at that discount. Delta sits in the 20–25 range, which is where most of his documented earnings-week CSPs cluster.",
+    description: "This path places the strike exactly at the market-maker implied lower bound — the level the options market is pricing as a 1σ downside by expiration. Use it when within allocation limits on a name you want to own long-term and are actively willing to accept assignment at that discount. Delta sits in the 20–25 range, where most documented earnings-week CSPs cluster.",
     evidence: [
       { trade: "WDC $320p at 20Δ", quote: "20 delta. This put completes my 10% allocation. Happy to get assigned here" },
       { trade: "CLS $275p at 21Δ", quote: "Wanted more delta exposure for CLS earnings as I really like the company" },
@@ -280,7 +280,7 @@ export const PATH_META = {
   D: {
     label:       "Aggressive",
     tagline:     "Inside expected move",
-    description: "The strike is placed above the expected lower bound — closer to current price — which means the trade accepts real assignment risk in exchange for materially higher premium. Ryan reserves this for names where he's underweight, the chart is compressed (at or below the lower Bollinger Band), and he has a specific bullish thesis on the event outcome. Delta runs 25–30+, meaningfully above his standard wheel entries.",
+    description: "The strike is placed above the expected lower bound — closer to current price — which means the trade accepts real assignment risk in exchange for materially higher premium. Reserve this for names where you're underweight, the chart is compressed (at or below the lower Bollinger Band), and there's a specific bullish thesis on the event outcome. Delta runs 25–30+, meaningfully above standard wheel entries.",
     evidence: [
       { trade: "COHR $300p at 24Δ", quote: "Really aggressive on my strike price here as the stock looks really strong" },
       { trade: "CLS $310p at 26Δ",  quote: "That is why I'm going aggressive on these for earnings" },

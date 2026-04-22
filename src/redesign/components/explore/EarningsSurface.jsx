@@ -321,9 +321,9 @@ function PathBody({ id, path, spot, em, positions, accountValue }) {
         </div>
       </div>
 
-      {/* Ryan's pattern */}
+      {/* Trade rationale */}
       <div>
-        <SectionLabel label="RYAN'S PATTERN" />
+        <SectionLabel label="TRADE RATIONALE" />
         <div style={{ marginTop: 8, fontFamily: T.mono, fontSize: T.sm, color: T.t2, lineHeight: 1.55 }}>
           {path.description}
         </div>
@@ -542,7 +542,7 @@ export function EarningsSurface({ positions, account, trades }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* Ticker picker */}
       <Frame accent="warn" title="EARNINGS PLAY TOOL"
-        subtitle="Four Ryan Hildreth CSP patterns around a scheduled earnings event (0–21 DTE)"
+        subtitle="Four documented wheel CSP patterns around a scheduled earnings event (0–21 DTE)"
       >
         {uniLoading ? (
           <div style={{ fontSize: T.sm, color: T.tm, fontFamily: T.mono }}>Loading earnings calendar…</div>
