@@ -4,6 +4,7 @@ import { useWindowWidth } from "../hooks/useWindowWidth";
 import { formatDollars, formatDollarsFull } from "../lib/format";
 import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
+import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 
 export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
@@ -80,6 +81,13 @@ export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, se
   }, [selectedTicker, selectedType, selectedDuration]);
 
   const filteredTotal = filteredTrades.reduce((s, t) => s + t.premium, 0);
+
+  // Ticker history — uses full lifetime trades (not YTD-filtered) for honest baseline
+  const portfolioBaseline = useMemo(() => computePortfolioBaseline(TRADES_ALL), [TRADES_ALL]);
+  const familiarity = useMemo(
+    () => computeFamiliarity(selectedTicker, TRADES_ALL, portfolioBaseline),
+    [selectedTicker, TRADES_ALL, portfolioBaseline]
+  );
 
   return (
     <div>
@@ -210,6 +218,62 @@ export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, se
           );
         })}
       </div>
+
+      {/* Ticker history panel — shown when a ticker card is selected */}
+      {selectedTicker && familiarity && familiarity.lifetimeCsps > 0 && (
+        <div style={{
+          marginBottom: theme.space[5],
+          padding: `${theme.space[4]}px ${theme.space[5]}px`,
+          background: theme.bg.surface,
+          border: `1px solid ${theme.border.default}`,
+          borderRadius: theme.radius.md,
+        }}>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: theme.space[3] }}>
+            {selectedTicker} · Lifetime CSP History
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], marginBottom: theme.space[3] }}>
+            {[
+              { label: "Lifetime CSPs",   value: familiarity.lifetimeCsps },
+              { label: "Assignments",     value: familiarity.assignments,
+                sub: `${((familiarity.assignments / familiarity.lifetimeCsps) * 100).toFixed(0)}% rate` },
+              { label: "Win Rate",        value: familiarity.winRate != null ? `${(familiarity.winRate * 100).toFixed(0)}%` : "—" },
+              { label: "Avg ROI / Trade", value: familiarity.avgRoi != null ? `${familiarity.avgRoi.toFixed(2)}%` : "—" },
+              { label: "vs Portfolio",
+                value: familiarity.relativeRoi != null
+                  ? `${familiarity.relativeRoi >= 0 ? "+" : ""}${familiarity.relativeRoi.toFixed(2)} pp`
+                  : "—",
+                color: familiarity.relativeRoi == null ? theme.text.muted
+                  : familiarity.relativeRoi >= 0 ? theme.green : theme.red,
+                sub: portfolioBaseline?.count
+                  ? `vs ${portfolioBaseline.avgRoi?.toFixed(2)}% avg`
+                  : null,
+              },
+            ].map(({ label, value, sub, color }) => (
+              <div key={label}>
+                <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: theme.size.md, color: color || theme.text.primary, fontFamily: theme.font.mono }}>{value}</div>
+                {sub && <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 2 }}>{sub}</div>}
+              </div>
+            ))}
+          </div>
+          {(familiarity.lastTrade || familiarity.best) && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: theme.space[3] }}>
+              {[
+                familiarity.lastTrade && { label: "Last trade", trade: familiarity.lastTrade, color: theme.text.primary },
+                familiarity.best      && { label: "Best",       trade: familiarity.best,      color: theme.green },
+                familiarity.worst     && { label: "Worst",      trade: familiarity.worst,     color: theme.red },
+              ].filter(Boolean).map(({ label, trade, color }) => (
+                <div key={label}>
+                  <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: theme.size.sm, color, fontFamily: theme.font.mono }}>
+                    {trade.close} · {trade.premium < 0 ? "" : "+"}{formatDollarsFull(trade.premium)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Hold duration histogram */}
       {(() => {
