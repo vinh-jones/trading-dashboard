@@ -210,7 +210,7 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
   if (familiarity != null && familiarity.lifetimeCsps > 0) {
     const { winRate, avgRoi, relativeRoi, lifetimeCsps, assignments } = familiarity;
     const winPct  = winRate != null ? `${Math.round(winRate * 100)}% win` : "";
-    const relStr  = relativeRoi != null ? ` · ${relativeRoi >= 0 ? "+" : ""}${(relativeRoi * 100).toFixed(1)}% vs avg` : "";
+    const relStr  = relativeRoi != null ? ` · ${relativeRoi >= 0 ? "+" : ""}${relativeRoi.toFixed(1)} pp vs avg` : "";
     const asgStr  = assignments > 0 ? ` · ${assignments} assigned` : "";
     const value   = `${lifetimeCsps} prior CSPs · ${winPct}${relStr}${asgStr}`;
     if (winRate != null && winRate >= 0.70) {

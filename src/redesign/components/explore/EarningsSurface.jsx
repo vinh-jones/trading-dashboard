@@ -431,23 +431,24 @@ function TickerHistoryPanel({ familiarity, baseline }) {
   );
   const { lifetimeCsps, assignments, winRate, avgRoi, relativeRoi, lastTrade, best, worst } = familiarity;
   const relColor = relativeRoi == null ? T.tm : relativeRoi >= 0 ? T.green : T.red;
-  const fmt = r => r != null ? `${(r * 100).toFixed(2)}%` : "—";
+  const fmtRoi = r => r != null ? `${r.toFixed(2)}%` : "—";
+  const fmtPnl = t => t?.premium != null ? `$${Math.round(t.premium).toLocaleString()}` : "—";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
-        <Datum label="LIFETIME CSPs" value={lifetimeCsps} />
-        <Datum label="ASSIGNMENTS"   value={assignments} sub={lifetimeCsps ? `${((assignments / lifetimeCsps) * 100).toFixed(0)}% rate` : null} />
-        <Datum label="WIN RATE"      value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : "—"} />
-        <Datum label="AVG ROI"       value={fmt(avgRoi)} />
-        <Datum label="VS PORTFOLIO"  value={relativeRoi != null ? `${relativeRoi >= 0 ? "+" : ""}${(relativeRoi * 100).toFixed(2)}%` : "—"}
-               color={relColor} sub={baseline?.count ? `vs ${fmt(baseline.avgRoi)} avg` : null} />
+        <Datum label="LIFETIME CSPs"   value={lifetimeCsps} />
+        <Datum label="ASSIGNMENTS"     value={assignments} sub={lifetimeCsps ? `${((assignments / lifetimeCsps) * 100).toFixed(0)}% rate` : null} />
+        <Datum label="WIN RATE"        value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : "—"} />
+        <Datum label="AVG ROI / TRADE" value={fmtRoi(avgRoi)} />
+        <Datum label="VS PORTFOLIO"    value={relativeRoi != null ? `${relativeRoi >= 0 ? "+" : ""}${relativeRoi.toFixed(2)} pp` : "—"}
+               color={relColor} sub={baseline?.count ? `vs ${fmtRoi(baseline.avgRoi)} avg` : null} />
       </div>
       {(best || lastTrade) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10,
                       fontFamily: T.mono, fontSize: T.sm }}>
-          {lastTrade && <KeyVal k="Last trade" v={`${lastTrade.close} · ${fmt(lastTrade.roi)}`} />}
-          {best      && <KeyVal k="Best"       v={`${best.close} · ${fmt(best.roi)}`}       vColor={T.green} />}
-          {worst     && <KeyVal k="Worst"      v={`${worst.close} · ${fmt(worst.roi)}`}     vColor={T.red} />}
+          {lastTrade && <KeyVal k="Last trade" v={`${lastTrade.close} · +${fmtPnl(lastTrade)}`} />}
+          {best      && <KeyVal k="Best"       v={`${best.close} · +${fmtPnl(best)}`}       vColor={T.green} />}
+          {worst     && <KeyVal k="Worst"      v={`${worst.close} · ${worst.premium < 0 ? "" : "+"}${fmtPnl(worst)}`} vColor={T.red} />}
         </div>
       )}
     </div>

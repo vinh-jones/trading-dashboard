@@ -242,7 +242,8 @@ function DeploymentGatePanel({ gate }) {
 }
 
 function TickerHistoryPanel({ familiarity, baseline }) {
-  const fmt = r => r != null ? `${(r * 100).toFixed(2)}%` : "—";
+  const fmtRoi = r => r != null ? `${r.toFixed(2)}%` : "—";
+  const fmtPnl = t => t?.premium != null ? `$${Math.round(t.premium).toLocaleString()}` : "—";
   return (
     <Panel>
       <PanelHeader label="Ticker History" sub="Your closed CSPs on this ticker" />
@@ -257,19 +258,19 @@ function TickerHistoryPanel({ familiarity, baseline }) {
             <Datum label="Assignments"   value={familiarity.assignments}
                    sub={`${((familiarity.assignments / familiarity.lifetimeCsps) * 100).toFixed(0)}% rate`} />
             <Datum label="Win Rate"      value={familiarity.winRate != null ? `${(familiarity.winRate * 100).toFixed(0)}%` : "—"} />
-            <Datum label="Avg ROI"       value={fmt(familiarity.avgRoi)} />
+            <Datum label="Avg ROI / Trade" value={fmtRoi(familiarity.avgRoi)} />
             <Datum label="vs Portfolio"
                    value={familiarity.relativeRoi != null
-                     ? `${familiarity.relativeRoi >= 0 ? "+" : ""}${(familiarity.relativeRoi * 100).toFixed(2)}%`
+                     ? `${familiarity.relativeRoi >= 0 ? "+" : ""}${familiarity.relativeRoi.toFixed(2)} pp`
                      : "—"}
                    color={familiarity.relativeRoi == null ? text.muted : familiarity.relativeRoi >= 0 ? theme.green : theme.red}
-                   sub={baseline?.count ? `vs ${fmt(baseline.avgRoi)} avg` : null} />
+                   sub={baseline?.count ? `vs ${fmtRoi(baseline.avgRoi)} avg` : null} />
           </div>
           {(familiarity.lastTrade || familiarity.best) && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: sp[3] }}>
-              {familiarity.lastTrade && <KeyVal k="Last trade" v={`${familiarity.lastTrade.close} · ${fmt(familiarity.lastTrade.roi)}`} />}
-              {familiarity.best      && <KeyVal k="Best"       v={`${familiarity.best.close} · ${fmt(familiarity.best.roi)}`}       vColor={theme.green} />}
-              {familiarity.worst     && <KeyVal k="Worst"      v={`${familiarity.worst.close} · ${fmt(familiarity.worst.roi)}`}     vColor={theme.red} />}
+              {familiarity.lastTrade && <KeyVal k="Last trade" v={`${familiarity.lastTrade.close} · +${fmtPnl(familiarity.lastTrade)}`} />}
+              {familiarity.best      && <KeyVal k="Best"       v={`${familiarity.best.close} · +${fmtPnl(familiarity.best)}`}       vColor={theme.green} />}
+              {familiarity.worst     && <KeyVal k="Worst"      v={`${familiarity.worst.close} · ${familiarity.worst.premium < 0 ? "" : "+"}${fmtPnl(familiarity.worst)}`} vColor={theme.red} />}
             </div>
           )}
         </div>
