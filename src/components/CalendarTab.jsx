@@ -585,7 +585,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
               { label: "MTD collected",                     value: formatDollarsFull(mtdCollected), color: theme.text.primary },
               { label: "Implied month total",               value: `~${formatDollarsFull(impliedTotal)}`, color: theme.text.primary,
                 sub: pipelineIsV2 && thisMonthStd != null && thisMonthStd > 0
-                  ? `± ${formatDollarsFull(thisMonthStd)} · 80% CI ${formatDollarsFull(impliedTotal - 1.28 * thisMonthStd)}–${formatDollarsFull(impliedTotal + 1.28 * thisMonthStd)}`
+                  ? `80% CI ${formatDollarsFull(Math.round((impliedTotal - 1.28 * thisMonthStd) / 100) * 100)}–${formatDollarsFull(Math.round((impliedTotal + 1.28 * thisMonthStd) / 100) * 100)}`
                   : null },
               {
                 label: "Gap to baseline",

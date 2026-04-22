@@ -503,7 +503,7 @@ function PremiumPipeline({ account, positions }) {
             sub: hasStd ? `± ${fmt$full(v2Std)}` : null },
           { label: "MTD collected",  value: fmt$full(mtdCollected) },
           { label: "Implied total",  value: `~${fmt$full(implied)}`,
-            sub: hasStd ? `± ${fmt$full(v2Std)} · 80% CI ${fmt$full(implied - 1.28 * v2Std)}–${fmt$full(implied + 1.28 * v2Std)}` : null },
+            sub: hasStd ? `80% CI ${fmt$full(Math.round((implied - 1.28 * v2Std) / 100) * 100)}–${fmt$full(Math.round((implied + 1.28 * v2Std) / 100) * 100)}` : null },
           { label: "Gap to baseline",value: (
             <span style={{ color: gap >= 0 ? T.green : T.amber }}>
               {gap >= 0 ? "+" : "-"}${Math.abs(gap).toLocaleString()}
