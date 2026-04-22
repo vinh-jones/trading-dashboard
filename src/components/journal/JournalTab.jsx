@@ -274,7 +274,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                               entry={entry}
                               title={inlineTitle}           onTitleChange={e => setInlineTitle(e.target.value)}
                               body={inlineBody}             onBodyChange={e => setInlineBody(e.target.value)}
-                              tags={inlineTags}             onTagsChange={e => setInlineTags(e.target.value)}
+                              tags={inlineTags}             onTagsChange={setInlineTags}
                               source={inlineSource}         onSourceChange={setInlineSource}
                               mood={inlineMood}             onMoodChange={setInlineMood}
                               onSave={() => handleInlineSave(entry.entry_type, entry)}
