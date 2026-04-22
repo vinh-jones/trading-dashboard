@@ -11,6 +11,9 @@ import {
   computeTickerConcentration,
   projectedConcentration,
   CONVICTION_PROMINENCE,
+  computePortfolioBaseline,
+  computeFamiliarity,
+  computeDeploymentGate,
 } from "../lib/earningsEngine";
 
 const { size: sz, space: sp, radius: r, font, text, border, bg } = theme;
@@ -198,6 +201,83 @@ function ExpectedMovePanel({ em, spot, earningsIso }) {
   );
 }
 
+function DeploymentGatePanel({ gate }) {
+  if (!gate || gate.status === "unknown") return (
+    <Panel>
+      <PanelHeader label="Deployment Gate" sub="VIX-based cash floor check" />
+      <div style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.muted }}>VIX or cash data unavailable.</div>
+    </Panel>
+  );
+  const statusColor = gate.status === "open" ? theme.green : gate.status === "tight" ? theme.amber : theme.red;
+  const statusLabel = gate.status === "open" ? "Open — room to deploy" : gate.status === "tight" ? "Tight — limited room" : "At floor — hold cash";
+  return (
+    <Panel>
+      <PanelHeader label="Deployment Gate" sub="VIX-based cash floor check" />
+      <div style={{ display: "flex", flexDirection: "column", gap: sp[3] }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: sp[3] }}>
+          <Datum label="VIX"        value={gate.vix != null ? gate.vix.toFixed(1) : "—"} sub={gate.band?.label ?? null} />
+          <Datum label="Sentiment"  value={gate.band?.sentiment ?? "—"} />
+          <Datum label="Cash Floor" value={gate.floorPct != null ? `${(gate.floorPct * 100).toFixed(0)}%` : "—"}
+                 sub="min cash to hold" />
+          <Datum label="Free Cash"  value={gate.freeCashPct != null ? `${(gate.freeCashPct * 100).toFixed(1)}%` : "—"} />
+          <Datum label="Room"       value={gate.roomToDeploy != null ? `${(gate.roomToDeploy * 100).toFixed(1)}%` : "—"}
+                 color={statusColor} />
+        </div>
+        <div style={{
+          padding: `${sp[2]}px ${sp[3]}px`, fontFamily: font.mono, fontSize: sz.sm,
+          background: statusColor + "12", border: `1px solid ${statusColor}44`,
+          borderRadius: r.sm,
+        }}>
+          <span style={{ color: statusColor, letterSpacing: "0.08em", fontSize: sz.xs, marginRight: sp[2] }}>STATUS:</span>
+          {statusLabel}
+          {gate.marginPct != null && (
+            <span style={{ color: text.muted, marginLeft: sp[3] }}>
+              (~${Math.round(gate.marginPct).toLocaleString()} deployable)
+            </span>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function TickerHistoryPanel({ familiarity, baseline }) {
+  const fmt = r => r != null ? `${(r * 100).toFixed(2)}%` : "—";
+  return (
+    <Panel>
+      <PanelHeader label="Ticker History" sub="Your closed CSPs on this ticker" />
+      {!familiarity ? (
+        <div style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.muted }}>Select a ticker to see history.</div>
+      ) : familiarity.lifetimeCsps === 0 ? (
+        <div style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.muted }}>No closed CSPs on this ticker yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: sp[3] }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: sp[3] }}>
+            <Datum label="Lifetime CSPs" value={familiarity.lifetimeCsps} />
+            <Datum label="Assignments"   value={familiarity.assignments}
+                   sub={`${((familiarity.assignments / familiarity.lifetimeCsps) * 100).toFixed(0)}% rate`} />
+            <Datum label="Win Rate"      value={familiarity.winRate != null ? `${(familiarity.winRate * 100).toFixed(0)}%` : "—"} />
+            <Datum label="Avg ROI"       value={fmt(familiarity.avgRoi)} />
+            <Datum label="vs Portfolio"
+                   value={familiarity.relativeRoi != null
+                     ? `${familiarity.relativeRoi >= 0 ? "+" : ""}${(familiarity.relativeRoi * 100).toFixed(2)}%`
+                     : "—"}
+                   color={familiarity.relativeRoi == null ? text.muted : familiarity.relativeRoi >= 0 ? theme.green : theme.red}
+                   sub={baseline?.count ? `vs ${fmt(baseline.avgRoi)} avg` : null} />
+          </div>
+          {(familiarity.lastTrade || familiarity.best) && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: sp[3] }}>
+              {familiarity.lastTrade && <KeyVal k="Last trade" v={`${familiarity.lastTrade.close_date} · ${fmt(familiarity.lastTrade.roi)}`} />}
+              {familiarity.best      && <KeyVal k="Best"       v={`${familiarity.best.close_date} · ${fmt(familiarity.best.roi)}`}       vColor={theme.green} />}
+              {familiarity.worst     && <KeyVal k="Worst"      v={`${familiarity.worst.close_date} · ${fmt(familiarity.worst.roi)}`}     vColor={theme.red} />}
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function ConvictionFactorsPanel({ factors, suggested, currentPositions, right }) {
   const posLines = [];
   if (currentPositions) {
@@ -255,6 +335,7 @@ function ConvictionFactorsPanel({ factors, suggested, currentPositions, right })
             marginTop: sp[1], padding: `${sp[2]}px ${sp[3]}px`,
             background: theme.amber + "12", border: `1px solid ${theme.amber}55`,
             fontFamily: font.mono, fontSize: sz.sm, color: text.primary,
+            borderRadius: r.sm,
           }}>
             <span style={{ color: theme.amber, letterSpacing: "0.1em", fontSize: sz.xs, marginRight: sp[2] }}>
               BASED ON SIGNALS:
@@ -306,7 +387,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
 
   return (
     <div style={{ border: `1px solid ${border.default}`, borderRadius: r.md, overflow: "hidden" }}>
-      {/* Header row */}
       <div
         onClick={() => setOpen(o => !o)}
         style={{
@@ -335,7 +415,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
         </div>
       </div>
 
-      {/* Body */}
       {open && (
         <div style={{ padding: sp[4], background: bg.elevated, display: "flex", flexDirection: "column", gap: sp[4] }}>
           {!path.available ? (
@@ -344,7 +423,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
             </div>
           ) : (
             <>
-              {/* Headline metrics */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: sp[3] }}>
                 <Datum label="Expiry"   value={path.expiry}  sub={`${path.dte} DTE`} />
                 <Datum label="Strike"   value={`$${path.strike}p`} sub={`${(path.delta * 100).toFixed(0)}Δ`} />
@@ -354,7 +432,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
                        sub={`on $${path.collateral?.toLocaleString()}`} />
               </div>
 
-              {/* Positioning */}
               <div>
                 <SectionLabel label="Positioning" />
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: sp[3] }}>
@@ -368,7 +445,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
                 </div>
               </div>
 
-              {/* Ryan's pattern */}
               <div>
                 <SectionLabel label="Ryan's Pattern" />
                 <p style={{ fontFamily: font.mono, fontSize: sz.sm, color: text.secondary,
@@ -391,7 +467,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
                 )}
               </div>
 
-              {/* Assignment scenario */}
               <div>
                 <SectionLabel label="Assignment Scenario" />
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: sp[3] }}>
@@ -406,7 +481,6 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
                 </div>
               </div>
 
-              {/* CTA */}
               <div style={{ display: "flex", gap: sp[2], alignItems: "center" }}>
                 <button
                   onClick={() => handleUsePlay(id, path)}
@@ -441,10 +515,11 @@ function PathCard({ id, path, spot, em, positions, accountValue, defaultOpen }) 
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function EarningsTab({ positions, account }) {
+export function EarningsTab({ positions, account, trades }) {
   const { loading: uniLoading, error: uniError, rows: uniRows } = useEarningsUniverse();
-  const [selected, setSelected]   = useState(null);
+  const [selected, setSelected]     = useState(null);
   const [conviction, setConviction] = useState("standard");
+  const [pathCMode, setPathCMode]   = useState("pre");
 
   useEffect(() => {
     if (!selected && uniRows.length) setSelected(uniRows[0].ticker);
@@ -460,7 +535,9 @@ export function EarningsTab({ positions, account }) {
     const fridays = getUpcomingFridays(today, 70);
     const pre  = pickPreEarningsExpiry(fridays, earningsIso)?.expiry;
     const week = pickEarningsWeekExpiry(fridays, earningsIso)?.expiry;
-    return [...new Set([pre, week].filter(Boolean))];
+    const weekIdx = week ? fridays.findIndex(f => f.expiry === week) : -1;
+    const post = weekIdx >= 0 && weekIdx + 1 < fridays.length ? fridays[weekIdx + 1].expiry : null;
+    return [...new Set([pre, week, post].filter(Boolean))];
   }, [earningsIso, today]);
 
   const { loading: chainLoading, error: chainError, chainByExpiry, spot } =
@@ -473,9 +550,22 @@ export function EarningsTab({ positions, account }) {
     [selected, positions, accountValue]
   );
 
+  const portfolioBaseline = useMemo(() => computePortfolioBaseline(trades), [trades]);
+
+  const familiarity = useMemo(() =>
+    computeFamiliarity(selected, trades, portfolioBaseline),
+    [selected, trades, portfolioBaseline]
+  );
+
+  const deploymentGate = useMemo(() => {
+    const vix         = account?.vix_current ?? null;
+    const freeCashPct = account?.free_cash_pct_est ?? null;
+    return computeDeploymentGate(vix, freeCashPct, accountValue);
+  }, [account, accountValue]);
+
   const conv = useMemo(() =>
-    scoreConvictionFactors({ bbPosition, ivRank, concentration }),
-    [bbPosition, ivRank, concentration]
+    scoreConvictionFactors({ bbPosition, ivRank, concentration, familiarity }),
+    [bbPosition, ivRank, concentration, familiarity]
   );
 
   const currentPositions = useMemo(() => {
@@ -491,10 +581,13 @@ export function EarningsTab({ positions, account }) {
 
   const result = useMemo(() => {
     if (!earningsIso || !selected || !spot) return null;
-    const built = buildEarningsPaths({ ticker: selected, earningsIso, todayIso: today, spot, chainByExpiry });
+    const built = buildEarningsPaths({
+      ticker: selected, earningsIso, todayIso: today, spot, chainByExpiry,
+      pathCExpiryOverride: pathCMode === "post" ? "post" : null,
+    });
     for (const p of Object.values(built.paths)) p._ticker = selected;
     return built;
-  }, [selected, earningsIso, today, spot, chainByExpiry]);
+  }, [selected, earningsIso, today, spot, chainByExpiry, pathCMode]);
 
   const [promA, promB] = CONVICTION_PROMINENCE[conviction];
   const prominentIds   = [promA, promB];
@@ -564,6 +657,9 @@ export function EarningsTab({ positions, account }) {
         ) : null
       )}
 
+      {/* Deployment gate */}
+      {selected && <DeploymentGatePanel gate={deploymentGate} />}
+
       {/* Conviction factors */}
       {selected && (conv.factors.length > 0 || currentPositions) && (
         <ConvictionFactorsPanel
@@ -574,12 +670,33 @@ export function EarningsTab({ positions, account }) {
         />
       )}
 
+      {/* Ticker history */}
+      {selected && <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />}
+
       {/* Four paths */}
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: sp[3] }}>
-          <div style={{ fontFamily: font.mono, fontSize: sz.xs, letterSpacing: "0.14em",
-                        textTransform: "uppercase", color: text.subtle }}>
-            Prominent for {conviction} conviction
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: sp[2] }}>
+            <div style={{ fontFamily: font.mono, fontSize: sz.xs, letterSpacing: "0.14em",
+                          textTransform: "uppercase", color: text.subtle }}>
+              Prominent for {conviction} conviction
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: sp[2], fontFamily: font.mono, fontSize: sz.xs, color: text.muted }}>
+              <span style={{ letterSpacing: "0.08em" }}>PATH C EXPIRY:</span>
+              {["pre", "post"].map(m => (
+                <button key={m} onClick={() => setPathCMode(m)} style={{
+                  padding: `3px ${sp[2]}px`,
+                  border: `1px solid ${pathCMode === m ? theme.amber : border.default}`,
+                  background: pathCMode === m ? theme.amber + "18" : "transparent",
+                  color: pathCMode === m ? theme.amber : text.muted,
+                  fontFamily: font.mono, fontSize: sz.xs,
+                  letterSpacing: "0.08em", textTransform: "uppercase",
+                  cursor: "pointer", borderRadius: r.sm,
+                }}>
+                  {m === "pre" ? "earnings-wk" : "post-earnings"}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Prominent pair */}

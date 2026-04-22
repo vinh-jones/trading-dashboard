@@ -12,6 +12,9 @@ import {
   computeTickerConcentration,
   projectedConcentration,
   CONVICTION_PROMINENCE,
+  computePortfolioBaseline,
+  computeFamiliarity,
+  computeDeploymentGate,
 } from "../../../lib/earningsEngine.js";
 
 const CONVICTIONS = [
@@ -386,6 +389,71 @@ function KeyVal({ k, v, vColor }) {
   );
 }
 
+function DeploymentGatePanel({ gate }) {
+  if (!gate || gate.status === "unknown") return (
+    <div style={{ fontFamily: T.mono, fontSize: T.sm, color: T.tm }}>VIX or cash data unavailable.</div>
+  );
+  const statusColor = gate.status === "open" ? T.green : gate.status === "tight" ? T.amber : T.red;
+  const statusLabel = gate.status === "open" ? "Open — room to deploy" : gate.status === "tight" ? "Tight — limited room" : "At floor — hold cash";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+        <Datum label="VIX"          value={gate.vix != null ? gate.vix.toFixed(1) : "—"} sub={gate.band?.label ?? null} />
+        <Datum label="SENTIMENT"    value={gate.band?.sentiment ?? "—"} />
+        <Datum label="CASH FLOOR"   value={gate.floorPct != null ? `${(gate.floorPct * 100).toFixed(0)}%` : "—"}
+               sub="min cash to hold" />
+        <Datum label="FREE CASH"    value={gate.freeCashPct != null ? `${(gate.freeCashPct * 100).toFixed(1)}%` : "—"} />
+        <Datum label="ROOM"         value={gate.roomToDeploy != null ? `${(gate.roomToDeploy * 100).toFixed(1)}%` : "—"}
+               color={statusColor} />
+      </div>
+      <div style={{
+        padding: "8px 12px", fontFamily: T.mono, fontSize: T.sm,
+        background: statusColor + "12", border: `1px solid ${statusColor}44`,
+      }}>
+        <span style={{ color: statusColor, letterSpacing: "0.08em", fontSize: T.xs, marginRight: 8 }}>STATUS:</span>
+        {statusLabel}
+        {gate.marginPct != null && (
+          <span style={{ color: T.tm, marginLeft: 12 }}>
+            (~${Math.round(gate.marginPct).toLocaleString()} deployable)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TickerHistoryPanel({ familiarity, baseline }) {
+  if (!familiarity) return (
+    <div style={{ fontFamily: T.mono, fontSize: T.sm, color: T.tm }}>Select a ticker to see history.</div>
+  );
+  if (familiarity.lifetimeCsps === 0) return (
+    <div style={{ fontFamily: T.mono, fontSize: T.sm, color: T.tm }}>No closed CSPs on this ticker yet.</div>
+  );
+  const { lifetimeCsps, assignments, winRate, avgRoi, relativeRoi, lastTrade, best, worst } = familiarity;
+  const relColor = relativeRoi == null ? T.tm : relativeRoi >= 0 ? T.green : T.red;
+  const fmt = r => r != null ? `${(r * 100).toFixed(2)}%` : "—";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+        <Datum label="LIFETIME CSPs" value={lifetimeCsps} />
+        <Datum label="ASSIGNMENTS"   value={assignments} sub={lifetimeCsps ? `${((assignments / lifetimeCsps) * 100).toFixed(0)}% rate` : null} />
+        <Datum label="WIN RATE"      value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : "—"} />
+        <Datum label="AVG ROI"       value={fmt(avgRoi)} />
+        <Datum label="VS PORTFOLIO"  value={relativeRoi != null ? `${relativeRoi >= 0 ? "+" : ""}${(relativeRoi * 100).toFixed(2)}%` : "—"}
+               color={relColor} sub={baseline?.count ? `vs ${fmt(baseline.avgRoi)} avg` : null} />
+      </div>
+      {(best || lastTrade) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10,
+                      fontFamily: T.mono, fontSize: T.sm }}>
+          {lastTrade && <KeyVal k="Last trade" v={`${lastTrade.close_date} · ${fmt(lastTrade.roi)}`} />}
+          {best      && <KeyVal k="Best"       v={`${best.close_date} · ${fmt(best.roi)}`}       vColor={T.green} />}
+          {worst     && <KeyVal k="Worst"      v={`${worst.close_date} · ${fmt(worst.roi)}`}     vColor={T.red} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function handleUsePlay(id, path) {
   // v1: copy a compact summary to clipboard. earnings_plays table write is TBD —
   // we'll wire it once the table is provisioned in Supabase.
@@ -396,11 +464,12 @@ function handleUsePlay(id, path) {
 
 // ── Main surface ─────────────────────────────────────────────────────────────
 
-export function EarningsSurface({ positions, account }) {
+export function EarningsSurface({ positions, account, trades }) {
   const { loading: uniLoading, error: uniError, rows: uniRows } = useEarningsUniverse();
   const [selected, setSelected] = useState(null);
   const [conviction, setConviction] = useState("standard");
-  const [openExtra, setOpenExtra] = useState(null);  // which collapsed path is expanded
+  const [openExtra, setOpenExtra] = useState(null);
+  const [pathCMode, setPathCMode] = useState("pre"); // "pre" | "post"
 
   useEffect(() => {
     if (!selected && uniRows.length) setSelected(uniRows[0].ticker);
@@ -416,7 +485,9 @@ export function EarningsSurface({ positions, account }) {
     const fridays = getUpcomingFridays(today, 70);
     const pre  = pickPreEarningsExpiry(fridays, earningsIso)?.expiry;
     const week = pickEarningsWeekExpiry(fridays, earningsIso)?.expiry;
-    return [...new Set([pre, week].filter(Boolean))];
+    const weekIdx = week ? fridays.findIndex(f => f.expiry === week) : -1;
+    const post = weekIdx >= 0 && weekIdx + 1 < fridays.length ? fridays[weekIdx + 1].expiry : null;
+    return [...new Set([pre, week, post].filter(Boolean))];
   }, [earningsIso, today]);
 
   const { loading: chainLoading, error: chainError, chainByExpiry, spot } = useChainByExpiry(selected, targetExpiries);
@@ -426,9 +497,21 @@ export function EarningsSurface({ positions, account }) {
     return computeTickerConcentration(selected, positions, accountValue);
   }, [selected, positions, accountValue]);
 
+  const portfolioBaseline = useMemo(() => computePortfolioBaseline(trades), [trades]);
+
+  const familiarity = useMemo(() => {
+    return computeFamiliarity(selected, trades, portfolioBaseline);
+  }, [selected, trades, portfolioBaseline]);
+
+  const deploymentGate = useMemo(() => {
+    const vix         = account?.vix_current ?? null;
+    const freeCashPct = account?.free_cash_pct_est ?? null;
+    return computeDeploymentGate(vix, freeCashPct, accountValue);
+  }, [account, accountValue]);
+
   const conv = useMemo(() => scoreConvictionFactors({
-    bbPosition, ivRank, concentration,
-  }), [bbPosition, ivRank, concentration]);
+    bbPosition, ivRank, concentration, familiarity,
+  }), [bbPosition, ivRank, concentration, familiarity]);
 
   const currentPositions = useMemo(() => {
     if (!selected || !positions) return null;
@@ -445,11 +528,11 @@ export function EarningsSurface({ positions, account }) {
     if (!earningsIso || !selected || !spot) return null;
     const built = buildEarningsPaths({
       ticker: selected, earningsIso, todayIso: today, spot, chainByExpiry,
+      pathCExpiryOverride: pathCMode === "post" ? "post" : null,
     });
-    // Stash ticker on each path so PathBody can compute concentration.
     for (const p of Object.values(built.paths)) p._ticker = selected;
     return built;
-  }, [selected, earningsIso, today, spot, chainByExpiry]);
+  }, [selected, earningsIso, today, spot, chainByExpiry, pathCMode]);
 
   const [promA, promB] = CONVICTION_PROMINENCE[conviction];
   const prominentIds = [promA, promB];
@@ -504,6 +587,13 @@ export function EarningsSurface({ positions, account }) {
         </Frame>
       )}
 
+      {/* Deployment gate */}
+      {selected && (
+        <Frame accent="posture" title="DEPLOYMENT GATE" subtitle="VIX-based cash floor check">
+          <DeploymentGatePanel gate={deploymentGate} />
+        </Frame>
+      )}
+
       {/* Conviction factors */}
       {selected && (conv.factors.length > 0 || currentPositions) && (
         <Frame accent="focus" title="CONVICTION FACTORS" subtitle="Decision-support signals, not auto-selection"
@@ -514,10 +604,32 @@ export function EarningsSurface({ positions, account }) {
         </Frame>
       )}
 
+      {/* Ticker history */}
+      {selected && (
+        <Frame accent="quiet" title="TICKER HISTORY" subtitle="Your closed CSPs on this ticker">
+          <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />
+        </Frame>
+      )}
+
       {/* Four paths */}
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <SectionLabel label={`VALID PLAYS FOR ${conviction.toUpperCase()} CONVICTION`} right="2 prominent · 2 available" />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <SectionLabel label={`VALID PLAYS FOR ${conviction.toUpperCase()} CONVICTION`} right="2 prominent · 2 available" />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: T.mono, fontSize: T.xs, color: T.tm }}>
+              <span style={{ letterSpacing: "0.08em" }}>PATH C EXPIRY:</span>
+              {["pre", "post"].map(m => (
+                <button key={m} onClick={() => setPathCMode(m)} style={{
+                  padding: "3px 8px", border: `1px solid ${pathCMode === m ? T.amber : T.bd}`,
+                  background: pathCMode === m ? T.amber + "18" : "transparent",
+                  color: pathCMode === m ? T.amber : T.tm, fontFamily: T.mono, fontSize: T.xs,
+                  letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", borderRadius: T.rSm,
+                }}>
+                  {m === "pre" ? "earnings-wk" : "post-earnings"}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Prominent pair */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 12 }}>

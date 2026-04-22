@@ -435,7 +435,7 @@ const EXPLORE_TABS = [
 
 const VALID_MODES = new Set(EXPLORE_TABS.map(t => t.k));
 
-export function ExploreSurface({ positions, account, quoteMap, marketContext }) {
+export function ExploreSurface({ positions, account, trades, quoteMap, marketContext }) {
   const [mode, setMode] = useState(() => {
     try { const s = localStorage.getItem("redesign-explore-mode"); return VALID_MODES.has(s) ? s : "portfolio"; }
     catch { return "portfolio"; }
@@ -473,7 +473,7 @@ export function ExploreSurface({ positions, account, quoteMap, marketContext }) 
 
       {mode === "portfolio" && <PortfolioView positions={positions} account={account} quoteMap={quoteMap} />}
       {mode === "radar"     && <RadarSurface positions={positions} account={account} marketContext={marketContext} />}
-      {mode === "earnings"  && <EarningsSurface positions={positions} account={account} />}
+      {mode === "earnings"  && <EarningsSurface positions={positions} account={account} trades={trades} />}
     </div>
   );
 }

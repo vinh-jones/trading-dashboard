@@ -1,3 +1,5 @@
+import { getVixBand } from "./vixBand.js";
+
 /**
  * earningsEngine.js — pure helpers for the Earnings Play Tool.
  *
@@ -103,10 +105,64 @@ export function selectStrikeForPath(pathKey, spot, lowerBound, strikes) {
   return scored[0].s;
 }
 
+// ── Portfolio baseline ────────────────────────────────────────────────────────
+// Computes overall CSP stats across ALL closed trades for comparison baseline.
+export function computePortfolioBaseline(trades) {
+  const csps = (trades || []).filter(t => t.type === "CSP" && t.close_date);
+  if (!csps.length) return { avgRoi: null, winRate: null, count: 0 };
+  const wins   = csps.filter(t => (t.roi ?? 0) > 0);
+  const avgRoi = csps.reduce((s, t) => s + (t.roi ?? 0), 0) / csps.length;
+  return { avgRoi, winRate: wins.length / csps.length, count: csps.length };
+}
+
+// ── Ticker familiarity ────────────────────────────────────────────────────────
+// Returns per-ticker history stats vs. portfolio baseline.
+export function computeFamiliarity(ticker, trades, portfolioBaseline) {
+  if (!ticker || !trades?.length) return null;
+  const csps = trades.filter(t => t.ticker === ticker && t.type === "CSP" && t.close_date);
+  if (!csps.length) return { lifetimeCsps: 0, assignments: 0, winRate: null, avgRoi: null, relativeRoi: null, lastTrade: null, best: null, worst: null };
+
+  const wins       = csps.filter(t => (t.roi ?? 0) > 0);
+  const avgRoi     = csps.reduce((s, t) => s + (t.roi ?? 0), 0) / csps.length;
+  const assignments = csps.filter(t => t.subtype === "Assigned").length;
+  const sorted     = [...csps].sort((a, b) => new Date(b.close_date) - new Date(a.close_date));
+  const byRoi      = [...csps].sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0));
+
+  return {
+    lifetimeCsps: csps.length,
+    assignments,
+    winRate:     wins.length / csps.length,
+    avgRoi,
+    relativeRoi: portfolioBaseline?.avgRoi != null ? avgRoi - portfolioBaseline.avgRoi : null,
+    lastTrade:   sorted[0] ?? null,
+    best:        byRoi[0]  ?? null,
+    worst:       byRoi[byRoi.length - 1] ?? null,
+  };
+}
+
+// ── Deployment gate ───────────────────────────────────────────────────────────
+// Returns gate status for entering a new earnings CSP given current deployment.
+export function computeDeploymentGate(vix, freeCashPct, accountValue) {
+  const band = getVixBand(vix);
+  if (!band) return { vix, band: null, floorPct: null, freeCashPct, roomToDeploy: null, marginPct: null, status: "unknown" };
+
+  const floorPct      = band.floorPct;
+  const roomToDeploy  = freeCashPct != null ? freeCashPct - floorPct : null;
+  const marginPct     = accountValue && roomToDeploy != null ? roomToDeploy * accountValue : null;
+
+  let status;
+  if (roomToDeploy == null) status = "unknown";
+  else if (roomToDeploy <= 0) status = "at-floor";
+  else if (roomToDeploy < 0.05) status = "tight";
+  else status = "open";
+
+  return { vix, band, floorPct, freeCashPct, roomToDeploy, marginPct, status };
+}
+
 // ── Conviction-factor signal aggregator ──────────────────────────────────────
 // Returns { factors: [...], suggested: "LOW" | "STANDARD" | "HIGH" | ... }
 // Inputs are optional — missing signals are simply skipped.
-export function scoreConvictionFactors({ bbPosition, ivRank, concentration, recentEarnings }) {
+export function scoreConvictionFactors({ bbPosition, ivRank, concentration, recentEarnings, familiarity }) {
   const factors = [];
   let lowCount = 0, highCount = 0, standardCount = 0;
 
@@ -149,6 +205,26 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
       factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (within target)`, suggests: "Standard" });
       standardCount++;
     }
+  }
+
+  if (familiarity != null && familiarity.lifetimeCsps > 0) {
+    const { winRate, avgRoi, relativeRoi, lifetimeCsps, assignments } = familiarity;
+    const winPct  = winRate != null ? `${Math.round(winRate * 100)}% win` : "";
+    const relStr  = relativeRoi != null ? ` · ${relativeRoi >= 0 ? "+" : ""}${(relativeRoi * 100).toFixed(1)}% vs avg` : "";
+    const asgStr  = assignments > 0 ? ` · ${assignments} assigned` : "";
+    const value   = `${lifetimeCsps} prior CSPs · ${winPct}${relStr}${asgStr}`;
+    if (winRate != null && winRate >= 0.70) {
+      factors.push({ label: "Familiarity", value, suggests: "Standard or High" });
+      highCount += 0.3;
+    } else if (winRate != null && winRate < 0.40) {
+      factors.push({ label: "Familiarity", value, suggests: "Low" });
+      lowCount += 0.3;
+    } else {
+      factors.push({ label: "Familiarity", value, suggests: "Standard" });
+      standardCount += 0.3;
+    }
+  } else if (familiarity != null && familiarity.lifetimeCsps === 0) {
+    factors.push({ label: "Familiarity", value: "No prior CSPs on this ticker", suggests: "No history" });
   }
 
   if (ivRank != null) {
@@ -226,10 +302,18 @@ export const CONVICTION_PROMINENCE = {
 //   chainByExpiry: { [expiryIso]: { atmIV, strikes: [...] } }
 //     Must include both the pre-earnings Friday (for Path A) and the
 //     earnings-week Friday (for Paths B/C/D).
-export function buildEarningsPaths({ ticker, earningsIso, todayIso, spot, chainByExpiry = {} }) {
+// pathCExpiryOverride: "post" | null — when "post", Path C uses the Friday
+// AFTER earningsFriday (post-earnings expiry) instead of earnings-week Friday.
+export function buildEarningsPaths({ ticker, earningsIso, todayIso, spot, chainByExpiry = {}, pathCExpiryOverride = null }) {
   const fridays = getUpcomingFridays(todayIso, 70);
   const earningsFriday = pickEarningsWeekExpiry(fridays, earningsIso);
   const preFriday      = pickPreEarningsExpiry(fridays, earningsIso);
+
+  const postFriday = (() => {
+    if (!earningsFriday) return null;
+    const idx = fridays.findIndex(f => f.expiry === earningsFriday.expiry);
+    return idx >= 0 && idx + 1 < fridays.length ? fridays[idx + 1] : null;
+  })();
 
   const earningsWeekChain = earningsFriday ? chainByExpiry[earningsFriday.expiry] : null;
   const preChain          = preFriday      ? chainByExpiry[preFriday.expiry]      : null;
@@ -259,10 +343,13 @@ export function buildEarningsPaths({ ticker, earningsIso, todayIso, spot, chainB
     };
   };
 
+  const pathCFriday = pathCExpiryOverride === "post" && postFriday ? postFriday : earningsFriday;
+  const pathCChain  = pathCFriday ? chainByExpiry[pathCFriday.expiry] ?? null : null;
+
   const paths = {};
   for (const key of ["A", "B", "C", "D"]) {
-    const friday = key === "A" ? preFriday           : earningsFriday;
-    const chain  = key === "A" ? preChain            : earningsWeekChain;
+    const friday = key === "A" ? preFriday : key === "C" ? pathCFriday : earningsFriday;
+    const chain  = key === "A" ? preChain  : key === "C" ? pathCChain  : earningsWeekChain;
     const leg    = buildLeg(key, friday, chain);
     paths[key] = { key, ...PATH_META[key], ...(leg || {}), available: !!leg };
   }
@@ -273,6 +360,7 @@ export function buildEarningsPaths({ ticker, earningsIso, todayIso, spot, chainB
       emDollars: em, emPct, atmIV,
       dteToEarnings, lowerBound, upperBound,
       earningsWeekExpiry: earningsFriday?.expiry ?? null,
+      postEarningsExpiry: postFriday?.expiry     ?? null,
       preExpiry:          preFriday?.expiry      ?? null,
     },
     paths,
