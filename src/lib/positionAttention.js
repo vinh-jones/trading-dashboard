@@ -47,6 +47,43 @@ function higherPriority(a, b) {
   return ar <= br ? a : b;
 }
 
+// Determines whether a focus alert belongs on a specific position row.
+// Prevents ticker-level alerts from bleeding across all positions for that ticker
+// (e.g., CC expiry alert should not appear on the LEAP row for the same ticker).
+function alertBelongsToRow(item, pos, type) {
+  if (!item.ticker) return false;
+  if (item.ticker !== pos.ticker) return false;
+
+  const { rule, id } = item;
+
+  // Roll opportunity is a CC action — don't show on LEAPs or CSPs
+  if (rule === "roll_opportunity")   return type === "CC";
+  // Uncovered shares is share-level, not tied to any option row
+  if (rule === "uncovered_shares")   return false;
+  // CC deeply ITM: one active CC per share block, ticker match is enough
+  if (rule === "cc_deeply_itm")      return type === "CC";
+  // LEAP-only rules
+  if (rule === "leaps_low_dte" || rule === "leaps_profit_target") return type === "LEAP";
+
+  // Expiry-scoped rules — all these IDs end with the ISO expiry "YYYY-MM-DD"
+  const expiryFromId = id.split("-").slice(-3).join("-");
+
+  if (rule === "csp_itm_urgency") return type === "CSP" && expiryFromId === pos.expiry_date;
+
+  if (rule === "expiring_soon") {
+    if (id.startsWith("expiring-CC-")  && type !== "CC")  return false;
+    if (id.startsWith("expiring-CSP-") && type !== "CSP") return false;
+    return expiryFromId === pos.expiry_date;
+  }
+
+  if (rule === "near_worthless" || rule === "rule_60_60") {
+    return type !== "LEAP" && expiryFromId === pos.expiry_date;
+  }
+
+  // Ticker-wide rules (earnings_before_expiry, macro_overlap, expiry_cluster)
+  return true;
+}
+
 function buildRow(pos, type, quoteMap, focusItems) {
   const dte    = calcDTE(pos.expiry_date);
   const dtePct = dtePctFor(pos, dte);
@@ -57,7 +94,7 @@ function buildRow(pos, type, quoteMap, focusItems) {
   const proximity = proximityFraction(glPct, target);
 
   const alertTags = focusItems
-    .filter(it => it.ticker === pos.ticker)
+    .filter(it => alertBelongsToRow(it, pos, type))
     .map(it => ({ id: it.id, priority: it.priority, rule: it.rule, title: it.title }));
 
   const priority = alertTags.reduce(
