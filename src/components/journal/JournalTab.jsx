@@ -47,7 +47,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
   const [inlineEditId,  setInlineEditId]  = useState(null);
   const [inlineTitle,   setInlineTitle]   = useState("");
   const [inlineBody,    setInlineBody]    = useState("");
-  const [inlineTags,    setInlineTags]    = useState("");
+  const [inlineTags,    setInlineTags]    = useState([]);
   const [inlineSource,  setInlineSource]  = useState("Self");
   const [inlineMood,    setInlineMood]    = useState("🟡");
   const [inlineSaving,  setInlineSaving]  = useState(false);
@@ -105,7 +105,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
     setInlineEditId(entry.id);
     setInlineTitle(entry.title ?? "");
     setInlineBody(entry.body ?? "");
-    setInlineTags((entry.tags || []).join(", "));
+    setInlineTags(entry.tags || []);
     setInlineSource(entry.source ?? "Self");
     setInlineMood(entry.mood ?? "🟡");
     setInlineError(null);
@@ -124,9 +124,7 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
     setInlineSaving(true);
     setInlineError(null);
     try {
-      const tags = [...new Set(
-        inlineTags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean)
-      )];
+      const tags = inlineTags;
       const src  = isEOD ? null : (inlineSource || null);
       const mood = isEOD ? inlineMood : null;
       const now  = new Date().toISOString();

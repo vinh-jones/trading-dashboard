@@ -12,6 +12,9 @@ import { todayISO, buildAutoTitle } from "./journalHelpers";
 import { JournalField } from "./JournalField";
 import { JournalAutoTextarea } from "./JournalAutoTextarea";
 import { theme } from "../../lib/theme";
+import { TagCategoryLegend } from "./TagCategoryLegend";
+import { TagInput } from "./TagInput";
+import { useTagVocabulary } from "../../lib/tags";
 
 export function JournalQuickAdd({
   isOpen,
@@ -31,7 +34,7 @@ export function JournalQuickAdd({
   const [linkedTrade,    setLinkedTrade]    = useState(null);
   const [formTitle,      setFormTitle]      = useState("");
   const [formSource,     setFormSource]     = useState("Self");
-  const [formTags,       setFormTags]       = useState("");
+  const [formTags,       setFormTags]       = useState([]);
   const [formDate,       setFormDate]       = useState(todayISO());
   const [formBody,       setFormBody]       = useState("");
   const [saving,         setSaving]         = useState(false);
@@ -39,6 +42,8 @@ export function JournalQuickAdd({
   const [formMood,       setFormMood]       = useState("🟡");
   const [cancelHovered,  setCancelHovered]  = useState(false);
   const [hoveredMood,    setHoveredMood]    = useState(null);
+
+  const { vocabulary } = useTagVocabulary();
 
   // ── EOD auto-populated values ──
   const eodAutoFreeCash = useMemo(() =>
@@ -213,9 +218,7 @@ export function JournalQuickAdd({
     setSaving(true);
     setSaveError(null);
     try {
-      const tags = [...new Set(
-        formTags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean)
-      )];
+      const tags = formTags;
       const ticker = linkedPosition?.ticker ?? linkedTrade?.ticker ?? null;
       const now    = new Date().toISOString();
       const src    = isEOD ? null : (formSource || null);
@@ -387,12 +390,9 @@ export function JournalQuickAdd({
               ))}
             </div>
           </JournalField>
-          <JournalField label="Tags (comma separated, optional)">
-            <input
-              type="text" style={JOURNAL_INPUT_ST} value={formTags}
-              onChange={e => setFormTags(e.target.value)}
-              placeholder="ryan-signal, lower-bb, vix-elevated"
-            />
+          <JournalField label="Tags">
+            <TagCategoryLegend />
+            <TagInput value={formTags} onChange={setFormTags} vocabulary={vocabulary} />
           </JournalField>
           <JournalField label="Notes">
             <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Trade rationale, setup details..." />

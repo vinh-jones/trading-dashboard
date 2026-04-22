@@ -7,6 +7,7 @@ import { JOURNAL_BADGE } from "./journalConstants";
 import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate } from "./journalHelpers";
 import { theme } from "../../lib/theme";
 import { useWindowWidth } from "../../hooks/useWindowWidth";
+import { TagChip } from "./TagChip";
 
 export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = false }) {
   const { trades, positions, account } = useData();
@@ -443,14 +444,9 @@ export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = fa
       </div>
 
       {/* Tags */}
-      {/* Q2: marginBottom 10 → theme.space[2]; marginRight 6 → theme.space[1] */}
       {entry.tags?.length > 0 && (
-        <div style={{ marginBottom: theme.space[2] }}>
-          {entry.tags.map(tag => (
-            <span key={tag} style={{ background: theme.bg.elevated, color: theme.blue, fontSize: theme.size.xs, padding: "2px 8px", borderRadius: theme.radius.sm, marginRight: theme.space[1], display: "inline-block", marginBottom: 4 }}>
-              {tag}
-            </span>
-          ))}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: theme.space[2] }}>
+          {entry.tags.map(tag => <TagChip key={tag} tag={tag} size="sm" />)}
         </div>
       )}
 

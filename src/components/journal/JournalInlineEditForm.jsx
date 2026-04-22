@@ -4,12 +4,16 @@ import { fmtEntryDate } from "./journalHelpers";
 import { JournalField } from "./JournalField";
 import { JournalAutoTextarea } from "./JournalAutoTextarea";
 import { theme } from "../../lib/theme";
+import { TagCategoryLegend } from "./TagCategoryLegend";
+import { TagInput } from "./TagInput";
+import { useTagVocabulary } from "../../lib/tags";
 
 export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBodyChange, tags, onTagsChange, source, onSourceChange, mood, onMoodChange, onSave, onCancel, saving, error }) {
   const isEOD = entry.entry_type === "eod_update";
   const badge = JOURNAL_BADGE[entry.entry_type] || { label: entry.entry_type, color: theme.text.muted };
   const [cancelHovered, setCancelHovered] = useState(false);
   const [moodHovered, setMoodHovered] = useState(null);
+  const { vocabulary } = useTagVocabulary();
   return (
     <div style={{ background: theme.bg.surface, border: `2px solid ${theme.amber}`, borderRadius: theme.radius.md, padding: theme.space[4], marginBottom: theme.space[3] }}>
       {/* Q2: marginBottom 14 → theme.space[3] */}
@@ -78,8 +82,9 @@ export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBod
 
       {/* Tags (trade / position notes) */}
       {!isEOD && (
-        <JournalField label="Tags (comma separated, optional)">
-          <input type="text" style={JOURNAL_INPUT_ST} value={tags} onChange={onTagsChange} placeholder="ryan-signal, lower-bb, vix-elevated" />
+        <JournalField label="Tags">
+          <TagCategoryLegend />
+          <TagInput value={tags} onChange={onTagsChange} vocabulary={vocabulary} />
         </JournalField>
       )}
 
