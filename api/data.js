@@ -123,6 +123,7 @@ export default async function handler(req, res) {
         snapshot_date:            dailySnapshot.snapshot_date,
         realized_to_date:         dailySnapshot.forecast_realized_to_date     ?? null,
         this_month_remaining:     dailySnapshot.forecast_this_month_remaining ?? null,
+        this_month_std:           dailySnapshot.forecast_this_month_std       ?? null,
         month_total:              dailySnapshot.forecast_month_total          ?? null,
         target_gap:               dailySnapshot.forecast_target_gap           ?? null,
         forward_pipeline_premium: dailySnapshot.forward_pipeline_premium      ?? null,

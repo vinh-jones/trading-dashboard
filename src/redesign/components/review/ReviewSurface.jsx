@@ -459,6 +459,8 @@ function PremiumPipeline({ account, positions }) {
   const implied   = pipelineIsV2 ? fc.month_total          : mtdCollected + expected;
   const gap       = pipelineIsV2 ? fc.target_gap           : implied - baseline;
   const v2Forward = fc?.forward_pipeline_premium ?? null;
+  const v2Std     = fc?.this_month_std ?? null;
+  const hasStd    = pipelineIsV2 && v2Std != null && v2Std > 0;
 
   const captureLabel = pipelineIsV2 ? "Expected (v2)" : `Expected (${(captureRate*100).toFixed(0)}%)`;
 
@@ -497,19 +499,24 @@ function PremiumPipeline({ account, positions }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
         {[
           { label: "Gross open",     value: fmt$full(grossOpen) },
-          { label: captureLabel,     value: `~${fmt$full(expected)}` },
+          { label: captureLabel,     value: `~${fmt$full(expected)}`,
+            sub: hasStd ? `± ${fmt$full(v2Std)}` : null },
           { label: "MTD collected",  value: fmt$full(mtdCollected) },
-          { label: "Implied total",  value: `~${fmt$full(implied)}` },
+          { label: "Implied total",  value: `~${fmt$full(implied)}`,
+            sub: hasStd ? `± ${fmt$full(v2Std)} · 80% CI ${fmt$full(implied - 1.28 * v2Std)}–${fmt$full(implied + 1.28 * v2Std)}` : null },
           { label: "Gap to baseline",value: (
             <span style={{ color: gap >= 0 ? T.green : T.amber }}>
               {gap >= 0 ? "+" : "-"}${Math.abs(gap).toLocaleString()}
               <span style={{ color: T.tf, fontSize: T.xs }}> to ${(baseline/1000).toFixed(0)}k</span>
             </span>
           )},
-        ].map(({ label, value }) => (
+        ].map(({ label, value, sub }) => (
           <div key={label}>
             <div style={{ fontSize: T.xs, color: T.tf, fontFamily: T.mono, letterSpacing: "0.08em", marginBottom: 4 }}>{label}</div>
             <div style={{ fontSize: T.md, color: T.t1, fontFamily: T.mono, fontWeight: 600 }}>{value}</div>
+            {sub && (
+              <div style={{ fontSize: T.xs, color: T.tf, fontFamily: T.mono, marginTop: 2 }}>{sub}</div>
+            )}
           </div>
         ))}
       </div>

@@ -131,12 +131,15 @@ export default async function handler(req, res) {
   }
 
   // Resolve each bucket's calibrated value (spec start for n<5 / tautological).
+  // std is preserved whenever available (even on tautological buckets, the
+  // observed spread is still informative for uncertainty bands).
   function resolve(pt, bucket, s) {
     const key = `${pt}.${bucket}`;
     const start = SPEC_START[pt]?.[bucket];
-    if (!s || s.n < 5)        return { value: start, reason: s ? "n<5, keep spec start" : "no data, keep spec start" };
-    if (TAUTOLOGICAL.has(key)) return { value: start, reason: `tautological, keep spec start (observed ${s.mean})` };
-    return { value: s.mean, reason: `calibrated n=${s.n}` };
+    const std   = s && s.n >= 5 ? s.std : null;
+    if (!s || s.n < 5)         return { value: start, std, reason: s ? "n<5, keep spec start" : "no data, keep spec start" };
+    if (TAUTOLOGICAL.has(key)) return { value: start, std, reason: `tautological, keep spec start (observed ${s.mean})` };
+    return { value: s.mean, std, reason: `calibrated n=${s.n}` };
   }
 
   const allBuckets = [
@@ -149,16 +152,17 @@ export default async function handler(req, res) {
   for (const [pt, b] of allBuckets) {
     const groups = pt === "csp" ? cspGroups : ccGroups;
     const s = stats(groups[b] || []);
-    const { value, reason } = resolve(pt, b, s);
+    const { value, std, reason } = resolve(pt, b, s);
     rowsToUpsert.push({
       position_type:      pt,
       bucket:             b,
       calibrated_capture: value,
+      calibrated_std:     std,
       sample_size:        s?.n ?? 0,
       calibration_date:   today,
       notes:              reason,
     });
-    report.push({ position_type: pt, bucket: b, n: s?.n ?? 0, observed: s?.mean ?? null, applied: value, reason });
+    report.push({ position_type: pt, bucket: b, n: s?.n ?? 0, observed: s?.mean ?? null, std, applied: value, reason });
   }
 
   const { error: upsertErr } = await supabase

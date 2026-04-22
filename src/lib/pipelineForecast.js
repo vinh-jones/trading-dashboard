@@ -68,6 +68,21 @@ export function ccBucket(state) {
 
 // ── Capture curve (dispatch + calibration lookup) ───────────────────────────
 
+// Fallback std (of kept_pct) when a bucket has no calibrated std — either
+// because it's uncalibrated (n<5) or because the calibration row predates
+// the std column. 0.15 is wider than the calibrated buckets' observed stds
+// (0.158 CSP≥60, 0.061 CC≥80), reflecting honest uncertainty for unknown buckets.
+export const DEFAULT_UNCERTAINTY_STD = 0.15;
+
+/**
+ * Look up the std (of kept_pct) for a bucket from calibrationStd map, with
+ * DEFAULT_UNCERTAINTY_STD as fallback.
+ */
+export function bucketStd(pt, bucket, calibrationStd = {}) {
+  const s = calibrationStd?.[pt]?.[bucket];
+  return (s != null && isFinite(s) && s > 0) ? s : DEFAULT_UNCERTAINTY_STD;
+}
+
 /**
  * Get the expected-final-capture rate for a position's current state.
  *
@@ -278,6 +293,7 @@ export function computePipelineForecast({
   costBasisByTicker,      // { [ticker]: costBasisPerShare }
   quoteBySymbol,          // { [symbol]: { mid, last, ... } }
   calibration,            // { csp: { bucket: value }, cc: { bucket: value } }
+  calibrationStd,         // { csp: { bucket: std }, cc: { bucket: std } } — optional
   mtdRealized,            // $ already realized this calendar month
   monthlyTarget,          // target $ for the month
   today,                  // Date
@@ -288,6 +304,7 @@ export function computePipelineForecast({
   let ccPipeline = 0;
   let belowCostCC = 0;
   let thisMonthRemaining = 0;
+  let thisMonthVariance = 0;  // portfolio $ variance (sum of per-position variances)
 
   for (const pos of openPositions) {
     const costBasis = costBasisByTicker[pos.ticker] ?? null;
@@ -297,6 +314,15 @@ export function computePipelineForecast({
     const { bucket, pct } = expectedFinalCapturePct(state, calibration);
     const remaining = expectedRemainingRealization(state, calibration);
     const thisMonth = realizationThisMonth(state, today, calibration);
+
+    // Per-position uncertainty: σ_$ = premium × σ_c, scaled by the share of
+    // "remaining" that lands this month. Independence assumed across positions.
+    const sigmaC = bucketStd(state.type, bucket, calibrationStd);
+    const premium = state.premiumAtOpen ?? 0;
+    const remainingAbs = Math.abs(remaining) || 1e-9;
+    const thisMonthShare = Math.abs(thisMonth) / remainingAbs;  // 0..1
+    const sigmaThisMonth = premium * sigmaC * thisMonthShare;
+    thisMonthVariance += sigmaThisMonth * sigmaThisMonth;
 
     thisMonthRemaining += thisMonth;
     forwardTotal += remaining;
@@ -320,6 +346,8 @@ export function computePipelineForecast({
     });
   }
 
+  const thisMonthStd = Math.sqrt(thisMonthVariance);
+
   const monthTotal = (mtdRealized ?? 0) + thisMonthRemaining;
   const targetGap = monthlyTarget != null ? monthTotal - monthlyTarget : null;
 
@@ -335,6 +363,7 @@ export function computePipelineForecast({
   return {
     forecast_realized_to_date:     Math.round(mtdRealized ?? 0),
     forecast_this_month_remaining: Math.round(thisMonthRemaining),
+    forecast_this_month_std:       Math.round(thisMonthStd),
     forecast_month_total:          Math.round(monthTotal),
     forecast_target_gap:           targetGap != null ? Math.round(targetGap) : null,
     forward_pipeline_premium:      Math.round(forwardTotal),

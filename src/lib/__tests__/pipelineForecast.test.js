@@ -218,6 +218,58 @@ describe("realizationThisMonth", () => {
   });
 });
 
+describe("forecast uncertainty (this_month_std)", () => {
+  const today = new Date("2026-04-15T00:00:00Z");
+  const cal = { csp: { profit_60_plus: 0.76 } };
+
+  it("aggregates per-position $ uncertainty via sqrt-of-sum-of-squares", () => {
+    // Two identical CSPs at ≥60% profit expiring this month → thisMonthShare=1
+    // per-position σ_$ = premium × bucketStd
+    // premium $1000, σ_c=0.158 → per-position σ_$ = $158
+    // portfolio σ_$ = sqrt(158² + 158²) ≈ $223 (not $316; independence reduces combined uncertainty)
+    const occ1 = "AAA260425P00010000";
+    const occ2 = "BBB260425P00010000";
+    const positions = [
+      { ticker: "AAA", type: "CSP", strike: 10, contracts: 10, expiry_date: "2026-04-25", premium_collected: 1000 },
+      { ticker: "BBB", type: "CSP", strike: 10, contracts: 10, expiry_date: "2026-04-25", premium_collected: 1000 },
+    ];
+    const quoteBySymbol = {
+      AAA: { mid: 8 }, BBB: { mid: 8 },
+      [occ1]: { mid: 0.35 },  // premium/share = 1.00, current mid = 0.35 → profit 65%
+      [occ2]: { mid: 0.35 },
+    };
+    const r = computePipelineForecast({
+      openPositions: positions,
+      costBasisByTicker: {},
+      quoteBySymbol,
+      calibration: cal,
+      calibrationStd: { csp: { profit_60_plus: 0.158 } },
+      mtdRealized: 0,
+      monthlyTarget: 15000,
+      today,
+    });
+    expect(r.forecast_this_month_std).toBeGreaterThan(200);
+    expect(r.forecast_this_month_std).toBeLessThan(250);
+  });
+
+  it("falls back to DEFAULT_UNCERTAINTY_STD (0.15) when calibrationStd is missing", () => {
+    const occ = "AAA260425P00010000";
+    const r = computePipelineForecast({
+      openPositions: [
+        { ticker: "AAA", type: "CSP", strike: 10, contracts: 10, expiry_date: "2026-04-25", premium_collected: 1000 },
+      ],
+      costBasisByTicker: {},
+      quoteBySymbol: { AAA: { mid: 8 }, [occ]: { mid: 0.35 } },
+      calibration: cal,
+      mtdRealized: 0,
+      monthlyTarget: 15000,
+      today,
+    });
+    // premium $1000 × 0.15 × thisMonthShare(1.0) = $150
+    expect(r.forecast_this_month_std).toBeCloseTo(150, 0);
+  });
+});
+
 describe("computePipelineForecast", () => {
   const today = new Date("2026-04-15T00:00:00Z");
   const cal = { csp: { profit_60_plus: 0.76 }, cc: { profit_80_plus: 0.89 } };

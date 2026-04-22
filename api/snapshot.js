@@ -205,20 +205,24 @@ export default async function handler(req, res) {
     const [quotesResult, calibrationResult] = await Promise.all([
       supabase.from("quotes").select("symbol, mid, last, bid, ask"),
       supabase.from("forecast_calibration")
-        .select("position_type, bucket, calibrated_capture, calibration_date")
+        .select("position_type, bucket, calibrated_capture, calibrated_std, calibration_date")
         .order("calibration_date", { ascending: false }),
     ]);
     const quoteBySymbol = {};
     for (const q of (quotesResult.data || [])) quoteBySymbol[q.symbol] = q;
 
     // Keep only the most recent row per (position_type, bucket)
-    const calibration = { csp: {}, cc: {} };
+    const calibration    = { csp: {}, cc: {} };
+    const calibrationStd = { csp: {}, cc: {} };
     const seen = new Set();
     for (const row of (calibrationResult.data || [])) {
       const key = `${row.position_type}.${row.bucket}`;
       if (seen.has(key)) continue;
       seen.add(key);
       calibration[row.position_type][row.bucket] = Number(row.calibrated_capture);
+      if (row.calibrated_std != null) {
+        calibrationStd[row.position_type][row.bucket] = Number(row.calibrated_std);
+      }
     }
 
     // Build costBasisByTicker from assigned_shares rows (lots JSONB)
@@ -234,6 +238,7 @@ export default async function handler(req, res) {
       costBasisByTicker,
       quoteBySymbol,
       calibration,
+      calibrationStd,
       mtdRealized:       mtdPremium,
       monthlyTarget:     MONTHLY_TARGETS.baseline,
       today:             todayDate,
@@ -279,6 +284,7 @@ export default async function handler(req, res) {
     // v2 forecast fields — null-filled if v2 computation failed
     forecast_realized_to_date:     forecastV2?.forecast_realized_to_date      ?? null,
     forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining  ?? null,
+    forecast_this_month_std:       forecastV2?.forecast_this_month_std        ?? null,
     forecast_month_total:          forecastV2?.forecast_month_total           ?? null,
     forecast_target_gap:           forecastV2?.forecast_target_gap            ?? null,
     forward_pipeline_premium:      forecastV2?.forward_pipeline_premium       ?? null,

@@ -160,6 +160,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
   const mtdCollected      = account?.month_to_date_premium ?? 0;
   const pipelineBaseline  = account?.monthly_targets?.baseline ?? 15000;
   const impliedTotal      = fc?.month_total ?? mtdCollected + expectedPipeline;
+  const thisMonthStd      = fc?.this_month_std ?? null;  // $ std, null pre-v2.1 snapshot
   // Legacy convention: gapToBaseline positive when behind target.
   // v2 target_gap is (monthTotal − target), so negate to match.
   const gapToBaseline     = fc?.target_gap != null ? -fc.target_gap : pipelineBaseline - impliedTotal;
@@ -579,9 +580,13 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(5, 1fr)", gap: theme.space[4] }}>
             {[
               { label: "Gross open premium",                value: formatDollarsFull(grossOpenPremium), color: theme.text.primary },
-              { label: pipelineIsV2 ? "Expected this month (v2)" : `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: theme.green },
+              { label: pipelineIsV2 ? "Expected this month (v2)" : `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: theme.green,
+                sub: pipelineIsV2 && thisMonthStd != null && thisMonthStd > 0 ? `± ${formatDollarsFull(thisMonthStd)}` : null },
               { label: "MTD collected",                     value: formatDollarsFull(mtdCollected), color: theme.text.primary },
-              { label: "Implied month total",               value: `~${formatDollarsFull(impliedTotal)}`, color: theme.text.primary },
+              { label: "Implied month total",               value: `~${formatDollarsFull(impliedTotal)}`, color: theme.text.primary,
+                sub: pipelineIsV2 && thisMonthStd != null && thisMonthStd > 0
+                  ? `± ${formatDollarsFull(thisMonthStd)} · 80% CI ${formatDollarsFull(impliedTotal - 1.28 * thisMonthStd)}–${formatDollarsFull(impliedTotal + 1.28 * thisMonthStd)}`
+                  : null },
               {
                 label: "Gap to baseline",
                 value: gapToBaseline > 0
@@ -589,10 +594,13 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                   : `✓ +${formatDollarsFull(Math.abs(gapToBaseline))} above`,
                 color: gapToBaseline > 0 ? theme.red : theme.green,
               },
-            ].map(({ label, value, color }) => (
+            ].map(({ label, value, color, sub }) => (
               <div key={label}>
                 <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[1] }}>{label}</div>
                 <div style={{ fontSize: theme.size.md, fontWeight: 600, color }}>{value}</div>
+                {sub && (
+                  <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 2, fontFamily: theme.font.mono }}>{sub}</div>
+                )}
               </div>
             ))}
           </div>
