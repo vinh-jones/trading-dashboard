@@ -191,7 +191,7 @@ export function JournalQuickAdd({
 
   // ── Handlers (moved from JournalTab) ──
   function resetForm() {
-    setFormTitle(""); setFormBody(""); setFormTags(""); setFormSource("Self");
+    setFormTitle(""); setFormBody(""); setFormTags([]); setFormSource("Self");
     setLinkedPosition(null); setLinkedTrade(null);
     setFormDate(todayISO());
     setFormMood("🟡");
