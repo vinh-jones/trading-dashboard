@@ -271,6 +271,55 @@ function buildTextBlob({
   return lines.join("\n");
 }
 
+// ─── Sheet allocation fetch ───────────────────────────────────────────
+// Fetches the published Google Sheet CSV and returns per-ticker allocations
+// as decimals (e.g. { SOFI: 0.098, PLTR: 0.1503, ... }) by summing the
+// CSP %, Shares %, and LEAPS % columns for each ticker.
+const SHEET_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vQLuYoqaPOxDPDCpw8re2P2KhVw9g3doBOMgsbL0VW9WjCPw4fsTx_DaB6pu0CwXNITSg9qKisheRPb/pub?gid=1249321251&single=true&output=csv";
+
+async function fetchSheetAllocations() {
+  const res = await fetch(SHEET_CSV_URL);
+  if (!res.ok) throw new Error(`Sheet CSV returned ${res.status}`);
+  const text = await res.text();
+  const rows = text.split("\n").map(r => r.trim()).filter(Boolean);
+
+  // Find the header row (contains "Ticker")
+  const headerIdx = rows.findIndex(r => r.startsWith("Ticker,"));
+  if (headerIdx < 0) throw new Error("Sheet header row not found");
+
+  const parsePct = (str) => {
+    if (!str) return 0;
+    const n = parseFloat(str.replace(/["%]/g, "").trim());
+    return isNaN(n) ? 0 : n / 100;
+  };
+
+  // Simple CSV split that handles quoted fields (e.g. "$153,951")
+  const splitCsv = (line) => {
+    const cols = [];
+    let cur = "", inQuote = false;
+    for (const ch of line) {
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === "," && !inQuote) { cols.push(cur); cur = ""; }
+      else { cur += ch; }
+    }
+    cols.push(cur);
+    return cols;
+  };
+
+  const totals = {};
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const cols = splitCsv(rows[i]);
+    const ticker = (cols[0] ?? "").trim();
+    if (!ticker || ticker === "CASH") continue;
+    const cspPct    = parsePct(cols[5]);
+    const sharesPct = parsePct(cols[6]);
+    const leapsPct  = parsePct(cols[7]);
+    totals[ticker] = (totals[ticker] || 0) + cspPct + sharesPct + leapsPct;
+  }
+  return totals;
+}
+
 // ─── Main handler ────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -336,7 +385,7 @@ export default async function handler(req, res) {
 
   // Fetch radar quotes and market quotes in parallel
   const universeTickers = universeRows.map((u) => u.ticker);
-  const [radarQuotesResult, spyResult, qqqResult, vixResult, macroResult] =
+  const [radarQuotesResult, spyResult, qqqResult, vixResult, macroResult, sheetAllocResult] =
     await Promise.allSettled([
       universeTickers.length
         ? supabase
@@ -353,6 +402,7 @@ export default async function handler(req, res) {
         .select("ai_context, posture, posture_score")
         .eq("snapshot_date", today)
         .single(),
+      fetchSheetAllocations(),
     ]);
 
   // If no cached macro for today, call /api/macro live
@@ -435,22 +485,13 @@ export default async function handler(req, res) {
       ...(positions.assigned_shares ?? []).flatMap((s) => s.open_leaps ?? []),
     ];
 
-    // Per-ticker allocations — same logic as api/snapshot.js
-    // Uses raw positionRows so we get capital_fronted directly off each flat row
+    // Per-ticker allocations — pulled directly from the published Google Sheet
+    // which tracks current position values (shares, CSP collateral, LEAPs).
     const accountValue = accountSnap.account_value ?? 0;
-    const tickerTotals = {};
-    for (const p of positionRows) {
-      const fronted = p.capital_fronted || 0;
-      if (p.ticker && fronted > 0) {
-        tickerTotals[p.ticker] = (tickerTotals[p.ticker] || 0) + fronted;
-      }
-    }
-    const tickerAllocations = {};
-    for (const [ticker, amount] of Object.entries(tickerTotals)) {
-      tickerAllocations[ticker] = accountValue > 0
-        ? Math.round((amount / accountValue) * 10000) / 10000
-        : 0;
-    }
+    const tickerAllocations =
+      sheetAllocResult.status === "fulfilled" && sheetAllocResult.value
+        ? sheetAllocResult.value
+        : {};
 
     effectiveSnapshot = {
       account_value:              accountValue,
