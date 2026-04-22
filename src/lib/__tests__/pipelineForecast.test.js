@@ -170,16 +170,51 @@ describe("realizationThisMonth", () => {
     expect(r).toBe(800);
   });
 
-  it("attributes 5% for low-profit CSP expiring next month", () => {
+  it("attributes scaled 8% for mildly profitable CSP expiring next month", () => {
     const state = {
       type: "csp", currentProfitPct: 0.10, dte: 25,
       premiumAtOpen: 1000, realizedToDate: 0,
       expiry: new Date("2026-05-15"),
     };
     // remaining = 1000 * 0.55 = 550 (profit_low_dte_high bucket)
-    // thisMonth = 550 * 0.05 = 27.5
+    // today=Apr 15, eom=Apr 30, daysToEom=15, windowScalar = 15/20 = 0.75
+    // thisMonth = 550 * 0.08 * 0.75 = 33
     const r = realizationThisMonth(state, today, {});
-    expect(r).toBeCloseTo(27.5);
+    expect(r).toBeCloseTo(33);
+  });
+
+  it("attributes scaled 3% for slightly underwater CSP expiring next month", () => {
+    const state = {
+      type: "csp", currentProfitPct: -0.10, dte: 25,
+      premiumAtOpen: 1000, realizedToDate: 0,
+      expiry: new Date("2026-05-15"),
+    };
+    // remaining = 550; windowScalar = 0.75; thisMonth = 550 * 0.03 * 0.75 = 12.375
+    const r = realizationThisMonth(state, today, {});
+    expect(r).toBeCloseTo(12.375);
+  });
+
+  it("attributes 0 for deeply underwater CSP expiring next month (no realistic path)", () => {
+    const state = {
+      type: "csp", currentProfitPct: -0.40, dte: 25,
+      premiumAtOpen: 1000, realizedToDate: 0,
+      expiry: new Date("2026-05-15"),
+    };
+    const r = realizationThisMonth(state, today, {});
+    expect(r).toBe(0);
+  });
+
+  it("window scalar caps at 1.0 even with many days remaining", () => {
+    const earlyInMonth = new Date("2026-04-02T00:00:00Z");
+    const state = {
+      type: "csp", currentProfitPct: 0.10, dte: 40,
+      premiumAtOpen: 1000, realizedToDate: 0,
+      expiry: new Date("2026-05-20"),
+    };
+    // daysToEom = 28, scalar capped at 1.0
+    // remaining = 550; thisMonth = 550 * 0.08 * 1.0 = 44
+    const r = realizationThisMonth(state, earlyInMonth, {});
+    expect(r).toBeCloseTo(44);
   });
 });
 

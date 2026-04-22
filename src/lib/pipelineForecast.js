@@ -129,6 +129,11 @@ function endOfMonth(d) {
  * How much of this position's expected realization lands in the current
  * calendar month, given today's date. For cross-month positions, only the
  * probability-weighted "early close" portion lands now.
+ *
+ * Low-profit CSPs are tiered (mildly profitable / slightly underwater /
+ * deeply underwater) and scaled by remaining window — deeply underwater
+ * positions have no realistic path to 60/60 before month-end, so they
+ * contribute nothing rather than a flat 5% that overstates attribution.
  */
 export function realizationThisMonth(state, today, calibration) {
   const remaining = expectedRemainingRealization(state, calibration);
@@ -140,15 +145,24 @@ export function realizationThisMonth(state, today, calibration) {
   // Position expires in current calendar month → all of it lands now
   if (expiry <= eom) return remaining;
 
-  // Position expires in a later month — only early-close portion lands now
+  // Position expires in a later month — only early-close portion lands now.
+  // Cross-month contributions decay as the month progresses (less window for
+  // surprise closes).
+  const daysToEom = Math.max(0, Math.round((eom - today) / (1000 * 60 * 60 * 24)));
+  const windowScalar = Math.min(daysToEom / 20, 1);
+
   const p = state.currentProfitPct;
   if (state.type === 'csp') {
-    if (p >= 0.60) return remaining;          // will close now at 60/60
-    if (p >= 0.40) return remaining * 0.55;   // might close early
-    if (p >= 0.20) return remaining * 0.20;   // less likely
-    return remaining * 0.05;                  // unlikely
+    if (p == null) return 0;
+    if (p >= 0.60) return remaining;                        // will close now at 60/60
+    if (p >= 0.40) return remaining * 0.55;                 // might close early
+    if (p >= 0.20) return remaining * 0.20;                 // less likely
+    if (p >= 0)    return remaining * 0.08 * windowScalar;  // mildly profitable, small chance
+    if (p >= -0.20) return remaining * 0.03 * windowScalar; // slightly underwater, unlikely
+    return 0;                                               // deeply underwater, no path
   }
   if (state.type === 'cc') {
+    if (p == null) return 0;
     if (p >= 0.80) return remaining;
     if (p >= 0.60) return remaining * 0.60;
     return remaining * 0.15;
