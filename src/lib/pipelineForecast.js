@@ -315,13 +315,16 @@ export function computePipelineForecast({
     const remaining = expectedRemainingRealization(state, calibration);
     const thisMonth = realizationThisMonth(state, today, calibration);
 
-    // Per-position uncertainty: σ_$ = premium × σ_c, scaled by the share of
-    // "remaining" that lands this month. Independence assumed across positions.
+    // Per-position uncertainty: σ_$ = premium × σ_c (lifetime std). Independence
+    // assumed across positions. For cross-month positions, realization is really
+    // bimodal (close early → full remaining, or don't → $0) — the Bernoulli-
+    // mixture std is larger than a deterministic thisMonthShare scaling would
+    // suggest, so we use the lifetime std as a conservative approximation for
+    // any position that has a non-zero path to land this month. Positions with
+    // thisMonth=0 (deeply underwater, no path) contribute 0 variance.
     const sigmaC = bucketStd(state.type, bucket, calibrationStd);
     const premium = state.premiumAtOpen ?? 0;
-    const remainingAbs = Math.abs(remaining) || 1e-9;
-    const thisMonthShare = Math.abs(thisMonth) / remainingAbs;  // 0..1
-    const sigmaThisMonth = premium * sigmaC * thisMonthShare;
+    const sigmaThisMonth = thisMonth !== 0 ? premium * sigmaC : 0;
     thisMonthVariance += sigmaThisMonth * sigmaThisMonth;
 
     thisMonthRemaining += thisMonth;

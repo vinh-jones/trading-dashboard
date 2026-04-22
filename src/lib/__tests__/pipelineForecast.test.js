@@ -265,8 +265,54 @@ describe("forecast uncertainty (this_month_std)", () => {
       monthlyTarget: 15000,
       today,
     });
-    // premium $1000 × 0.15 × thisMonthShare(1.0) = $150
+    // premium $1000 × 0.15 (DEFAULT σ_c) = $150
     expect(r.forecast_this_month_std).toBeCloseTo(150, 0);
+  });
+
+  it("uses lifetime σ (premium × σ_c) for cross-month positions, not scaled by thisMonthShare", () => {
+    // Underwater cross-month CC in the default bucket. Expected realization
+    // this month is only 15% of remaining, but σ is the full lifetime std —
+    // realization is really bimodal (closes early at ~full, or doesn't → $0),
+    // so the Bernoulli-mixture σ is closer to lifetime σ than to 15% of it.
+    const occ = "IREN261219C00015000";
+    const calCC = { cc: { default: 0.75 } };
+    const stdCC = { cc: { default: 0.59 } };
+    const r = computePipelineForecast({
+      openPositions: [
+        { ticker: "IREN", type: "CC", strike: 15, contracts: 10, expiry_date: "2026-12-19", premium_collected: 915 },
+      ],
+      costBasisByTicker: { IREN: 14 },
+      quoteBySymbol: { IREN: { mid: 14.5 }, [occ]: { mid: 1.0 } },  // mild profit, cross-month
+      calibration: calCC,
+      calibrationStd: stdCC,
+      mtdRealized: 0,
+      monthlyTarget: 15000,
+      today,
+    });
+    // Lifetime σ = 915 × 0.59 ≈ $540. One position → portfolio σ ≈ $540.
+    // Old math (scaled by thisMonthShare=0.15) would give ≈ $81 — we want ≈ $540.
+    expect(r.forecast_this_month_std).toBeGreaterThan(500);
+    expect(r.forecast_this_month_std).toBeLessThan(600);
+  });
+
+  it("contributes 0 variance when thisMonth = 0 (deeply underwater, no path)", () => {
+    // Deeply-underwater cross-month CSP: p < -0.20 → realizationThisMonth = 0.
+    // Such positions shouldn't inflate the CI — their outcome this month is
+    // known to be ~$0 (they will not early-close).
+    const occ = "DUMP260619P00100000";
+    const r = computePipelineForecast({
+      openPositions: [
+        { ticker: "DUMP", type: "CSP", strike: 100, contracts: 10, expiry_date: "2026-06-19", premium_collected: 1000 },
+      ],
+      costBasisByTicker: {},
+      quoteBySymbol: { DUMP: { mid: 80 }, [occ]: { mid: 2.0 } },  // premium/share = 1.0, mid = 2.0 → -100% profit
+      calibration: cal,
+      calibrationStd: { csp: { profit_low_dte_high: 0.2 } },
+      mtdRealized: 0,
+      monthlyTarget: 15000,
+      today,
+    });
+    expect(r.forecast_this_month_std).toBe(0);
   });
 });
 
