@@ -21,6 +21,27 @@ import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
+import {
+  computePipelineForecast,
+  buildOccForPosition,
+} from "../src/lib/pipelineForecast.js";
+
+// Monthly income baseline — used as the target the v2 forecast is compared against.
+const MONTHLY_TARGET = 15000;
+
+// ── Cost basis helpers (duplicated from api/roll-analysis.js for now) ────────
+function parseSharesFromDescription(description) {
+  if (!description) return 0;
+  const withoutPrices = String(description).replace(/\$[\d,.]+/g, "");
+  const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
+  return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+}
+function getCostBasisPerShare(lots) {
+  const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
+  const totalShares  = lots.reduce((sum, lot) => sum + parseSharesFromDescription(lot.description), 0);
+  if (!totalShares) return null;
+  return Math.round((totalFronted / totalShares) * 100) / 100;
+}
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -149,8 +170,56 @@ export default async function handler(req, res) {
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
   );
+  // Legacy flat-60% — retained for 30-day backcompat per spec §Implementation Note 9.
   const openPremiumExpected  = Math.round(openPremiumGross * 0.60);
   const pipelineImplied      = mtdPremium + openPremiumExpected;
+
+  // 7b. v2 pipeline forecast — position-type-aware capture curves + calendar-month timing.
+  // Loads quotes + forecast_calibration in parallel. Fails silently (logs + null-fills)
+  // so a v2-forecast failure never blocks the snapshot write.
+  let forecastV2 = null;
+  let positionStatesForWrite = [];
+  try {
+    const [quotesResult, calibrationResult] = await Promise.all([
+      supabase.from("quotes").select("symbol, mid, last, bid, ask"),
+      supabase.from("forecast_calibration")
+        .select("position_type, bucket, calibrated_capture, calibration_date")
+        .order("calibration_date", { ascending: false }),
+    ]);
+    const quoteBySymbol = {};
+    for (const q of (quotesResult.data || [])) quoteBySymbol[q.symbol] = q;
+
+    // Keep only the most recent row per (position_type, bucket)
+    const calibration = { csp: {}, cc: {} };
+    const seen = new Set();
+    for (const row of (calibrationResult.data || [])) {
+      const key = `${row.position_type}.${row.bucket}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      calibration[row.position_type][row.bucket] = Number(row.calibrated_capture);
+    }
+
+    // Build costBasisByTicker from assigned_shares rows (lots JSONB)
+    const costBasisByTicker = {};
+    for (const s of assignedShares) {
+      const cb = getCostBasisPerShare(s.lots || []);
+      if (cb) costBasisByTicker[s.ticker] = cb;
+    }
+
+    const todayDate = new Date(`${today}T00:00:00Z`);
+    forecastV2 = computePipelineForecast({
+      openPositions:     [...openCSPs, ...openCCs],
+      costBasisByTicker,
+      quoteBySymbol,
+      calibration,
+      mtdRealized:       mtdPremium,
+      monthlyTarget:     MONTHLY_TARGET,
+      today:             todayDate,
+    });
+    positionStatesForWrite = forecastV2.per_position;
+  } catch (v2Err) {
+    console.error("[api/snapshot] v2 forecast failed (non-blocking):", v2Err);
+  }
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
@@ -185,6 +254,16 @@ export default async function handler(req, res) {
     open_premium_gross:        openPremiumGross,
     open_premium_expected:     openPremiumExpected,
     pipeline_implied_monthly:  pipelineImplied,
+    // v2 forecast fields — null-filled if v2 computation failed
+    forecast_realized_to_date:     forecastV2?.forecast_realized_to_date      ?? null,
+    forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining  ?? null,
+    forecast_month_total:          forecastV2?.forecast_month_total           ?? null,
+    forecast_target_gap:           forecastV2?.forecast_target_gap            ?? null,
+    forward_pipeline_premium:      forecastV2?.forward_pipeline_premium       ?? null,
+    csp_pipeline_premium:          forecastV2?.csp_pipeline_premium           ?? null,
+    cc_pipeline_premium:           forecastV2?.cc_pipeline_premium            ?? null,
+    below_cost_cc_premium:         forecastV2?.below_cost_cc_premium          ?? null,
+    pipeline_phase:                forecastV2?.pipeline_phase                 ?? null,
     ticker_allocations:        tickerAllocations,
     any_ticker_above_10pct:    anyAbove10,
     any_ticker_above_15pct:    anyAbove15,
@@ -201,6 +280,47 @@ export default async function handler(req, res) {
   if (error) {
     console.error("[api/snapshot] Snapshot write failed:", error);
     return res.status(500).json({ error: error.message });
+  }
+
+  // 9b. Write position_daily_state rows — one per open CSP/CC position.
+  // Enables trajectory-based calibration once 3+ months accumulates.
+  // See docs/pipeline_forecast_v2_backtest.md §Structural fix.
+  if (positionStatesForWrite.length > 0) {
+    try {
+      const stateRows = positionStatesForWrite.map(({ state, bucket, capturePct }) => {
+        const key = [state.ticker, state.type, state.strike, state.expiry?.toISOString().slice(0, 10)].join('|');
+        const costBasis = state.costBasis ?? null;
+        const isBelowCost = state.type === 'cc' && costBasis != null && state.strike != null
+          ? state.strike < costBasis
+          : null;
+        const distToStrike = (state.type === 'cc' && state.stockPrice && state.strike)
+          ? (state.strike - state.stockPrice) / state.strike
+          : null;
+        return {
+          snapshot_date:          today,
+          position_key:           key,
+          ticker:                 state.ticker,
+          position_type:          state.type,
+          strike:                 state.strike ?? null,
+          expiry:                 state.expiry ? state.expiry.toISOString().slice(0, 10) : null,
+          contracts:              state.contracts ?? null,
+          premium_at_open:        state.premiumAtOpen ?? null,
+          current_profit_pct:     state.currentProfitPct ?? null,
+          dte:                    state.dte ?? null,
+          stock_price:            state.stockPrice ?? null,
+          cost_basis:             costBasis,
+          is_below_cost:          isBelowCost,
+          position_pnl:           state.positionPnl ?? null,
+          distance_to_strike_pct: distToStrike,
+        };
+      });
+      const { error: stateErr } = await supabase
+        .from("position_daily_state")
+        .upsert(stateRows, { onConflict: "snapshot_date,position_key" });
+      if (stateErr) console.error("[api/snapshot] position_daily_state write failed:", stateErr);
+    } catch (stateErr) {
+      console.error("[api/snapshot] position_daily_state unexpected error:", stateErr);
+    }
   }
 
   // 10. Fetch macro signals and write to macro_snapshots
@@ -262,6 +382,13 @@ export default async function handler(req, res) {
     within_band: withinBand,
     mtd_premium: mtdPremium,
     pipeline_implied: pipelineImplied,
+    forecast_v2: forecastV2 ? {
+      month_total:   forecastV2.forecast_month_total,
+      target_gap:    forecastV2.forecast_target_gap,
+      forward:       forecastV2.forward_pipeline_premium,
+      phase:         forecastV2.pipeline_phase,
+      positions:     forecastV2.per_position.length,
+    } : null,
     notifications,
   });
 }
