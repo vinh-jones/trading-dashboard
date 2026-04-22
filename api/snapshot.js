@@ -242,6 +242,7 @@ export default async function handler(req, res) {
       mtdRealized:       mtdPremium,
       monthlyTarget:     MONTHLY_TARGETS.baseline,
       today:             todayDate,
+      vix,
     });
     positionStatesForWrite = forecastV2.per_position;
   } catch (v2Err) {

@@ -1,5 +1,12 @@
 import { T } from "../../theme.js";
 import { byExpiry, byType, sortedPositions, bucketLabel } from "../../../lib/pipelineDetail.js";
+import { vixRegimeMultiplier } from "../../../lib/pipelineForecast.js";
+
+const CI_LEVELS = [
+  { label: "60%", z: 0.84 },
+  { label: "80%", z: 1.28 },
+  { label: "90%", z: 1.64 },
+];
 
 function fmt$(n) {
   if (n == null || !isFinite(n)) return "—";
@@ -53,6 +60,9 @@ export function PipelineDetailPanel({ account }) {
           ["Below-cost CC",        fc.below_cost_cc_premium > 0 ? fmt$(fc.below_cost_cc_premium) : "none"],
         ]} />
       </div>
+
+      {/* Forecast Confidence — 60/80/90% CIs */}
+      <ForecastConfidenceBlock fc={fc} account={account} />
 
       {/* By-expiry */}
       <SectionHeader>By Expiry</SectionHeader>
@@ -124,6 +134,46 @@ export function PipelineDetailPanel({ account }) {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ForecastConfidenceBlock({ fc, account }) {
+  const std    = fc?.this_month_std ?? null;
+  const mean   = fc?.month_total ?? null;
+  const vix    = account?.vix_current ?? null;
+  const vixMul = vixRegimeMultiplier(vix);
+
+  if (std == null || !isFinite(std) || std <= 0 || mean == null) return null;
+
+  return (
+    <div style={{ marginBottom: 14, padding: 10, background: T.surf, border: `1px solid ${T.bd}`, borderRadius: T.rSm, fontFamily: T.mono }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+        <div style={{ fontSize: T.xs, color: T.tm, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+          Forecast Confidence · Implied month total
+        </div>
+        <div style={{ fontSize: T.xs, color: T.ts }}>
+          VIX {vix != null ? vix.toFixed(1) : "—"} · regime ×{vixMul.toFixed(2)} · σ ${Math.round(std).toLocaleString()}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${CI_LEVELS.length}, 1fr)`, gap: 10 }}>
+        {CI_LEVELS.map(({ label, z }) => {
+          const halfWidth = z * std;
+          const lo = mean - halfWidth;
+          const hi = mean + halfWidth;
+          return (
+            <div key={label} style={{ padding: 8, background: T.bg, border: `1px solid ${T.bd}`, borderRadius: T.rSm }}>
+              <div style={{ fontSize: T.xs, color: T.ts, marginBottom: 3 }}>{label} CI</div>
+              <div style={{ fontSize: T.md, color: T.t1 }}>
+                ${Math.round(lo).toLocaleString()} – ${Math.round(hi).toLocaleString()}
+              </div>
+              <div style={{ fontSize: T.xs, color: T.tm, marginTop: 2 }}>
+                ±${Math.round(halfWidth).toLocaleString()}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -1,6 +1,16 @@
 import { theme } from "../lib/theme";
 import { formatDollarsFull, formatDollars } from "../lib/format";
 import { byExpiry, byType, sortedPositions, bucketLabel } from "../lib/pipelineDetail";
+import { vixRegimeMultiplier } from "../lib/pipelineForecast";
+
+// Normal-distribution z-scores for CI ranges. Used only for display on the
+// Pipeline Detail page — main dashboard sticks to 80% CI (see ReviewSurface /
+// CalendarTab pipeline summary).
+const CI_LEVELS = [
+  { label: "60%", z: 0.84 },
+  { label: "80%", z: 1.28 },
+  { label: "90%", z: 1.64 },
+];
 
 function fmtPct(p) {
   return p == null ? "—" : `${(p * 100).toFixed(0)}%`;
@@ -50,6 +60,9 @@ export function PipelineDetailPanel({ account }) {
           ["Below-cost CC",        fc.below_cost_cc_premium > 0 ? formatDollars(fc.below_cost_cc_premium) : "none"],
         ]} />
       </div>
+
+      {/* Forecast Confidence — 60/80/90% CIs around this-month estimate */}
+      <ForecastConfidenceBlock fc={fc} account={account} />
 
       {/* By-expiry breakdown */}
       <div style={{ marginBottom: theme.space[4] }}>
@@ -127,6 +140,46 @@ export function PipelineDetailPanel({ account }) {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ForecastConfidenceBlock({ fc, account }) {
+  const std    = fc?.this_month_std ?? null;
+  const mean   = fc?.month_total ?? null;
+  const vix    = account?.vix_current ?? null;
+  const vixMul = vixRegimeMultiplier(vix);
+
+  if (std == null || !isFinite(std) || std <= 0 || mean == null) return null;
+
+  return (
+    <div style={{ marginBottom: theme.space[4], padding: theme.space[3], background: theme.bg.surface, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: theme.space[2] }}>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+          Forecast Confidence · Implied month total
+        </div>
+        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, fontFamily: "monospace" }}>
+          VIX {vix != null ? vix.toFixed(1) : "—"} · regime ×{vixMul.toFixed(2)} · σ {formatDollars(Math.round(std))}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${CI_LEVELS.length}, 1fr)`, gap: theme.space[3] }}>
+        {CI_LEVELS.map(({ label, z }) => {
+          const halfWidth = z * std;
+          const lo = mean - halfWidth;
+          const hi = mean + halfWidth;
+          return (
+            <div key={label} style={{ padding: theme.space[2], background: theme.bg.base, borderRadius: theme.radius.sm, border: `1px solid ${theme.border.default}` }}>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: 4 }}>{label} CI</div>
+              <div style={{ fontSize: theme.size.md, color: theme.text.primary, fontFamily: "monospace" }}>
+                {formatDollars(Math.round(lo))} – {formatDollars(Math.round(hi))}
+              </div>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.muted, fontFamily: "monospace", marginTop: 2 }}>
+                ±{formatDollars(Math.round(halfWidth))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

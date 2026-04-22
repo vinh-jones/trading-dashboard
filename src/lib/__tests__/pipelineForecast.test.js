@@ -7,6 +7,7 @@ import {
   realizationThisMonth,
   computePipelineForecast,
   buildOccForPosition,
+  vixRegimeMultiplier,
   SPEC_STARTING_VALUES,
 } from "../pipelineForecast.js";
 import { buildOccSymbol } from "../trading.js";
@@ -313,6 +314,118 @@ describe("forecast uncertainty (this_month_std)", () => {
       today,
     });
     expect(r.forecast_this_month_std).toBe(0);
+  });
+});
+
+describe("vixRegimeMultiplier", () => {
+  it("returns 1.15 for VIX < 18 (complacency)", () => {
+    expect(vixRegimeMultiplier(15)).toBe(1.15);
+    expect(vixRegimeMultiplier(17.99)).toBe(1.15);
+  });
+  it("returns 1.00 for VIX 18–25 (normal)", () => {
+    expect(vixRegimeMultiplier(18)).toBe(1.00);
+    expect(vixRegimeMultiplier(22)).toBe(1.00);
+    expect(vixRegimeMultiplier(24.99)).toBe(1.00);
+  });
+  it("returns 0.80 for VIX 25–30 (elevated)", () => {
+    expect(vixRegimeMultiplier(25)).toBe(0.80);
+    expect(vixRegimeMultiplier(29.99)).toBe(0.80);
+  });
+  it("returns 0.60 for VIX ≥ 30 (fear)", () => {
+    expect(vixRegimeMultiplier(30)).toBe(0.60);
+    expect(vixRegimeMultiplier(45)).toBe(0.60);
+  });
+  it("returns 1.00 for null/missing VIX", () => {
+    expect(vixRegimeMultiplier(null)).toBe(1.00);
+    expect(vixRegimeMultiplier(undefined)).toBe(1.00);
+    expect(vixRegimeMultiplier(NaN)).toBe(1.00);
+  });
+});
+
+describe("realizationThisMonth VIX multiplier", () => {
+  const today = new Date("2026-04-15T00:00:00Z");
+  const cal = { csp: { profit_20_40_dte_high: 0.70 }, cc: { default: 0.75 } };
+
+  it("scales cross-month CSP 20-40% branch by VIX regime", () => {
+    // Cross-month CSP at ~30% profit, dte > 10 → branch factor 0.20
+    const state = {
+      type: "csp",
+      expiry: new Date("2026-06-19T00:00:00Z"),   // cross-month
+      premiumAtOpen: 1000,
+      realizedToDate: 0,
+      currentProfitPct: 0.30,
+      dte: 65,
+    };
+    const remaining = 1000 * 0.70;  // = 700
+    // low VIX → ×1.15
+    expect(realizationThisMonth(state, today, cal, 15)).toBeCloseTo(remaining * 0.20 * 1.15, 2);
+    // normal VIX → ×1.00
+    expect(realizationThisMonth(state, today, cal, 22)).toBeCloseTo(remaining * 0.20 * 1.00, 2);
+    // elevated VIX → ×0.80
+    expect(realizationThisMonth(state, today, cal, 27)).toBeCloseTo(remaining * 0.20 * 0.80, 2);
+    // fear VIX → ×0.60
+    expect(realizationThisMonth(state, today, cal, 35)).toBeCloseTo(remaining * 0.20 * 0.60, 2);
+  });
+
+  it("does NOT scale the near-certainty ≥60% CSP branch by VIX", () => {
+    const state = {
+      type: "csp",
+      expiry: new Date("2026-06-19T00:00:00Z"),
+      premiumAtOpen: 1000,
+      realizedToDate: 0,
+      currentProfitPct: 0.65,
+      dte: 65,
+    };
+    // No cal for profit_60_plus → SPEC 0.60 → remaining = $600
+    const remaining = 1000 * 0.60;
+    expect(realizationThisMonth(state, today, cal, 15)).toBeCloseTo(remaining, 2);
+    expect(realizationThisMonth(state, today, cal, 35)).toBeCloseTo(remaining, 2);
+  });
+
+  it("does NOT scale the near-certainty ≥80% CC branch by VIX", () => {
+    const state = {
+      type: "cc",
+      expiry: new Date("2026-06-19T00:00:00Z"),
+      premiumAtOpen: 1000,
+      realizedToDate: 0,
+      currentProfitPct: 0.85,
+      dte: 65,
+      stockPrice: 20,
+      strike: 25,
+    };
+    // No cal for profit_80_plus → SPEC 0.85 → remaining = $850
+    const remaining = 1000 * 0.85;
+    expect(realizationThisMonth(state, today, cal, 35)).toBeCloseTo(remaining, 2);
+  });
+
+  it("scales CC default-bucket cross-month branch (0.15) by VIX", () => {
+    const state = {
+      type: "cc",
+      expiry: new Date("2026-06-19T00:00:00Z"),
+      premiumAtOpen: 1000,
+      realizedToDate: 0,
+      currentProfitPct: 0.10,  // default bucket
+      dte: 65,
+      stockPrice: 20,
+      strike: 25,
+    };
+    const remaining = 1000 * 0.75;
+    expect(realizationThisMonth(state, today, cal, 15)).toBeCloseTo(remaining * 0.15 * 1.15, 2);
+    expect(realizationThisMonth(state, today, cal, 35)).toBeCloseTo(remaining * 0.15 * 0.60, 2);
+  });
+
+  it("defaults to no VIX scaling when vix is null/omitted", () => {
+    const state = {
+      type: "csp",
+      expiry: new Date("2026-06-19T00:00:00Z"),
+      premiumAtOpen: 1000,
+      realizedToDate: 0,
+      currentProfitPct: 0.30,
+      dte: 65,
+    };
+    const remaining = 1000 * 0.70;
+    expect(realizationThisMonth(state, today, cal)).toBeCloseTo(remaining * 0.20 * 1.00, 2);
+    expect(realizationThisMonth(state, today, cal, null)).toBeCloseTo(remaining * 0.20 * 1.00, 2);
   });
 });
 

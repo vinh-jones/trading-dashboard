@@ -141,6 +141,25 @@ function endOfMonth(d) {
 }
 
 /**
+ * VIX regime multiplier for cross-month early-close probability.
+ *
+ * Low VIX (complacency) → higher early-close probability (people take
+ * profits sooner, option prices collapse faster). High VIX (fear) → lower
+ * early-close probability (positions stuck, IV keeps them expensive).
+ *
+ * Applied only to probabilistic cross-month branches — NOT to the "near-
+ * certainty" branches (≥60% CSP / ≥80% CC) which return full remaining
+ * regardless of regime.
+ */
+export function vixRegimeMultiplier(vix) {
+  if (vix == null || !isFinite(vix)) return 1.00;
+  if (vix < 18) return 1.15;
+  if (vix < 25) return 1.00;
+  if (vix < 30) return 0.80;
+  return 0.60;
+}
+
+/**
  * How much of this position's expected realization lands in the current
  * calendar month, given today's date. For cross-month positions, only the
  * probability-weighted "early close" portion lands now.
@@ -149,8 +168,11 @@ function endOfMonth(d) {
  * deeply underwater) and scaled by remaining window — deeply underwater
  * positions have no realistic path to 60/60 before month-end, so they
  * contribute nothing rather than a flat 5% that overstates attribution.
+ *
+ * VIX regime multiplies the probabilistic branches (not the certainty
+ * branches like ≥60% CSP / ≥80% CC).
  */
-export function realizationThisMonth(state, today, calibration) {
+export function realizationThisMonth(state, today, calibration, vix = null) {
   const remaining = expectedRemainingRealization(state, calibration);
   const eom = endOfMonth(today);
 
@@ -165,22 +187,23 @@ export function realizationThisMonth(state, today, calibration) {
   // surprise closes).
   const daysToEom = Math.max(0, Math.round((eom - today) / (1000 * 60 * 60 * 24)));
   const windowScalar = Math.min(daysToEom / 20, 1);
+  const vixMult = vixRegimeMultiplier(vix);
 
   const p = state.currentProfitPct;
   if (state.type === 'csp') {
     if (p == null) return 0;
-    if (p >= 0.60) return remaining;                        // will close now at 60/60
-    if (p >= 0.40) return remaining * 0.55;                 // might close early
-    if (p >= 0.20) return remaining * 0.20;                 // less likely
-    if (p >= 0)    return remaining * 0.08 * windowScalar;  // mildly profitable, small chance
-    if (p >= -0.20) return remaining * 0.03 * windowScalar; // slightly underwater, unlikely
-    return 0;                                               // deeply underwater, no path
+    if (p >= 0.60) return remaining;                                    // will close now at 60/60 (near-certainty, no VIX mult)
+    if (p >= 0.40) return remaining * 0.55 * vixMult;                   // might close early
+    if (p >= 0.20) return remaining * 0.20 * vixMult;                   // less likely
+    if (p >= 0)    return remaining * 0.08 * windowScalar * vixMult;    // mildly profitable
+    if (p >= -0.20) return remaining * 0.03 * windowScalar * vixMult;   // slightly underwater
+    return 0;                                                           // deeply underwater, no path
   }
   if (state.type === 'cc') {
     if (p == null) return 0;
-    if (p >= 0.80) return remaining;
-    if (p >= 0.60) return remaining * 0.60;
-    return remaining * 0.15;
+    if (p >= 0.80) return remaining;                    // near-certainty, no VIX mult
+    if (p >= 0.60) return remaining * 0.60 * vixMult;
+    return remaining * 0.15 * vixMult;
   }
   return 0;
 }
@@ -297,6 +320,7 @@ export function computePipelineForecast({
   mtdRealized,            // $ already realized this calendar month
   monthlyTarget,          // target $ for the month
   today,                  // Date
+  vix = null,             // VIX level — scales cross-month early-close probability
 }) {
   const perPosition = [];
   let forwardTotal = 0;
@@ -313,7 +337,7 @@ export function computePipelineForecast({
 
     const { bucket, pct } = expectedFinalCapturePct(state, calibration);
     const remaining = expectedRemainingRealization(state, calibration);
-    const thisMonth = realizationThisMonth(state, today, calibration);
+    const thisMonth = realizationThisMonth(state, today, calibration, vix);
 
     // Per-position uncertainty: σ_$ = premium × σ_c (lifetime std). Independence
     // assumed across positions. For cross-month positions, realization is really
@@ -374,6 +398,8 @@ export function computePipelineForecast({
     cc_pipeline_premium:           Math.round(ccPipeline),
     below_cost_cc_premium:         Math.round(belowCostCC),
     pipeline_phase:                phase,
+    forecast_vix:                  vix != null && isFinite(vix) ? Number(vix) : null,
+    forecast_vix_multiplier:       vixRegimeMultiplier(vix),
     per_position:                  perPosition,
   };
 }
