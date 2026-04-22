@@ -4,6 +4,7 @@ import { theme } from "../lib/theme";
 import { OpenPositionsTab } from "./OpenPositionsTab";
 import { RadarTab } from "./RadarTab";
 import { MacroTab } from "./MacroTab";
+import { EarningsTab } from "./EarningsTab";
 
 // Chip-nav button. Active chip gets the blue accent.
 function Chip({ active, onClick, children }) {
@@ -57,6 +58,7 @@ export function ExploreView({ subView, onSubViewChange, positionIntent, onPositi
         />
       )}
       {active === "radar"     && <RadarTab positions={positions} account={account} />}
+      {active === "earnings"  && <EarningsTab positions={positions} account={account} />}
       {active === "macro"     && <MacroTab />}
     </div>
   );
