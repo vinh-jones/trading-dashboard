@@ -168,11 +168,13 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
 }
 
 // ── Path metadata (static, for rendering) ────────────────────────────────────
+// Narrative shape: setup condition → mechanic (strike + delta) → real-behavior
+// anchor via the representative quote on the card.
 export const PATH_META = {
   A: {
     label:       "Avoid Earnings",
     tagline:     "Skip the event entirely",
-    description: "Pre-earnings Friday expiry, strike below the expected lower bound. Play the setup, not the event.",
+    description: "Ryan uses this structure when he likes the ticker's setup but has no strong view on the earnings event itself — a fading name, an upper-band chart, or a position already at allocation target. The expiry is shortened to close before the report, so the trade collects theta without taking any event risk. Strike sits at or below the implied lower bound at 15–20Δ — a normal wheel entry that just happens to dodge the binary.",
     evidence: [
       { trade: "CDE Feb 13",  quote: "I went a bit shorter on expiration to avoid earnings" },
       { trade: "TSM Apr 17",  quote: "Will avoid earnings and free up cash" },
@@ -182,27 +184,27 @@ export const PATH_META = {
   B: {
     label:       "Defensive",
     tagline:     "Outside expected move",
-    description: "Earnings-week expiry, 3–8% below the implied lower bound. Collect IV premium without likely assignment. Only accept assignment at a meaningful discount.",
+    description: "Ryan uses this structure when he likes the name long-term but doesn't want to underwrite the binary move. The strike is placed 3–8% below the market-maker implied lower bound, giving a cushion beyond the expected move in exchange for reduced premium. It's the \"collect IV without inviting assignment\" pattern — typical when IV rank is elevated but conviction on the event outcome is moderate.",
     evidence: [
-      { trade: "LRCX $240p at 16Δ", quote: "Went right outside the expected move for a fun earnings play" },
       { trade: "GLW $136p at 13Δ",  quote: "Solid company. I'm outside of the expected move, but I don't mind getting assigned at these levels" },
+      { trade: "LRCX $240p at 16Δ", quote: "Went right outside the expected move for a fun earnings play" },
       { trade: "STX",               quote: "Take the expected move… go below that. Maybe I'd go to 97 and 1/2" },
     ],
   },
   C: {
     label:       "Standard",
     tagline:     "At expected lower bound",
-    description: "Earnings-week expiry, strike placed right at the market-maker implied lower bound. Happy to be assigned at a discount.",
+    description: "This path places the strike exactly at the market-maker implied lower bound — the level the options market is pricing as a 1σ downside by expiration. Ryan uses it when he's within allocation limits on a name he wants to own long-term and is actively willing to accept assignment at that discount. Delta sits in the 20–25 range, which is where most of his documented earnings-week CSPs cluster.",
     evidence: [
       { trade: "WDC $320p at 20Δ", quote: "20 delta. This put completes my 10% allocation. Happy to get assigned here" },
-      { trade: "AA $62p at 15Δ",   quote: "Went out two weeks for more premium which allowed me to get further away from the stock" },
       { trade: "CLS $275p at 21Δ", quote: "Wanted more delta exposure for CLS earnings as I really like the company" },
+      { trade: "AA $62p at 15Δ",   quote: "Went out two weeks for more premium which allowed me to get further away from the stock" },
     ],
   },
   D: {
     label:       "Aggressive",
     tagline:     "Inside expected move",
-    description: "Earnings-week expiry, strike above the lower bound (closer to current). High-conviction bullish; underweight or fresh-entry names.",
+    description: "The strike is placed above the expected lower bound — closer to current price — which means the trade accepts real assignment risk in exchange for materially higher premium. Ryan reserves this for names where he's underweight, the chart is compressed (at or below the lower Bollinger Band), and he has a specific bullish thesis on the event outcome. Delta runs 25–30+, meaningfully above his standard wheel entries.",
     evidence: [
       { trade: "COHR $300p at 24Δ", quote: "Really aggressive on my strike price here as the stock looks really strong" },
       { trade: "CLS $310p at 26Δ",  quote: "That is why I'm going aggressive on these for earnings" },
