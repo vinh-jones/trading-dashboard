@@ -138,8 +138,32 @@ function ExpectedMovePanel({ em, spot, earningsIso }) {
   );
 }
 
-function ConvictionFactorsPanel({ factors, suggested }) {
-  if (!factors?.length) return null;
+function ConvictionFactorsPanel({ factors, suggested, currentPositions }) {
+  if (!factors?.length && !currentPositions) return null;
+
+  // Build compact position summary lines
+  const posLines = [];
+  if (currentPositions) {
+    const { csps, shares, leaps } = currentPositions;
+    if (csps.length) {
+      const detail = csps.map(c => `$${c.strike}p ${c.expiration ?? c.expiry ?? ""}`.trim()).join(", ");
+      posLines.push(`${csps.length} CSP${csps.length > 1 ? "s" : ""} · ${detail}`);
+    } else {
+      posLines.push("0 CSPs");
+    }
+    if (shares.length) {
+      const sh = shares.reduce((sum, s) => sum + (s.shares || s.quantity || 100), 0);
+      posLines.push(`${sh} sh`);
+    } else {
+      posLines.push("0 sh");
+    }
+    if (leaps.length) {
+      posLines.push(`${leaps.length} LEAP${leaps.length > 1 ? "s" : ""}`);
+    } else {
+      posLines.push("0 LEAPs");
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {factors.map((f, i) => (
@@ -154,16 +178,33 @@ function ConvictionFactorsPanel({ factors, suggested }) {
           <span style={{ color: T.ts, fontSize: T.xs, textAlign: "right" }}>→ {f.suggests}</span>
         </div>
       ))}
-      <div style={{
-        marginTop: 4, padding: "8px 12px",
-        background: T.post + "12", border: `1px solid ${T.post}55`,
-        fontFamily: T.mono, fontSize: T.sm, color: T.t1,
-      }}>
-        <span style={{ color: T.post, letterSpacing: "0.1em", fontSize: T.xs, marginRight: 8 }}>
-          BASED ON SIGNALS:
-        </span>
-        {suggested}
-      </div>
+
+      {posLines.length > 0 && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, alignItems: "baseline",
+          fontFamily: T.mono, fontSize: T.sm,
+          borderTop: factors.length ? `1px solid ${T.hair}` : "none",
+          paddingTop: factors.length ? 10 : 0,
+        }}>
+          <span style={{ color: T.tm, letterSpacing: "0.08em", fontSize: T.xs, textTransform: "uppercase" }}>
+            Current exposure
+          </span>
+          <span style={{ color: T.t1 }}>{posLines.join(" · ")}</span>
+        </div>
+      )}
+
+      {suggested && (
+        <div style={{
+          marginTop: 4, padding: "8px 12px",
+          background: T.post + "12", border: `1px solid ${T.post}55`,
+          fontFamily: T.mono, fontSize: T.sm, color: T.t1,
+        }}>
+          <span style={{ color: T.post, letterSpacing: "0.1em", fontSize: T.xs, marginRight: 8 }}>
+            BASED ON SIGNALS:
+          </span>
+          {suggested}
+        </div>
+      )}
     </div>
   );
 }
@@ -389,6 +430,17 @@ export function EarningsSurface({ positions, account }) {
     bbPosition, ivRank, concentration,
   }), [bbPosition, ivRank, concentration]);
 
+  const currentPositions = useMemo(() => {
+    if (!selected || !positions) return null;
+    const csps   = (positions.open_csps       || []).filter(p => p.ticker === selected);
+    const shares = (positions.assigned_shares  || []).filter(s => s.ticker === selected);
+    const leaps  = [
+      ...(positions.open_leaps || []).filter(l => l.ticker === selected),
+      ...shares.flatMap(s => s.open_leaps || []),
+    ];
+    return { csps, shares, leaps };
+  }, [selected, positions]);
+
   const result = useMemo(() => {
     if (!earningsIso || !selected || !spot) return null;
     const built = buildEarningsPaths({
@@ -453,11 +505,12 @@ export function EarningsSurface({ positions, account }) {
       )}
 
       {/* Conviction factors */}
-      {selected && conv.factors.length > 0 && (
+      {selected && (conv.factors.length > 0 || currentPositions) && (
         <Frame accent="focus" title="CONVICTION FACTORS" subtitle="Decision-support signals, not auto-selection"
           right={<ConvictionPicker value={conviction} onChange={setConviction} />}
         >
-          <ConvictionFactorsPanel factors={conv.factors} suggested={conv.suggested} />
+          <ConvictionFactorsPanel factors={conv.factors} suggested={conv.suggested}
+            currentPositions={currentPositions} />
         </Frame>
       )}
 

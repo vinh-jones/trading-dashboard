@@ -26,4 +26,4 @@ export const MONTHS = [
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const VERSION = "1.73.1";
+export const VERSION = "1.73.2";
