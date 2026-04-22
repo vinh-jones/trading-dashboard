@@ -16,7 +16,13 @@ CREATE INDEX IF NOT EXISTS idx_tag_vocabulary_category
   ON tag_vocabulary(category) WHERE NOT deprecated;
 
 ALTER TABLE tag_vocabulary ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Allow all" ON tag_vocabulary FOR ALL USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'tag_vocabulary' AND policyname = 'Allow all'
+  ) THEN
+    CREATE POLICY "Allow all" ON tag_vocabulary FOR ALL USING (true);
+  END IF;
+END $$;
 
 -- ── 2. Add GIN index to journal_entries.tags (column already exists as text[]) ──
 

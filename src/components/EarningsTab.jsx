@@ -267,9 +267,9 @@ function TickerHistoryPanel({ familiarity, baseline }) {
           </div>
           {(familiarity.lastTrade || familiarity.best) && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: sp[3] }}>
-              {familiarity.lastTrade && <KeyVal k="Last trade" v={`${familiarity.lastTrade.close_date} · ${fmt(familiarity.lastTrade.roi)}`} />}
-              {familiarity.best      && <KeyVal k="Best"       v={`${familiarity.best.close_date} · ${fmt(familiarity.best.roi)}`}       vColor={theme.green} />}
-              {familiarity.worst     && <KeyVal k="Worst"      v={`${familiarity.worst.close_date} · ${fmt(familiarity.worst.roi)}`}     vColor={theme.red} />}
+              {familiarity.lastTrade && <KeyVal k="Last trade" v={`${familiarity.lastTrade.close} · ${fmt(familiarity.lastTrade.roi)}`} />}
+              {familiarity.best      && <KeyVal k="Best"       v={`${familiarity.best.close} · ${fmt(familiarity.best.roi)}`}       vColor={theme.green} />}
+              {familiarity.worst     && <KeyVal k="Worst"      v={`${familiarity.worst.close} · ${fmt(familiarity.worst.roi)}`}     vColor={theme.red} />}
             </div>
           )}
         </div>
@@ -657,22 +657,6 @@ export function EarningsTab({ positions, account, trades }) {
         ) : null
       )}
 
-      {/* Deployment gate */}
-      {selected && <DeploymentGatePanel gate={deploymentGate} />}
-
-      {/* Conviction factors */}
-      {selected && (conv.factors.length > 0 || currentPositions) && (
-        <ConvictionFactorsPanel
-          factors={conv.factors}
-          suggested={conv.suggested}
-          currentPositions={currentPositions}
-          right={<ConvictionPicker value={conviction} onChange={setConviction} />}
-        />
-      )}
-
-      {/* Ticker history */}
-      {selected && <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />}
-
       {/* Four paths */}
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: sp[3] }}>
@@ -722,6 +706,22 @@ export function EarningsTab({ positions, account, trades }) {
           </div>
         </div>
       )}
+
+      {/* Conviction factors */}
+      {selected && (conv.factors.length > 0 || currentPositions) && (
+        <ConvictionFactorsPanel
+          factors={conv.factors}
+          suggested={conv.suggested}
+          currentPositions={currentPositions}
+          right={<ConvictionPicker value={conviction} onChange={setConviction} />}
+        />
+      )}
+
+      {/* Deployment gate */}
+      {selected && <DeploymentGatePanel gate={deploymentGate} />}
+
+      {/* Ticker history */}
+      {selected && <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />}
     </div>
   );
 }

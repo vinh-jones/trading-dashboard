@@ -445,9 +445,9 @@ function TickerHistoryPanel({ familiarity, baseline }) {
       {(best || lastTrade) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10,
                       fontFamily: T.mono, fontSize: T.sm }}>
-          {lastTrade && <KeyVal k="Last trade" v={`${lastTrade.close_date} · ${fmt(lastTrade.roi)}`} />}
-          {best      && <KeyVal k="Best"       v={`${best.close_date} · ${fmt(best.roi)}`}       vColor={T.green} />}
-          {worst     && <KeyVal k="Worst"      v={`${worst.close_date} · ${fmt(worst.roi)}`}     vColor={T.red} />}
+          {lastTrade && <KeyVal k="Last trade" v={`${lastTrade.close} · ${fmt(lastTrade.roi)}`} />}
+          {best      && <KeyVal k="Best"       v={`${best.close} · ${fmt(best.roi)}`}       vColor={T.green} />}
+          {worst     && <KeyVal k="Worst"      v={`${worst.close} · ${fmt(worst.roi)}`}     vColor={T.red} />}
         </div>
       )}
     </div>
@@ -587,30 +587,6 @@ export function EarningsSurface({ positions, account, trades }) {
         </Frame>
       )}
 
-      {/* Deployment gate */}
-      {selected && (
-        <Frame accent="posture" title="DEPLOYMENT GATE" subtitle="VIX-based cash floor check">
-          <DeploymentGatePanel gate={deploymentGate} />
-        </Frame>
-      )}
-
-      {/* Conviction factors */}
-      {selected && (conv.factors.length > 0 || currentPositions) && (
-        <Frame accent="focus" title="CONVICTION FACTORS" subtitle="Decision-support signals, not auto-selection"
-          right={<ConvictionPicker value={conviction} onChange={setConviction} />}
-        >
-          <ConvictionFactorsPanel factors={conv.factors} suggested={conv.suggested}
-            currentPositions={currentPositions} />
-        </Frame>
-      )}
-
-      {/* Ticker history */}
-      {selected && (
-        <Frame accent="quiet" title="TICKER HISTORY" subtitle="Your closed CSPs on this ticker">
-          <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />
-        </Frame>
-      )}
-
       {/* Four paths */}
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -668,6 +644,30 @@ export function EarningsSurface({ positions, account, trades }) {
             })}
           </div>
         </div>
+      )}
+
+      {/* Conviction factors */}
+      {selected && (conv.factors.length > 0 || currentPositions) && (
+        <Frame accent="focus" title="CONVICTION FACTORS" subtitle="Decision-support signals, not auto-selection"
+          right={<ConvictionPicker value={conviction} onChange={setConviction} />}
+        >
+          <ConvictionFactorsPanel factors={conv.factors} suggested={conv.suggested}
+            currentPositions={currentPositions} />
+        </Frame>
+      )}
+
+      {/* Deployment gate */}
+      {selected && (
+        <Frame accent="posture" title="DEPLOYMENT GATE" subtitle="VIX-based cash floor check">
+          <DeploymentGatePanel gate={deploymentGate} />
+        </Frame>
+      )}
+
+      {/* Ticker history */}
+      {selected && (
+        <Frame accent="quiet" title="TICKER HISTORY" subtitle="Your closed CSPs on this ticker">
+          <TickerHistoryPanel familiarity={familiarity} baseline={portfolioBaseline} />
+        </Frame>
       )}
     </div>
   );

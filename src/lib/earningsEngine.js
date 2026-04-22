@@ -108,7 +108,7 @@ export function selectStrikeForPath(pathKey, spot, lowerBound, strikes) {
 // ── Portfolio baseline ────────────────────────────────────────────────────────
 // Computes overall CSP stats across ALL closed trades for comparison baseline.
 export function computePortfolioBaseline(trades) {
-  const csps = (trades || []).filter(t => t.type === "CSP" && t.close_date);
+  const csps = (trades || []).filter(t => t.type === "CSP" && t.closeDate);
   if (!csps.length) return { avgRoi: null, winRate: null, count: 0 };
   const wins   = csps.filter(t => (t.roi ?? 0) > 0);
   const avgRoi = csps.reduce((s, t) => s + (t.roi ?? 0), 0) / csps.length;
@@ -119,13 +119,13 @@ export function computePortfolioBaseline(trades) {
 // Returns per-ticker history stats vs. portfolio baseline.
 export function computeFamiliarity(ticker, trades, portfolioBaseline) {
   if (!ticker || !trades?.length) return null;
-  const csps = trades.filter(t => t.ticker === ticker && t.type === "CSP" && t.close_date);
+  const csps = trades.filter(t => t.ticker === ticker && t.type === "CSP" && t.closeDate);
   if (!csps.length) return { lifetimeCsps: 0, assignments: 0, winRate: null, avgRoi: null, relativeRoi: null, lastTrade: null, best: null, worst: null };
 
   const wins       = csps.filter(t => (t.roi ?? 0) > 0);
   const avgRoi     = csps.reduce((s, t) => s + (t.roi ?? 0), 0) / csps.length;
   const assignments = csps.filter(t => t.subtype === "Assigned").length;
-  const sorted     = [...csps].sort((a, b) => new Date(b.close_date) - new Date(a.close_date));
+  const sorted     = [...csps].sort((a, b) => b.closeDate - a.closeDate);
   const byRoi      = [...csps].sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0));
 
   return {
