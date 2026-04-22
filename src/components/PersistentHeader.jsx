@@ -65,10 +65,12 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
   // ── Pipeline ────────────────────────────────────────────────────────────────
   // Prefer v2 forecast (auto-calibrated per-position capture) when available,
   // fall back to the flat captureRate estimate otherwise.
+  // Show implied month total (mtd + this-month-remaining) to match the Premium
+  // Pipeline card, not forward_pipeline_premium (lifetime forward of all opens).
   const { grossOpenPremium, expectedPipeline: flatExpected, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
-  const v2Forward      = account?.forecast?.forward_pipeline_premium ?? null;
-  const expectedPipeline = v2Forward ?? flatExpected;
-  const pipelineIsV2    = v2Forward != null;
+  const v2MonthTotal    = account?.forecast?.month_total ?? null;
+  const expectedPipeline = v2MonthTotal ?? (mtd + flatExpected);
+  const pipelineIsV2    = v2MonthTotal != null;
 
   // Mobile uses 3 compact slots; desktop uses 5-slot grid.
   const gridCols = isMobile
