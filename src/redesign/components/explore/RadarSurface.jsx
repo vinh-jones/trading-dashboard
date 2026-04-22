@@ -69,10 +69,9 @@ function adaptRow(row, positions, accountValue, earningsMap, bookSet) {
     conc = parseFloat(((committed / accountValue) * 100).toFixed(1));
   }
 
-  // Days until next earnings. Prefer OpenClaw's richer per-ticker data (from
-  // marketContext.positions[].nextEarnings — only held tickers), fall back to
-  // OpenClaw wheel earnings (quotes.earnings_date + earnings_meta) and finally
-  // the Yahoo lazy fallback in /api/wheel-earnings.
+  // Days until next earnings. Prefer marketContext.positions[].nextEarnings
+  // (held tickers, richer Finnhub data), fall back to quotes.earnings_date
+  // (full universe, populated daily by OpenClaw via /api/ingest-wheel-earnings).
   let earn = null;
   let earnHour = null;
   const mcEntry = earningsMap?.[row.ticker];

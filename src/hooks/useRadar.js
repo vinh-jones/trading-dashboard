@@ -7,11 +7,8 @@ export function useRadar() {
   const [error, setError]     = useState(null);
 
   useEffect(() => {
-    // Fire-and-forget BB + wheel-earnings refreshes — don't block on them, but
-    // log failures so stale data isn't silently hidden during debugging. Both
-    // endpoints are idempotent and return cached rows inside their stale window.
+    // Fire-and-forget BB refresh — idempotent, returns cached rows inside stale window.
     fetch("/api/bb").catch(err => console.warn("[useRadar] BB refresh failed:", err));
-    fetch("/api/wheel-earnings").catch(err => console.warn("[useRadar] wheel-earnings refresh failed:", err));
 
     async function fetchData() {
       try {

@@ -49,32 +49,11 @@ function useEarningsUniverse() {
     let alive = true;
     (async () => {
       try {
-        const res  = await fetch("/api/focus-context");
+        const res  = await fetch("/api/earnings-dates");
         const data = await res.json();
         if (!alive) return;
-        if (!data.ok) throw new Error(data.error || "focus-context failed");
-        const today = todayIso();
-        const byTicker = new Map();
-        const upsert = (ticker, date) => {
-          if (!ticker || !date || date < today) return;
-          const prev = byTicker.get(ticker);
-          if (!prev || date < prev) byTicker.set(ticker, date);
-        };
-
-        for (const e of data.marketContext?.macroEvents || []) {
-          if (!(e.eventType || "").toLowerCase().includes("earn")) continue;
-          const d = (e.dateTime || "").slice(0, 10);
-          upsert(e.ticker, d);
-        }
-        for (const p of data.marketContext?.positions || []) {
-          const d = p.nextEarnings?.date?.slice(0, 10);
-          upsert(p.ticker, d);
-        }
-
-        const rows = [...byTicker.entries()]
-          .map(([ticker, date]) => ({ ticker, date }))
-          .sort((a, b) => a.date.localeCompare(b.date) || a.ticker.localeCompare(b.ticker));
-        setState({ loading: false, error: null, rows });
+        if (!data.ok) throw new Error(data.error || "earnings-dates failed");
+        setState({ loading: false, error: null, rows: data.earnings || [] });
       } catch (err) {
         if (alive) setState({ loading: false, error: err.message, rows: [] });
       }
