@@ -29,8 +29,8 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     const TODAY    = new Date().toISOString().slice(0, 10);
 
-    // Fetch all three in parallel
-    const [tradesResult, positionsResult, snapshotResult] = await Promise.all([
+    // Fetch all four in parallel (daily_snapshots carries v2 forecast fields)
+    const [tradesResult, positionsResult, snapshotResult, dailySnapshotResult] = await Promise.all([
       supabase.from("trades").select("*").order("close_date", { ascending: true }),
       supabase.from("positions").select("*").order("ticker"),
       supabase
@@ -39,15 +39,22 @@ export default async function handler(req, res) {
         .order("snapshot_date", { ascending: false })
         .limit(1)
         .single(),
+      supabase
+        .from("daily_snapshots")
+        .select("*")
+        .order("snapshot_date", { ascending: false })
+        .limit(1)
+        .single(),
     ]);
 
     if (tradesResult.error)   throw new Error(`Trades: ${tradesResult.error.message}`);
     if (positionsResult.error) throw new Error(`Positions: ${positionsResult.error.message}`);
-    // snapshotResult.error is allowed (PGRST116 = no rows yet)
+    // snapshotResult.error / dailySnapshotResult.error allowed (PGRST116 = no rows yet)
 
-    const tradeRows    = tradesResult.data   ?? [];
-    const positionRows = positionsResult.data ?? [];
-    const snapshot     = snapshotResult.data  ?? null;
+    const tradeRows     = tradesResult.data        ?? [];
+    const positionRows  = positionsResult.data     ?? [];
+    const snapshot      = snapshotResult.data      ?? null;
+    const dailySnapshot = dailySnapshotResult.data ?? null;
 
     // Map trade rows — shape must match what normalizeTrade() in App.jsx expects
     const trades = tradeRows.map(t => ({
@@ -91,6 +98,19 @@ export default async function handler(req, res) {
       year:                  snapshot.current_year,
       current_month:         snapshot.current_month,
       monthly_targets:       { baseline: 15000, stretch: 25000 },
+      // v2 forecast (from daily_snapshots — null until first snapshot with v2 wiring runs)
+      forecast: dailySnapshot ? {
+        snapshot_date:            dailySnapshot.snapshot_date,
+        realized_to_date:         dailySnapshot.forecast_realized_to_date     ?? null,
+        this_month_remaining:     dailySnapshot.forecast_this_month_remaining ?? null,
+        month_total:              dailySnapshot.forecast_month_total          ?? null,
+        target_gap:               dailySnapshot.forecast_target_gap           ?? null,
+        forward_pipeline_premium: dailySnapshot.forward_pipeline_premium      ?? null,
+        csp_pipeline_premium:     dailySnapshot.csp_pipeline_premium          ?? null,
+        cc_pipeline_premium:      dailySnapshot.cc_pipeline_premium           ?? null,
+        below_cost_cc_premium:    dailySnapshot.below_cost_cc_premium         ?? null,
+        pipeline_phase:           dailySnapshot.pipeline_phase                ?? null,
+      } : null,
       notes:                 "",
     } : null;
 
