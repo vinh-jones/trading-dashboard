@@ -30,7 +30,9 @@ export function PipelineGauge({ account, positions }) {
   const fc = account?.forecast ?? null;
   const thisMonthRemaining = fc?.this_month_remaining ?? flatPipelineEstimate(positions);
   const monthTotal         = fc?.month_total          ?? mtd + thisMonthRemaining;
-  const targetGap          = fc?.target_gap          ?? (base - monthTotal);
+  // v2 convention: target_gap = monthTotal − target (negative = behind).
+  // Fallback (when fc is null) uses the same convention.
+  const targetGap          = fc?.target_gap          ?? (monthTotal - base);
   const forwardPipeline    = fc?.forward_pipeline_premium ?? null;
   const cspPipe            = fc?.csp_pipeline_premium     ?? null;
   const ccPipe             = fc?.cc_pipeline_premium      ?? null;
@@ -103,8 +105,8 @@ export function PipelineGauge({ account, positions }) {
           <Datum label="FORECAST" value={fmtK(monthTotal)}         size={T.md} />
           <Datum
             label="VS TARGET"
-            value={targetGap > 0 ? `↓ ${fmtK(targetGap)}` : targetGap < 0 ? `↑ ${fmtK(-targetGap)}` : "MET ✓"}
-            color={targetGap > 0 ? T.amber : T.green}
+            value={targetGap < 0 ? `↓ ${fmtK(-targetGap)}` : targetGap > 0 ? `↑ ${fmtK(targetGap)}` : "MET ✓"}
+            color={targetGap < 0 ? T.amber : T.green}
             size={T.md}
           />
         </div>

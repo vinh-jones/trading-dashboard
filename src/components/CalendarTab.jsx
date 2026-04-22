@@ -138,11 +138,21 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
   }, [expiryMap, calMonth]);
 
   // Pipeline values for the planning panel
-  const { grossOpenPremium, expectedPipeline, hasPositions: hasPipelinePositions } = calcPipeline(positions, captureRate);
+  const { grossOpenPremium, expectedPipeline: flatExpected, hasPositions: hasPipelinePositions } = calcPipeline(positions, captureRate);
+
+  // Prefer v2 forecast when available; fall back to flat captureRate.
+  // expectedPipeline here means "what lands in the current month" — maps to v2's this_month_remaining.
+  const fc = account?.forecast ?? null;
+  const v2ThisMonth = fc?.this_month_remaining ?? null;
+  const v2Forward   = fc?.forward_pipeline_premium ?? null;
+  const pipelineIsV2 = v2ThisMonth != null;
+  const expectedPipeline = v2ThisMonth ?? flatExpected;
   const mtdCollected      = account?.month_to_date_premium ?? 0;
   const pipelineBaseline  = account?.monthly_targets?.baseline ?? 15000;
-  const impliedTotal      = mtdCollected + expectedPipeline;
-  const gapToBaseline     = pipelineBaseline - impliedTotal;
+  const impliedTotal      = fc?.month_total ?? mtdCollected + expectedPipeline;
+  // Legacy convention: gapToBaseline positive when behind target.
+  // v2 target_gap is (monthTotal − target), so negate to match.
+  const gapToBaseline     = fc?.target_gap != null ? -fc.target_gap : pipelineBaseline - impliedTotal;
 
   // Unified display: selected day, selected week, or whole month when nothing selected
   const displayClosed = selectedDay
@@ -514,26 +524,34 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
             Premium Pipeline
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[1], fontSize: theme.size.sm, color: theme.text.muted }}>
-            Expected capture:
-            <select
-              value={captureRate}
-              onChange={e => setCaptureRate(parseFloat(e.target.value))}
-              onFocus={e => { e.currentTarget.style.outline = `2px solid ${theme.blue}`; e.currentTarget.style.outlineOffset = "2px"; }}
-              onBlur={e => { e.currentTarget.style.outline = "none"; }}
-              style={{ background: theme.bg.base, border: `1px solid ${theme.border.strong}`, color: theme.text.primary, borderRadius: theme.radius.sm, padding: `${theme.space[1]}px ${theme.space[1]}px`, fontSize: theme.size.sm, fontFamily: "inherit", cursor: "pointer" }}
-            >
-              <option value={0.50}>50%</option>
-              <option value={0.60}>60%</option>
-              <option value={0.70}>70%</option>
-              <option value={0.80}>80%</option>
-            </select>
+            {pipelineIsV2 ? (
+              <span style={{ color: theme.green, fontSize: theme.size.xs, letterSpacing: "0.05em" }} title="v2 per-position auto-calibrated forecast">
+                v2 · auto-calibrated
+              </span>
+            ) : (
+              <>
+                Expected capture:
+                <select
+                  value={captureRate}
+                  onChange={e => setCaptureRate(parseFloat(e.target.value))}
+                  onFocus={e => { e.currentTarget.style.outline = `2px solid ${theme.blue}`; e.currentTarget.style.outlineOffset = "2px"; }}
+                  onBlur={e => { e.currentTarget.style.outline = "none"; }}
+                  style={{ background: theme.bg.base, border: `1px solid ${theme.border.strong}`, color: theme.text.primary, borderRadius: theme.radius.sm, padding: `${theme.space[1]}px ${theme.space[1]}px`, fontSize: theme.size.sm, fontFamily: "inherit", cursor: "pointer" }}
+                >
+                  <option value={0.50}>50%</option>
+                  <option value={0.60}>60%</option>
+                  <option value={0.70}>70%</option>
+                  <option value={0.80}>80%</option>
+                </select>
+              </>
+            )}
           </div>
         </div>
         {hasPipelinePositions ? (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(5, 1fr)", gap: theme.space[4] }}>
             {[
               { label: "Gross open premium",                value: formatDollarsFull(grossOpenPremium), color: theme.text.primary },
-              { label: `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: theme.green },
+              { label: pipelineIsV2 ? "Expected this month (v2)" : `Expected (${Math.round(captureRate * 100)}%)`, value: `~${formatDollarsFull(expectedPipeline)}`, color: theme.green },
               { label: "MTD collected",                     value: formatDollarsFull(mtdCollected), color: theme.text.primary },
               { label: "Implied month total",               value: `~${formatDollarsFull(impliedTotal)}`, color: theme.text.primary },
               {
@@ -554,7 +572,9 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>No open CSPs or CCs — pipeline is empty.</div>
         )}
         <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: theme.space[2] }}>
-          Across all open expirations · assuming {Math.round(captureRate * 100)}% capture on open positions
+          {pipelineIsV2
+            ? `Across all open expirations · v2 per-position capture · forward pipeline ~${formatDollarsFull(v2Forward ?? 0)}`
+            : `Across all open expirations · assuming ${Math.round(captureRate * 100)}% capture on open positions`}
         </div>
       </div>
 

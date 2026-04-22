@@ -63,7 +63,12 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
   const progress = Math.min((mtd / baseline) * 100, 100);
 
   // ── Pipeline ────────────────────────────────────────────────────────────────
-  const { grossOpenPremium, expectedPipeline, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
+  // Prefer v2 forecast (auto-calibrated per-position capture) when available,
+  // fall back to the flat captureRate estimate otherwise.
+  const { grossOpenPremium, expectedPipeline: flatExpected, hasPositions: hasPipeline } = calcPipeline(positions, captureRate);
+  const v2Forward      = account?.forecast?.forward_pipeline_premium ?? null;
+  const expectedPipeline = v2Forward ?? flatExpected;
+  const pipelineIsV2    = v2Forward != null;
 
   // Mobile uses 3 compact slots; desktop uses 5-slot grid.
   const gridCols = isMobile
@@ -173,6 +178,9 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
           {hasPipeline && (
             <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
               Pipeline {formatDollarsFull(grossOpenPremium)} · {formatDollarsFull(expectedPipeline)} est
+              {pipelineIsV2 && (
+                <span style={{ color: theme.green, marginLeft: 4 }} title="v2 auto-calibrated forecast">·v2</span>
+              )}
             </div>
           )}
         </Slot>
