@@ -25,9 +25,7 @@ import {
   computePipelineForecast,
   buildOccForPosition,
 } from "../src/lib/pipelineForecast.js";
-
-// Monthly income baseline — used as the target the v2 forecast is compared against.
-const MONTHLY_TARGET = 15000;
+import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
 
 // ── Cost basis helpers (duplicated from api/roll-analysis.js for now) ────────
 function parseSharesFromDescription(description) {
@@ -41,6 +39,30 @@ function getCostBasisPerShare(lots) {
   const totalShares  = lots.reduce((sum, lot) => sum + parseSharesFromDescription(lot.description), 0);
   if (!totalShares) return null;
   return Math.round((totalFronted / totalShares) * 100) / 100;
+}
+
+// Compact per-position rows for the JSONB column feeding the Pipeline Detail
+// panel. The `state` object is stripped — it's internal to the algorithm and
+// includes things like raw quotes we don't need to persist.
+function serializePerPosition(perPosition) {
+  if (!Array.isArray(perPosition)) return null;
+  return perPosition.map(p => ({
+    ticker:            p.ticker,
+    type:              p.type,
+    strike:            p.strike,
+    expiry:            p.expiry instanceof Date ? p.expiry.toISOString().slice(0, 10) : p.expiry,
+    bucket:            p.bucket,
+    capture_pct:       p.capturePct,
+    premium_at_open:   p.state?.premiumAtOpen ?? null,
+    realized_to_date:  p.state?.realizedToDate ?? null,
+    current_profit_pct:p.state?.currentProfitPct ?? null,
+    dte:               p.state?.dte ?? null,
+    stock_price:       p.state?.stockPrice ?? null,
+    cost_basis:        p.state?.costBasis ?? null,
+    position_pnl:      p.state?.positionPnl ?? null,
+    remaining:         p.remaining,
+    this_month:        p.thisMonth,
+  }));
 }
 
 function getSupabase() {
@@ -213,7 +235,7 @@ export default async function handler(req, res) {
       quoteBySymbol,
       calibration,
       mtdRealized:       mtdPremium,
-      monthlyTarget:     MONTHLY_TARGET,
+      monthlyTarget:     MONTHLY_TARGETS.baseline,
       today:             todayDate,
     });
     positionStatesForWrite = forecastV2.per_position;
@@ -264,6 +286,7 @@ export default async function handler(req, res) {
     cc_pipeline_premium:           forecastV2?.cc_pipeline_premium            ?? null,
     below_cost_cc_premium:         forecastV2?.below_cost_cc_premium          ?? null,
     pipeline_phase:                forecastV2?.pipeline_phase                 ?? null,
+    forecast_per_position:         forecastV2 ? serializePerPosition(forecastV2.per_position) : null,
     ticker_allocations:        tickerAllocations,
     any_ticker_above_10pct:    anyAbove10,
     any_ticker_above_15pct:    anyAbove15,

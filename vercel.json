@@ -11,6 +11,10 @@
     {
       "path": "/api/snapshot",
       "schedule": "30 21 * * 1-5"
+    },
+    {
+      "path": "/api/calibrate-forecast",
+      "schedule": "0 14 1 * *"
     }
   ]
 }

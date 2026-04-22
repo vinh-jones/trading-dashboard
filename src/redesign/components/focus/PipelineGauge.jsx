@@ -118,7 +118,10 @@ export function PipelineGauge({ account, positions }) {
         subtitle={fc ? "v2 forecast · open positions" : "flat-60% estimate"}
         right={
           <button
-            onClick={() => emitGoto("review", "pipeline")}
+            onClick={() => {
+              emitGoto("review", "pipeline");
+              window.dispatchEvent(new CustomEvent("tw-pipeline-detail"));
+            }}
             style={{
               background: "transparent", border: `1px solid ${T.bd}`, color: T.tm,
               padding: "4px 10px", fontSize: 10, letterSpacing: "0.12em",

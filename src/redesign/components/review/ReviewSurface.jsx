@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { T } from "../../theme.js";
 import { Frame, Empty } from "../../primitives.jsx";
 import { JournalSurface } from "./JournalSurface.jsx";
+import { PipelineDetailPanel } from "./PipelineDetailPanel.jsx";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -434,37 +435,69 @@ function MonthCalendar({ monthIdx, trades, selectedDay, setSelectedDay }) {
 
 function PremiumPipeline({ account, positions }) {
   const [captureRate, setCaptureRate] = useState(0.60);
+  const [showDetail, setShowDetail] = useState(false);
 
-  // Gross open premium: sum of open CSP + CC premium_collected (same formula as api/snapshot.js:149)
+  // Listen for external expand request from the Focus PipelineGauge "DETAIL →" button.
+  useEffect(() => {
+    const h = () => setShowDetail(true);
+    window.addEventListener("tw-pipeline-detail", h);
+    return () => window.removeEventListener("tw-pipeline-detail", h);
+  }, []);
+
+  // Gross open premium: sum of open CSP + CC premium_collected.
   const openCSPs = positions?.open_csps ?? [];
   const openCCs  = (positions?.assigned_shares ?? []).filter(s => s.active_cc).map(s => s.active_cc);
   const grossOpen = [...openCSPs, ...openCCs].reduce((s, p) => s + (p.premium_collected || 0), 0);
 
   const mtdCollected = account?.month_to_date_premium     ?? 0;
   const baseline     = account?.monthly_targets?.baseline ?? 15000;
-  const stretch      = account?.monthly_targets?.stretch  ?? 25000;
-  const expected     = grossOpen * captureRate;
-  const implied      = mtdCollected + expected;
-  const gap          = implied - baseline;
+
+  // Prefer v2 forecast when available; fall back to flat captureRate.
+  const fc = account?.forecast ?? null;
+  const pipelineIsV2 = fc?.this_month_remaining != null;
+  const expected  = pipelineIsV2 ? fc.this_month_remaining : grossOpen * captureRate;
+  const implied   = pipelineIsV2 ? fc.month_total          : mtdCollected + expected;
+  const gap       = pipelineIsV2 ? fc.target_gap           : implied - baseline;
+  const v2Forward = fc?.forward_pipeline_premium ?? null;
+
+  const captureLabel = pipelineIsV2 ? "Expected (v2)" : `Expected (${(captureRate*100).toFixed(0)}%)`;
 
   return (
     <Frame accent="quiet" title="PREMIUM PIPELINE" right={
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: T.xs, color: T.tm, fontFamily: T.mono }}>
-        capture:
-        <select value={String(captureRate)} onChange={e => setCaptureRate(parseFloat(e.target.value))} style={{
-          background: T.bg, color: T.t2, border: `1px solid ${T.bd}`,
-          padding: "2px 6px", fontSize: T.xs, fontFamily: T.mono,
-        }}>
-          {["0.40","0.50","0.60","0.70","0.80"].map(v => (
-            <option key={v} value={v}>{(parseFloat(v)*100).toFixed(0)}%</option>
-          ))}
-        </select>
-      </div>
+      pipelineIsV2 ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: T.xs, fontFamily: T.mono }}>
+          <span style={{ color: T.green, letterSpacing: "0.08em" }} title="v2 per-position auto-calibrated forecast">
+            v2 · AUTO
+          </span>
+          <button
+            onClick={() => setShowDetail(v => !v)}
+            style={{
+              background: "transparent", border: `1px solid ${T.bd}`, color: T.tm,
+              padding: "3px 8px", fontSize: T.xs, letterSpacing: "0.12em",
+              fontFamily: T.mono, borderRadius: T.rSm, cursor: "pointer",
+            }}
+          >
+            {showDetail ? "HIDE DETAIL" : "PIPELINE DETAIL →"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: T.xs, color: T.tm, fontFamily: T.mono }}>
+          capture:
+          <select value={String(captureRate)} onChange={e => setCaptureRate(parseFloat(e.target.value))} style={{
+            background: T.bg, color: T.t2, border: `1px solid ${T.bd}`,
+            padding: "2px 6px", fontSize: T.xs, fontFamily: T.mono,
+          }}>
+            {["0.40","0.50","0.60","0.70","0.80"].map(v => (
+              <option key={v} value={v}>{(parseFloat(v)*100).toFixed(0)}%</option>
+            ))}
+          </select>
+        </div>
+      )
     }>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
         {[
           { label: "Gross open",     value: fmt$full(grossOpen) },
-          { label: `Expected (${(captureRate*100).toFixed(0)}%)`, value: `~${fmt$full(expected)}` },
+          { label: captureLabel,     value: `~${fmt$full(expected)}` },
           { label: "MTD collected",  value: fmt$full(mtdCollected) },
           { label: "Implied total",  value: `~${fmt$full(implied)}` },
           { label: "Gap to baseline",value: (
@@ -480,6 +513,17 @@ function PremiumPipeline({ account, positions }) {
           </div>
         ))}
       </div>
+
+      {pipelineIsV2 && fc?.calibration && (
+        <div style={{ fontSize: T.xs, color: T.tf, marginTop: 10, fontFamily: T.mono }}>
+          calibrated {fc.calibration.calibration_date} · n={fc.calibration.sample_size}
+          {v2Forward != null && <> · forward pipeline ~{fmt$full(v2Forward)}</>}
+        </div>
+      )}
+
+      {pipelineIsV2 && showDetail && (
+        <PipelineDetailPanel account={account} positions={positions} />
+      )}
     </Frame>
   );
 }

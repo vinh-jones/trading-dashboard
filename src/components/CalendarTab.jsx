@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { getPipelineDetailOpen, setPipelineDetailOpen } from "../lib/pipelineDetailToggle";
 import { useData } from "../hooks/useData";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { formatDollars, formatDollarsFull } from "../lib/format";
@@ -7,6 +8,7 @@ import { getCalendarWeeks } from "../lib/calendar";
 import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS, DAY_NAMES } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { CalendarDetailPanel } from "./CalendarDetailPanel";
+import { PipelineDetailPanel } from "./PipelineDetailPanel";
 
 export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay, captureRate, setCaptureRate }) {
   const { trades: TRADES, positions, account, deleteTrade } = useData();
@@ -15,6 +17,14 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
   const [selectedWeek, setSelectedWeek] = useState(null); // null or week index (0-4)
   const [expandedWeek, setExpandedWeek] = useState(null); // mobile: which week row is expanded
   const [filtersOpen, setFiltersOpen] = useState(false); // mobile: type filter drawer
+  const [showPipelineDetail, setShowPipelineDetail] = useState(() => getPipelineDetailOpen());
+
+  useEffect(() => { setPipelineDetailOpen(showPipelineDetail); }, [showPipelineDetail]);
+  useEffect(() => {
+    const h = () => setShowPipelineDetail(true);
+    window.addEventListener("tw-pipeline-detail", h);
+    return () => window.removeEventListener("tw-pipeline-detail", h);
+  }, []);
 
   const monthInfo = MONTHS[calMonth];
 
@@ -523,11 +533,29 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
             Premium Pipeline
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: theme.space[1], fontSize: theme.size.sm, color: theme.text.muted }}>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], fontSize: theme.size.sm, color: theme.text.muted }}>
             {pipelineIsV2 ? (
-              <span style={{ color: theme.green, fontSize: theme.size.xs, letterSpacing: "0.05em" }} title="v2 per-position auto-calibrated forecast">
-                v2 · auto-calibrated
-              </span>
+              <>
+                <span style={{ color: theme.green, fontSize: theme.size.xs, letterSpacing: "0.05em" }} title="v2 per-position auto-calibrated forecast">
+                  v2 · auto-calibrated
+                </span>
+                <button
+                  onClick={() => setShowPipelineDetail(v => !v)}
+                  style={{
+                    background: "transparent",
+                    border: `1px solid ${theme.border.strong}`,
+                    color: theme.text.secondary,
+                    padding: `${theme.space[1]}px ${theme.space[2]}px`,
+                    fontSize: theme.size.xs,
+                    borderRadius: theme.radius.sm,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {showPipelineDetail ? "Hide detail" : "Pipeline detail →"}
+                </button>
+              </>
             ) : (
               <>
                 Expected capture:
@@ -573,9 +601,19 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
         )}
         <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: theme.space[2] }}>
           {pipelineIsV2
-            ? `Across all open expirations · v2 per-position capture · forward pipeline ~${formatDollarsFull(v2Forward ?? 0)}`
+            ? (
+              <>
+                Across all open expirations · v2 per-position capture · forward pipeline ~{formatDollarsFull(v2Forward ?? 0)}
+                {fc?.calibration && (
+                  <span style={{ marginLeft: 8, color: theme.text.subtle }}>
+                    · calibrated {fc.calibration.calibration_date} · n={fc.calibration.sample_size}
+                  </span>
+                )}
+              </>
+            )
             : `Across all open expirations · assuming ${Math.round(captureRate * 100)}% capture on open positions`}
         </div>
+        {pipelineIsV2 && showPipelineDetail && <PipelineDetailPanel account={account} />}
       </div>
 
       {/* Month selector + monthly total */}

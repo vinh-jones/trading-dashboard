@@ -11,6 +11,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
+import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
@@ -29,8 +30,9 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     const TODAY    = new Date().toISOString().slice(0, 10);
 
-    // Fetch all four in parallel (daily_snapshots carries v2 forecast fields)
-    const [tradesResult, positionsResult, snapshotResult, dailySnapshotResult] = await Promise.all([
+    // Fetch in parallel (daily_snapshots carries v2 forecast fields,
+    // forecast_calibration surfaces the most-recent calibration stamp).
+    const [tradesResult, positionsResult, snapshotResult, dailySnapshotResult, calibrationResult] = await Promise.all([
       supabase.from("trades").select("*").order("close_date", { ascending: true }),
       supabase.from("positions").select("*").order("ticker"),
       supabase
@@ -45,6 +47,10 @@ export default async function handler(req, res) {
         .order("snapshot_date", { ascending: false })
         .limit(1)
         .single(),
+      supabase
+        .from("forecast_calibration")
+        .select("calibration_date, sample_size")
+        .order("calibration_date", { ascending: false }),
     ]);
 
     if (tradesResult.error)   throw new Error(`Trades: ${tradesResult.error.message}`);
@@ -55,6 +61,20 @@ export default async function handler(req, res) {
     const positionRows  = positionsResult.data     ?? [];
     const snapshot      = snapshotResult.data      ?? null;
     const dailySnapshot = dailySnapshotResult.data ?? null;
+    const calibrationRows = calibrationResult.data ?? [];
+
+    // Calibration meta: most-recent calibration_date across all buckets + total
+    // sample size across rows from that date. Shown as a footnote in the UI.
+    const calibrationMeta = calibrationRows.length > 0 ? (() => {
+      const latestDate = calibrationRows[0].calibration_date;
+      const sameDate = calibrationRows.filter(r => r.calibration_date === latestDate);
+      const totalSamples = sameDate.reduce((s, r) => s + (r.sample_size ?? 0), 0);
+      return {
+        calibration_date: latestDate,
+        sample_size:      totalSamples,
+        bucket_count:     sameDate.length,
+      };
+    })() : null;
 
     // Map trade rows — shape must match what normalizeTrade() in App.jsx expects
     const trades = tradeRows.map(t => ({
@@ -97,7 +117,7 @@ export default async function handler(req, res) {
       month_to_date_premium: snapshot.month_to_date_premium,
       year:                  snapshot.current_year,
       current_month:         snapshot.current_month,
-      monthly_targets:       { baseline: 15000, stretch: 25000 },
+      monthly_targets:       MONTHLY_TARGETS,
       // v2 forecast (from daily_snapshots — null until first snapshot with v2 wiring runs)
       forecast: dailySnapshot ? {
         snapshot_date:            dailySnapshot.snapshot_date,
@@ -110,6 +130,8 @@ export default async function handler(req, res) {
         cc_pipeline_premium:      dailySnapshot.cc_pipeline_premium           ?? null,
         below_cost_cc_premium:    dailySnapshot.below_cost_cc_premium         ?? null,
         pipeline_phase:           dailySnapshot.pipeline_phase                ?? null,
+        per_position:             dailySnapshot.forecast_per_position         ?? null,
+        calibration:              calibrationMeta,
       } : null,
       notes:                 "",
     } : null;
