@@ -159,10 +159,11 @@ export function realizationThisMonth(state, today, calibration) {
 // ── Position-state derivation ───────────────────────────────────────────────
 
 /**
- * Build an OCC symbol for a position row. Matches the format used by
- * api/_lib/occ.js — simplified inline to avoid import churn.
+ * Build an OCC symbol for a position row. Must match the format written by
+ * api/quotes.js (via api/_lib/occ.js) exactly — otherwise quoteBySymbol
+ * lookups miss and every position falls back to the 60% default.
  *
- * Example: SOFI 2025-11-28 Put $24 → SOFI  251128P00024000
+ * Example: SOFI 2025-11-28 Put $24 → SOFI251128P00024000
  */
 export function buildOccForPosition(row) {
   if (!row?.ticker || !row?.expiry_date || !row?.strike) return null;
@@ -174,8 +175,7 @@ export function buildOccForPosition(row) {
   const cp = row.type === 'CC' ? 'C' : 'P';
   const strikeInt = Math.round(row.strike * 1000);
   const strikeStr = String(strikeInt).padStart(8, '0');
-  const ticker = row.ticker.padEnd(6, ' ');
-  return `${ticker}${yy}${mm}${dd}${cp}${strikeStr}`;
+  return `${row.ticker}${yy}${mm}${dd}${cp}${strikeStr}`;
 }
 
 /**

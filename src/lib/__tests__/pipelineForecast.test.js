@@ -6,8 +6,27 @@ import {
   expectedRemainingRealization,
   realizationThisMonth,
   computePipelineForecast,
+  buildOccForPosition,
   SPEC_STARTING_VALUES,
 } from "../pipelineForecast.js";
+import { buildOccSymbol } from "../trading.js";
+
+describe("buildOccForPosition", () => {
+  it("matches buildOccSymbol (canonical) output — must agree or quote lookups miss", () => {
+    const row = { ticker: "SOFI", expiry_date: "2026-05-01", strike: 24, type: "CSP" };
+    expect(buildOccForPosition(row)).toBe(buildOccSymbol(row.ticker, row.expiry_date, false, row.strike));
+  });
+
+  it("builds un-padded Put symbol", () => {
+    expect(buildOccForPosition({ ticker: "AAPL", expiry_date: "2026-05-01", strike: 180, type: "CSP" }))
+      .toBe("AAPL260501P00180000");
+  });
+
+  it("builds un-padded Call symbol for CC", () => {
+    expect(buildOccForPosition({ ticker: "F", expiry_date: "2026-06-19", strike: 15, type: "CC" }))
+      .toBe("F260619C00015000");
+  });
+});
 
 describe("cspBucket", () => {
   it("routes ≥60% profit to profit_60_plus regardless of DTE", () => {

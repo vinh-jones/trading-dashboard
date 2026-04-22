@@ -8,7 +8,9 @@ function fmtPct(p) {
 function fmtDate(s) {
   if (!s) return "—";
   const d = new Date(`${s}T00:00:00Z`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // Render in UTC so a date-only value (e.g. "2026-05-01") doesn't shift back
+  // a day when the browser is west of UTC.
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 export function PipelineDetailPanel({ account }) {

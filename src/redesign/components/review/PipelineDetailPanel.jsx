@@ -14,7 +14,7 @@ function fmtPct(p) {
 function fmtDate(s) {
   if (!s) return "—";
   const d = new Date(`${s}T00:00:00Z`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 export function PipelineDetailPanel({ account }) {
