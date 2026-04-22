@@ -83,7 +83,6 @@ export function JournalInlineEditForm({ entry, title, onTitleChange, body, onBod
       {/* Tags (trade / position notes) */}
       {!isEOD && (
         <JournalField label="Tags">
-          <TagCategoryLegend />
           <TagInput value={tags} onChange={onTagsChange} vocabulary={vocabulary} />
         </JournalField>
       )}

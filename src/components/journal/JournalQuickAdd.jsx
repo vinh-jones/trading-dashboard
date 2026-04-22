@@ -391,7 +391,6 @@ export function JournalQuickAdd({
             </div>
           </JournalField>
           <JournalField label="Tags">
-            <TagCategoryLegend />
             <TagInput value={formTags} onChange={setFormTags} vocabulary={vocabulary} />
           </JournalField>
           <JournalField label="Notes">
