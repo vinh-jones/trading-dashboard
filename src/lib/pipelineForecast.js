@@ -9,6 +9,63 @@
  * See docs/pipeline_forecast_v2_spec.md and docs/pipeline_forecast_v2_backtest.md.
  */
 
+// ── Tunable parameters (single source of truth) ─────────────────────────────
+//
+// Every magic number used by the forecast lives in FORECAST_PARAMS below. If
+// you want to change the algorithm's behavior — bucket thresholds, VIX regime
+// breakpoints, cross-month attribution weights — change it here, not inline.
+// Each group carries a comment explaining what the numbers mean and the
+// rationale for their current values, so the next person tuning the forecast
+// (including future-you) has the "why" preserved alongside the "what".
+//
+// These are treated as constants, not config — changes should ship with test
+// updates and a pipelineForecast.test.js run to confirm the intended effect.
+export const FORECAST_PARAMS = {
+  // Cap on how negative "expected remaining" can swing, as a fraction of
+  // premium-at-open. Prevents runaway negatives from below-cost CC scenarios.
+  REMAINING_FLOOR_PCT: -0.50,
+
+  // Maximum "window scalar" denominator — cross-month contributions from
+  // underwater CSPs decay linearly as days-to-EOM approaches zero. 20 days is
+  // the full-weight threshold; less → scaled down proportionally.
+  CROSS_MONTH_WINDOW_DAYS: 20,
+
+  // VIX regime multiplier applied to probabilistic cross-month branches.
+  // Low VIX (complacency) → higher early-close probability (profits taken
+  // sooner, IV collapses faster). High VIX (fear) → lower early-close
+  // probability (positions stick, IV keeps them expensive).
+  // Breakpoints form half-open intervals [ , ):  [0,18), [18,25), [25,30), [30,∞).
+  VIX_REGIME_BREAKPOINTS: [18, 25, 30],
+  VIX_REGIME_MULTIPLIERS: [1.15, 1.00, 0.80, 0.60],
+
+  // Cross-month CSP attribution: fraction of remaining realization that lands
+  // in the current calendar month for a CSP that expires later. Tiered by
+  // profit %, scaled by VIX (and by window-scalar for underwater tiers).
+  //  - "certainty" tier (≥60% profit) lands in full regardless of VIX.
+  //  - probabilistic tiers multiply by VIX; deep-profit underwater tiers also
+  //    multiply by window scalar (less window → less chance of surprise close).
+  //  - deeply underwater (< −20%) has no realistic path to close early.
+  CSP_CROSS_MONTH: [
+    // [min profit %, attribution fraction, use window scalar, is certainty]
+    { minProfitPct:  0.60, fraction: 1.00, useWindowScalar: false, certainty: true  },
+    { minProfitPct:  0.40, fraction: 0.55, useWindowScalar: false, certainty: false },
+    { minProfitPct:  0.20, fraction: 0.20, useWindowScalar: false, certainty: false },
+    { minProfitPct:  0.00, fraction: 0.08, useWindowScalar: true,  certainty: false },
+    { minProfitPct: -0.20, fraction: 0.03, useWindowScalar: true,  certainty: false },
+    { minProfitPct: -Infinity, fraction: 0.00, useWindowScalar: false, certainty: false },
+  ],
+
+  // Cross-month CC attribution — two probabilistic tiers + a certainty tier.
+  //  - ≥80% profit: will close at the 80/80 target (certainty, no VIX mult).
+  //  - ≥60% profit: decent chance of close (0.60 × VIX).
+  //  - otherwise: residual chance (0.15 × VIX).
+  CC_CROSS_MONTH: [
+    { minProfitPct:  0.80, fraction: 1.00, certainty: true  },
+    { minProfitPct:  0.60, fraction: 0.60, certainty: false },
+    { minProfitPct: -Infinity, fraction: 0.15, certainty: false },
+  ],
+};
+
 // Spec starting values — used when no row exists in forecast_calibration.
 // Match migration 2026-04-22-forecast-v2-scaffold.sql exactly.
 export const SPEC_STARTING_VALUES = {
@@ -126,9 +183,7 @@ export function expectedRemainingRealization(state, calibration) {
   const total = expectedTotalRealization(state, calibration);
   const already = state.realizedToDate ?? 0;
   const remaining = total - already;
-  // Floor at -50% of premium at open — prevents runaway negatives from
-  // below-cost CC scenarios.
-  const floor = (state.premiumAtOpen ?? 0) * -0.50;
+  const floor = (state.premiumAtOpen ?? 0) * FORECAST_PARAMS.REMAINING_FLOOR_PCT;
   return Math.max(remaining, floor);
 }
 
@@ -153,10 +208,11 @@ function endOfMonth(d) {
  */
 export function vixRegimeMultiplier(vix) {
   if (vix == null || !isFinite(vix)) return 1.00;
-  if (vix < 18) return 1.15;
-  if (vix < 25) return 1.00;
-  if (vix < 30) return 0.80;
-  return 0.60;
+  const { VIX_REGIME_BREAKPOINTS: bps, VIX_REGIME_MULTIPLIERS: mults } = FORECAST_PARAMS;
+  for (let i = 0; i < bps.length; i++) {
+    if (vix < bps[i]) return mults[i];
+  }
+  return mults[bps.length];
 }
 
 /**
@@ -186,24 +242,23 @@ export function realizationThisMonth(state, today, calibration, vix = null) {
   // Cross-month contributions decay as the month progresses (less window for
   // surprise closes).
   const daysToEom = Math.max(0, Math.round((eom - today) / (1000 * 60 * 60 * 24)));
-  const windowScalar = Math.min(daysToEom / 20, 1);
+  const windowScalar = Math.min(daysToEom / FORECAST_PARAMS.CROSS_MONTH_WINDOW_DAYS, 1);
   const vixMult = vixRegimeMultiplier(vix);
 
   const p = state.currentProfitPct;
-  if (state.type === 'csp') {
-    if (p == null) return 0;
-    if (p >= 0.60) return remaining;                                    // will close now at 60/60 (near-certainty, no VIX mult)
-    if (p >= 0.40) return remaining * 0.55 * vixMult;                   // might close early
-    if (p >= 0.20) return remaining * 0.20 * vixMult;                   // less likely
-    if (p >= 0)    return remaining * 0.08 * windowScalar * vixMult;    // mildly profitable
-    if (p >= -0.20) return remaining * 0.03 * windowScalar * vixMult;   // slightly underwater
-    return 0;                                                           // deeply underwater, no path
-  }
-  if (state.type === 'cc') {
-    if (p == null) return 0;
-    if (p >= 0.80) return remaining;                    // near-certainty, no VIX mult
-    if (p >= 0.60) return remaining * 0.60 * vixMult;
-    return remaining * 0.15 * vixMult;
+  if (p == null) return 0;
+
+  const tiers =
+    state.type === 'csp' ? FORECAST_PARAMS.CSP_CROSS_MONTH :
+    state.type === 'cc'  ? FORECAST_PARAMS.CC_CROSS_MONTH  : null;
+  if (!tiers) return 0;
+
+  for (const tier of tiers) {
+    if (p >= tier.minProfitPct) {
+      if (tier.certainty) return remaining;        // near-certainty tiers ignore VIX & window
+      const ws = tier.useWindowScalar ? windowScalar : 1;
+      return remaining * tier.fraction * ws * vixMult;
+    }
   }
   return 0;
 }

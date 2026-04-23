@@ -4,18 +4,19 @@ import { useQuotes } from "../hooks/useQuotes";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { useRollAnalysis } from "../hooks/useRollAnalysis";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
-import { calcDTE, allocColor, buildOccSymbol, parseShareCount } from "../lib/trading";
+import { calcDTE, allocColor, buildOccSymbol } from "../lib/trading";
+import { getOpenLEAPs, getCostBasisPerShare } from "../lib/positionSchema";
+import {
+  shortOptionGlDollars,
+  shortOptionGlPct,
+  leapGlDollars,
+  leapGlPct,
+  dtePctRemaining,
+} from "../lib/positionMetrics";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
 import { SixtyCheck } from "./SixtyCheck";
 import { theme } from "../lib/theme";
-
-function getCostBasisPerShare(lots) {
-  const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
-  const totalShares  = lots.reduce((sum, lot) => sum + parseShareCount(lot.description), 0);
-  if (!totalShares) return null;
-  return totalFronted / totalShares;
-}
 
 // ── Roll Analysis card section ────────────────────────────────────────────────
 
@@ -386,40 +387,27 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
         <tbody>
           {rows.map((pos, i) => {
             const dte = calcDTE(pos.expiry_date);
-
-            let dtePct = null;
-            if (pos.open_date && pos.expiry_date && dte != null) {
-              const totalDays = Math.ceil(
-                (new Date(pos.expiry_date + "T00:00:00") - new Date(pos.open_date + "T00:00:00")) / 86400000
-              );
-              dtePct = totalDays > 0 ? (dte / totalDays) * 100 : 0;
-            }
+            const dtePct = dtePctRemaining({
+              openDateIso:   pos.open_date,
+              expiryDateIso: pos.expiry_date,
+              dte,
+            });
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
               : theme.red;
 
-            // G/L
+            // G/L — dispatch to positionMetrics based on long vs short side.
             let glDollars = null, glPct = null;
             if (pos.expiry_date && pos.strike != null && pos.contracts) {
               const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC || isLeap, pos.strike);
-              const mid = quoteMap.get(sym)?.mid;
-              if (mid != null) {
-                if (isLeap) {
-                  // Long: current value vs cost paid
-                  const cost = pos.capital_fronted;
-                  if (cost) {
-                    glDollars = (mid * pos.contracts * 100) - cost;
-                    glPct     = (glDollars / cost) * 100;
-                  }
-                } else {
-                  // Short (CSP or CC): premium collected vs current cost to close
-                  const premium = pos.premium_collected;
-                  if (premium) {
-                    glDollars = premium - (mid * pos.contracts * 100);
-                    glPct     = (glDollars / premium) * 100;
-                  }
-                }
+              const mid = quoteMap.get(sym)?.mid ?? null;
+              if (isLeap) {
+                glDollars = leapGlDollars({ capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
+                glPct     = leapGlPct({     capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
+              } else {
+                glDollars = shortOptionGlDollars({ premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
+                glPct     = shortOptionGlPct({     premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
               }
             }
             const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
@@ -580,10 +568,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
 
   // ── Derived position lists ────────────────────────────────────────────────
   const open_ccs = assigned_shares.map(pos => pos.active_cc).filter(Boolean);
-  const allOpenLeaps = [
-    ...open_leaps,
-    ...assigned_shares.flatMap(pos => pos.open_leaps ?? []),
-  ];
+  const allOpenLeaps = getOpenLEAPs(positions);
 
   // ── Allocation chart data ─────────────────────────────────────────────────
   const accountValue = account?.account_value || 1;
@@ -784,7 +769,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
               const cc  = pos.active_cc;
               const dte = cc ? calcDTE(cc.expiry_date) : null;
 
-              const costBasisPerShare = getCostBasisPerShare(pos.positions);
+              const costBasisPerShare = getCostBasisPerShare(pos);
               const stockPrice        = quoteMap.get(pos.ticker)?.mid ?? null;
               const rollData          = rollMap[pos.ticker] ?? null;
 

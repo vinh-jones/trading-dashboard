@@ -1,5 +1,6 @@
 import { getVixBand } from "./vixBand.js";
 import { theme } from "./theme.js";
+import { getOpenShorts } from "./positionSchema.js";
 
 // ── Shared parsing helpers ──────────────────────────────────────────────────
 
@@ -117,12 +118,7 @@ export function computeEodMetadata({ freeCashPct, vix, pipelineTotal, mtdRealize
 }
 
 export function calcPipeline(positions, captureRate) {
-  const openPositions = [
-    ...positions.open_csps,
-    ...positions.assigned_shares
-      .filter(s => s.active_cc)
-      .map(s => s.active_cc),
-  ];
+  const openPositions = getOpenShorts(positions);
   const grossOpenPremium = openPositions.reduce((sum, p) => sum + (p.premium_collected || 0), 0);
   const expectedPipeline = Math.round(grossOpenPremium * captureRate);
   return { grossOpenPremium, expectedPipeline, hasPositions: openPositions.length > 0 };

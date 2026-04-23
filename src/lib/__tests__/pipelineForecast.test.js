@@ -9,8 +9,39 @@ import {
   buildOccForPosition,
   vixRegimeMultiplier,
   SPEC_STARTING_VALUES,
+  FORECAST_PARAMS,
 } from "../pipelineForecast.js";
 import { buildOccSymbol } from "../trading.js";
+
+describe("FORECAST_PARAMS — lock-in", () => {
+  // These assertions lock the tunable parameters in place. Change them only
+  // with intent — updating these values is the "I meant to do that" signal
+  // when tuning the forecast algorithm.
+  it("remaining floor is -50% of premium at open", () => {
+    expect(FORECAST_PARAMS.REMAINING_FLOOR_PCT).toBe(-0.50);
+  });
+  it("cross-month window is 20 days", () => {
+    expect(FORECAST_PARAMS.CROSS_MONTH_WINDOW_DAYS).toBe(20);
+  });
+  it("VIX regime breakpoints and multipliers are aligned", () => {
+    expect(FORECAST_PARAMS.VIX_REGIME_BREAKPOINTS).toEqual([18, 25, 30]);
+    expect(FORECAST_PARAMS.VIX_REGIME_MULTIPLIERS).toEqual([1.15, 1.00, 0.80, 0.60]);
+    expect(FORECAST_PARAMS.VIX_REGIME_MULTIPLIERS.length)
+      .toBe(FORECAST_PARAMS.VIX_REGIME_BREAKPOINTS.length + 1);
+  });
+  it("CSP cross-month tiers are sorted descending by profit threshold", () => {
+    const tiers = FORECAST_PARAMS.CSP_CROSS_MONTH;
+    for (let i = 1; i < tiers.length; i++) {
+      expect(tiers[i].minProfitPct).toBeLessThan(tiers[i - 1].minProfitPct);
+    }
+  });
+  it("CC cross-month tiers are sorted descending by profit threshold", () => {
+    const tiers = FORECAST_PARAMS.CC_CROSS_MONTH;
+    for (let i = 1; i < tiers.length; i++) {
+      expect(tiers[i].minProfitPct).toBeLessThan(tiers[i - 1].minProfitPct);
+    }
+  });
+});
 
 describe("buildOccForPosition", () => {
   it("matches buildOccSymbol (canonical) output — must agree or quote lookups miss", () => {
