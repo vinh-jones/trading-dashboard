@@ -12,6 +12,11 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
+import {
+  computeForecastV2,
+  serializePerPosition,
+  buildPositionStateRows,
+} from "./_lib/computeForecastV2.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
@@ -136,7 +141,76 @@ export default async function handler(req, res) {
         .eq("id", upd.id);
     }
 
-    res.status(200).json({ ok: true, tradesCount, positionsCount, journalCreated: toInsert.length, journalUpdated: toUpdate.length });
+    // ── Refresh v2 pipeline forecast on today's daily_snapshots row ─────────
+    // The EOD /api/snapshot cron is the canonical writer of daily_snapshots
+    // (VIX/SPY/QQQ/bands/macro/alerts). Sync only updates forecast fields so
+    // mid-day edits in the sheet re-flow into the dashboard's pipeline
+    // section. Non-blocking — a forecast failure never fails the sync.
+    let forecastRefresh = null;
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const [accountResult, positionsResult] = await Promise.all([
+        supabase.from("account_snapshots")
+          .select("vix_current")
+          .order("snapshot_date", { ascending: false })
+          .limit(1)
+          .single(),
+        supabase.from("positions").select("*"),
+      ]);
+      const vix       = accountResult.data?.vix_current ?? null;
+      const positions = positionsResult.data ?? [];
+
+      const { forecastV2, positionStatesForWrite } = await computeForecastV2({
+        supabase, today, vix, positions,
+      });
+
+      // Narrow update: only v2-forecast columns. Preserves VIX/SPY/QQQ/band
+      // fields written by the EOD cron. If today's row doesn't exist yet
+      // (first sync of the day), upsert a partial row — NOT NULL columns on
+      // daily_snapshots are only `snapshot_date`, so partial inserts are OK.
+      const forecastRow = {
+        snapshot_date:                 today,
+        forecast_realized_to_date:     forecastV2?.forecast_realized_to_date     ?? null,
+        forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining ?? null,
+        forecast_this_month_std:       forecastV2?.forecast_this_month_std       ?? null,
+        forecast_month_total:          forecastV2?.forecast_month_total          ?? null,
+        forecast_target_gap:           forecastV2?.forecast_target_gap           ?? null,
+        forward_pipeline_premium:      forecastV2?.forward_pipeline_premium      ?? null,
+        csp_pipeline_premium:          forecastV2?.csp_pipeline_premium          ?? null,
+        cc_pipeline_premium:           forecastV2?.cc_pipeline_premium           ?? null,
+        below_cost_cc_premium:         forecastV2?.below_cost_cc_premium         ?? null,
+        pipeline_phase:                forecastV2?.pipeline_phase                ?? null,
+        forecast_per_position:         forecastV2 ? serializePerPosition(forecastV2.per_position) : null,
+      };
+      const { error: fcErr } = await supabase
+        .from("daily_snapshots")
+        .upsert(forecastRow, { onConflict: "snapshot_date" });
+      if (fcErr) throw fcErr;
+
+      if (positionStatesForWrite.length > 0) {
+        const stateRows = buildPositionStateRows({ positionStates: positionStatesForWrite, today });
+        const { error: stateErr } = await supabase
+          .from("position_daily_state")
+          .upsert(stateRows, { onConflict: "snapshot_date,position_key" });
+        if (stateErr) console.error("[api/sync] position_daily_state write failed:", stateErr);
+      }
+
+      forecastRefresh = {
+        month_total:  forecastV2?.forecast_month_total     ?? null,
+        forward:      forecastV2?.forward_pipeline_premium ?? null,
+      };
+    } catch (fcErr) {
+      console.error("[api/sync] Forecast refresh failed (non-blocking):", fcErr.message);
+    }
+
+    res.status(200).json({
+      ok: true,
+      tradesCount,
+      positionsCount,
+      journalCreated: toInsert.length,
+      journalUpdated: toUpdate.length,
+      forecastRefresh,
+    });
   } catch (err) {
     console.error("[api/sync] Error:", err.message);
     res.status(500).json({ ok: false, error: err.message });

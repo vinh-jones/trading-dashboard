@@ -22,48 +22,10 @@ import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
 import {
-  computePipelineForecast,
-  buildOccForPosition,
-} from "../src/lib/pipelineForecast.js";
-import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
-
-// ── Cost basis helpers (duplicated from api/roll-analysis.js for now) ────────
-function parseSharesFromDescription(description) {
-  if (!description) return 0;
-  const withoutPrices = String(description).replace(/\$[\d,.]+/g, "");
-  const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
-  return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
-}
-function getCostBasisPerShare(lots) {
-  const totalFronted = lots.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
-  const totalShares  = lots.reduce((sum, lot) => sum + parseSharesFromDescription(lot.description), 0);
-  if (!totalShares) return null;
-  return Math.round((totalFronted / totalShares) * 100) / 100;
-}
-
-// Compact per-position rows for the JSONB column feeding the Pipeline Detail
-// panel. The `state` object is stripped — it's internal to the algorithm and
-// includes things like raw quotes we don't need to persist.
-function serializePerPosition(perPosition) {
-  if (!Array.isArray(perPosition)) return null;
-  return perPosition.map(p => ({
-    ticker:            p.ticker,
-    type:              p.type,
-    strike:            p.strike,
-    expiry:            p.expiry instanceof Date ? p.expiry.toISOString().slice(0, 10) : p.expiry,
-    bucket:            p.bucket,
-    capture_pct:       p.capturePct,
-    premium_at_open:   p.state?.premiumAtOpen ?? null,
-    realized_to_date:  p.state?.realizedToDate ?? null,
-    current_profit_pct:p.state?.currentProfitPct ?? null,
-    dte:               p.state?.dte ?? null,
-    stock_price:       p.state?.stockPrice ?? null,
-    cost_basis:        p.state?.costBasis ?? null,
-    position_pnl:      p.state?.positionPnl ?? null,
-    remaining:         p.remaining,
-    this_month:        p.thisMonth,
-  }));
-}
+  computeForecastV2,
+  serializePerPosition,
+  buildPositionStateRows,
+} from "./_lib/computeForecastV2.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -176,78 +138,36 @@ export default async function handler(req, res) {
     totalDeployed += amount;
   });
 
-  // 6. MTD premium from trades table
-  const monthStart = `${today.slice(0, 7)}-01`;  // YYYY-MM-01
-  const { data: mtdTrades } = await supabase
-    .from("trades")
-    .select("premium_collected")
-    .gte("close_date", monthStart)
-    .lte("close_date", today);
+  // 6. v2 pipeline forecast — position-type-aware capture curves + calendar-month
+  // timing. Also returns mtdPremium (shared with legacy flat-60% pipeline). Fails
+  // silently (logs + null-fills) so a v2-forecast failure never blocks the write.
+  let forecastV2 = null;
+  let positionStatesForWrite = [];
+  let mtdPremium = 0;
+  try {
+    const result = await computeForecastV2({ supabase, today, vix, positions });
+    forecastV2             = result.forecastV2;
+    positionStatesForWrite = result.positionStatesForWrite;
+    mtdPremium             = result.mtdPremium;
+  } catch (v2Err) {
+    console.error("[api/snapshot] v2 forecast failed (non-blocking):", v2Err);
+    // Still compute MTD premium from trades so legacy pipeline fields populate.
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const { data: mtdTrades } = await supabase
+      .from("trades")
+      .select("premium_collected")
+      .gte("close_date", monthStart)
+      .lte("close_date", today);
+    mtdPremium = (mtdTrades || []).reduce((sum, t) => sum + (t.premium_collected || 0), 0);
+  }
 
-  const mtdPremium = (mtdTrades || []).reduce(
-    (sum, t) => sum + (t.premium_collected || 0), 0
-  );
-
-  // 7. Open premium pipeline (CSPs and CCs only)
+  // 7. Open premium pipeline (CSPs and CCs only) — legacy flat-60%
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
   );
-  // Legacy flat-60% — retained for 30-day backcompat per spec §Implementation Note 9.
+  // Retained for 30-day backcompat per spec §Implementation Note 9.
   const openPremiumExpected  = Math.round(openPremiumGross * 0.60);
   const pipelineImplied      = mtdPremium + openPremiumExpected;
-
-  // 7b. v2 pipeline forecast — position-type-aware capture curves + calendar-month timing.
-  // Loads quotes + forecast_calibration in parallel. Fails silently (logs + null-fills)
-  // so a v2-forecast failure never blocks the snapshot write.
-  let forecastV2 = null;
-  let positionStatesForWrite = [];
-  try {
-    const [quotesResult, calibrationResult] = await Promise.all([
-      supabase.from("quotes").select("symbol, mid, last, bid, ask"),
-      supabase.from("forecast_calibration")
-        .select("position_type, bucket, calibrated_capture, calibrated_std, calibration_date")
-        .order("calibration_date", { ascending: false }),
-    ]);
-    const quoteBySymbol = {};
-    for (const q of (quotesResult.data || [])) quoteBySymbol[q.symbol] = q;
-
-    // Keep only the most recent row per (position_type, bucket)
-    const calibration    = { csp: {}, cc: {} };
-    const calibrationStd = { csp: {}, cc: {} };
-    const seen = new Set();
-    for (const row of (calibrationResult.data || [])) {
-      const key = `${row.position_type}.${row.bucket}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      calibration[row.position_type][row.bucket] = Number(row.calibrated_capture);
-      if (row.calibrated_std != null) {
-        calibrationStd[row.position_type][row.bucket] = Number(row.calibrated_std);
-      }
-    }
-
-    // Build costBasisByTicker from assigned_shares rows (lots JSONB)
-    const costBasisByTicker = {};
-    for (const s of assignedShares) {
-      const cb = getCostBasisPerShare(s.lots || []);
-      if (cb) costBasisByTicker[s.ticker] = cb;
-    }
-
-    const todayDate = new Date(`${today}T00:00:00Z`);
-    forecastV2 = computePipelineForecast({
-      openPositions:     [...openCSPs, ...openCCs],
-      costBasisByTicker,
-      quoteBySymbol,
-      calibration,
-      calibrationStd,
-      mtdRealized:       mtdPremium,
-      monthlyTarget:     MONTHLY_TARGETS.baseline,
-      today:             todayDate,
-      vix,
-    });
-    positionStatesForWrite = forecastV2.per_position;
-  } catch (v2Err) {
-    console.error("[api/snapshot] v2 forecast failed (non-blocking):", v2Err);
-  }
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
@@ -317,33 +237,7 @@ export default async function handler(req, res) {
   // See docs/pipeline_forecast_v2_backtest.md §Structural fix.
   if (positionStatesForWrite.length > 0) {
     try {
-      const stateRows = positionStatesForWrite.map(({ state, bucket, capturePct }) => {
-        const key = [state.ticker, state.type, state.strike, state.expiry?.toISOString().slice(0, 10)].join('|');
-        const costBasis = state.costBasis ?? null;
-        const isBelowCost = state.type === 'cc' && costBasis != null && state.strike != null
-          ? state.strike < costBasis
-          : null;
-        const distToStrike = (state.type === 'cc' && state.stockPrice && state.strike)
-          ? (state.strike - state.stockPrice) / state.strike
-          : null;
-        return {
-          snapshot_date:          today,
-          position_key:           key,
-          ticker:                 state.ticker,
-          position_type:          state.type,
-          strike:                 state.strike ?? null,
-          expiry:                 state.expiry ? state.expiry.toISOString().slice(0, 10) : null,
-          contracts:              state.contracts ?? null,
-          premium_at_open:        state.premiumAtOpen ?? null,
-          current_profit_pct:     state.currentProfitPct ?? null,
-          dte:                    state.dte ?? null,
-          stock_price:            state.stockPrice ?? null,
-          cost_basis:             costBasis,
-          is_below_cost:          isBelowCost,
-          position_pnl:           state.positionPnl ?? null,
-          distance_to_strike_pct: distToStrike,
-        };
-      });
+      const stateRows = buildPositionStateRows({ positionStates: positionStatesForWrite, today });
       const { error: stateErr } = await supabase
         .from("position_daily_state")
         .upsert(stateRows, { onConflict: "snapshot_date,position_key" });
