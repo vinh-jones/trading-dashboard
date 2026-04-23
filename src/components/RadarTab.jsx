@@ -613,6 +613,20 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
           {iv_rank != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_rank") }}>
               IVR: {iv_rank.toFixed(1)}
+              {ivTrend?.drift?.detected && (
+                <span
+                  title="IVR reading currently affected by window drift. See expanded panel for detail."
+                  style={{
+                    marginLeft: 4,
+                    color:      theme.text.muted,
+                    cursor:     "help",
+                  }}
+                  tabIndex={0}
+                  aria-label="IV Rank affected by window drift"
+                >
+                  ⓘ
+                </span>
+              )}
             </span>
           )}
           {ivComp != null && (
@@ -842,8 +856,11 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Trend data pending</div>
       )}
 
-      {/* ── IV Trend section — only rendered when non-stable/non-null ── */}
-      {ivTrend && ivTrend.state !== "stable" && (
+      {/* ── IV Trend section ── */}
+      {/* Renders when there's a non-stable trend, insufficient history,
+          or window drift is flagged (drift can coexist with a "stable" label
+          — the COHR case: IVR moved via window roll-off, not a vol event). */}
+      {ivTrend && (ivTrend.state !== "stable" || ivTrend.drift?.detected) && (
         <>
           <div style={sectionLabelStyle}>IV Trend</div>
           {ivTrend.state === "insufficient" ? (
@@ -856,17 +873,48 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
                 {fieldRow("IV Rank today", iv_rank != null ? iv_rank.toFixed(1) : null)}
                 {fieldRow("5-day change", ivTrend.fiveDayChange != null ? `${ivTrend.fiveDayChange > 0 ? "+" : ""}${ivTrend.fiveDayChange.toFixed(1)} pts` : null)}
                 {ivTrend.oneDayChange != null && fieldRow("1-day change", `${ivTrend.oneDayChange > 0 ? "+" : ""}${ivTrend.oneDayChange.toFixed(1)} pts`)}
+                {iv != null && fieldRow("Raw IV", `${(iv * 100).toFixed(0)}%`)}
                 <span style={{ ...monoStyle }}>
                   <span style={{ color: theme.text.subtle }}>State: </span>
                   <span style={{
                     color:      IV_TREND_COLORS[ivTrend.state]?.text ?? theme.text.secondary,
                     fontWeight: 600,
                   }}>
-                    {ivTrend.label}
+                    {ivTrend.label ?? "Stable"}
+                    {ivTrend.drift?.detected && " — window drift detected"}
                   </span>
                   <span style={{ color: theme.text.subtle }}> · {ivTrend.modifier.toFixed(2)}× modifier</span>
                 </span>
               </div>
+              {ivTrend.drift?.detected && (
+                <div style={{
+                  fontSize:     theme.size.sm,
+                  color:        theme.text.secondary,
+                  lineHeight:   1.6,
+                  padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+                  background:   theme.bg.elevated,
+                  borderRadius: theme.radius.sm,
+                  border:       `1px solid ${theme.border.strong}`,
+                  marginBottom: theme.space[2],
+                }}>
+                  <div style={{ fontWeight: 600, color: theme.amber, marginBottom: theme.space[1] }}>
+                    ⚠ IVR reading affected by 52-week window drift
+                  </div>
+                  {ticker}&apos;s IV Rank {ivTrend.drift.direction === "deflated" ? "dropped" : "rose"}{" "}
+                  {Math.abs(ivTrend.drift.ivrChange).toFixed(1)} points over the past {ivTrend.drift.daysAgo} days,
+                  but raw IV has {ivTrend.drift.ivChangeAbsPp < 1 ? "been flat" : `moved only ${ivTrend.drift.ivChangeAbsPp.toFixed(1)}pp`}
+                  {iv != null ? ` (currently ~${(iv * 100).toFixed(0)}%)` : ""} over the same window.
+                  This means an old {ivTrend.drift.direction === "deflated" ? "high" : "low"} IV reading rolled off the 52-week lookback, mechanically{" "}
+                  {ivTrend.drift.direction === "deflated" ? "lowering" : "raising"} the rank without any actual change in option premium.
+                  <div style={{ marginTop: theme.space[2] }}>
+                    <strong style={{ color: theme.text.primary }}>Practical implication:</strong>{" "}
+                    IVR is currently{" "}
+                    {ivTrend.drift.direction === "deflated" ? "understating" : "overstating"}{" "}
+                    premium richness on this ticker. Weight IVR lightly for the next 1–2 weeks as the reading normalizes.
+                    {iv != null && ` Raw IV of ${(iv * 100).toFixed(0)}% is the more reliable signal right now.`}
+                  </div>
+                </div>
+              )}
               {IV_TREND_EXPLANATIONS[ivTrend.state] && (
                 <div style={{
                   fontSize:     theme.size.sm,
@@ -930,6 +978,14 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
               border:       `1px solid ${theme.border.default}`,
             }}>
               {(IV_EXPLANATIONS[ivLabelForTemplate] ?? IV_EXPLANATIONS.Moderate)(ticker, iv, iv_rank, ivComp, vixSentiment)}
+              {ivTrend?.drift?.detected && (
+                <div style={{ marginTop: theme.space[2], color: theme.amber }}>
+                  ⚠ Note: IVR reading currently affected by window drift. See IV Trend
+                  section for context. Raw IV of {(iv * 100).toFixed(0)}% suggests premium is{" "}
+                  {ivTrend.drift.direction === "deflated" ? "richer" : "thinner"} than
+                  the composite score indicates.
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1017,14 +1073,27 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
       {/* ── Scanner Score section ── */}
       <div style={sectionLabelStyle}>Scanner Score</div>
       {score != null && bb_position != null && ivComp != null ? (
-        <ScannerScoreFormula
-          bbPosition={bb_position}
-          ivComp={ivComp}
-          priceTrend={trend}
-          ivTrend={ivTrend}
-          score={score}
-          label={label}
-        />
+        <>
+          <ScannerScoreFormula
+            bbPosition={bb_position}
+            ivComp={ivComp}
+            priceTrend={trend}
+            ivTrend={ivTrend}
+            score={score}
+            label={label}
+          />
+          {ivTrend?.drift?.detected && (
+            <div style={{
+              fontSize:   theme.size.xs,
+              color:      theme.amber,
+              lineHeight: 1.5,
+              marginTop:  theme.space[2],
+            }}>
+              ⚠ IV component may be {ivTrend.drift.direction === "deflated" ? "understating" : "overstating"} premium
+              richness — see IV Trend section
+            </div>
+          )}
+        </>
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>
           Insufficient data to compute score

@@ -7,6 +7,28 @@ import { supabase } from "../lib/supabase";
 // a crush, it's just the ranking denominator shifting.
 const RAW_IV_CRUSH_THRESHOLD = 0.08; // 8 percentage points (e.g. 0.90 → 0.82)
 
+// Window drift thresholds — detects the *inverse* case the crush-gate above
+// filters out: IVR moved a lot but raw IV barely moved at all. That's not a
+// vol event, it's the 52-week high/low rolling off the lookback denominator.
+// We flag it as context only — it does NOT alter the scanner score. See
+// SPEC_IVR_DRIFT_DETECTION.md.
+const IVR_DRIFT_CHANGE_THRESHOLD = 15;   // absolute IVR-point change over 5d
+const IV_STABLE_THRESHOLD        = 0.03; // raw IV decimal — < 3pp = "stable"
+
+function detectIvrWindowDrift(fiveDayChange, fiveDayIvChange) {
+  if (fiveDayChange == null || fiveDayIvChange == null) return { detected: false };
+  const ivrMoved = Math.abs(fiveDayChange)   >= IVR_DRIFT_CHANGE_THRESHOLD;
+  const ivStable = Math.abs(fiveDayIvChange) <  IV_STABLE_THRESHOLD;
+  if (!ivrMoved || !ivStable) return { detected: false };
+  return {
+    detected:      true,
+    direction:     fiveDayChange < 0 ? "deflated" : "inflated",
+    ivrChange:     Math.round(fiveDayChange * 10) / 10,
+    ivChangeAbsPp: Math.round(Math.abs(fiveDayIvChange) * 1000) / 10, // pp
+    daysAgo:       5,
+  };
+}
+
 function computeIvTrend(rows) {
   // rows sorted desc by captured_at (newest first)
   if (rows.length < 3) {
@@ -38,10 +60,16 @@ function computeIvTrend(rows) {
 
   const r1 = v => Math.round(v * 10) / 10;
 
+  // Window drift is orthogonal to the trend state — it can coexist with
+  // "stable" (the COHR case: IVR fell 35pts while raw IV sat flat) or with
+  // rising/falling during partial artifacts. Attach it as a parallel field.
+  const drift = detectIvrWindowDrift(fiveDayChange, fiveDayIvChange);
+
   const base = {
     fiveDayChange: r1(fiveDayChange),
     oneDayChange:  oneDayChange != null ? r1(oneDayChange) : null,
     dataPoints:    rows.length,
+    drift,
   };
 
   if (isSpike && fiveDayChange > 0)                    return { ...base, state: "spiking",    label: "IV Spike ↑",  modifier: 0.85 };
