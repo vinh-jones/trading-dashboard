@@ -323,7 +323,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
           </div>
         )}
 
-        {/* Compact pipeline card — 3 hero numbers only */}
+        {/* Compact pipeline card */}
         {hasPipelinePositions && (
           <div style={{
             padding: `${theme.space[3]}px ${theme.space[4]}px`,
@@ -332,8 +332,28 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
             border: `1px solid ${theme.border.default}`,
             marginBottom: theme.space[4],
           }}>
-            <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[2] }}>
-              Premium Pipeline
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.space[2] }}>
+              <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>
+                Premium Pipeline
+              </div>
+              {pipelineIsV2 && (
+                <button
+                  onClick={() => setShowPipelineDetail(v => !v)}
+                  style={{
+                    background: "transparent",
+                    border: `1px solid ${theme.border.strong}`,
+                    color: theme.text.secondary,
+                    padding: `2px ${theme.space[2]}px`,
+                    fontSize: theme.size.xs,
+                    borderRadius: theme.radius.sm,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {showPipelineDetail ? "Hide detail" : "Detail →"}
+                </button>
+              )}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.space[2] }}>
               {[
@@ -347,6 +367,9 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 </div>
               ))}
             </div>
+            {pipelineIsV2 && showPipelineDetail && (
+              <PipelineDetailPanel account={account} />
+            )}
           </div>
         )}
 

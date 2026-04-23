@@ -40,7 +40,7 @@ export function PipelineDetailPanel({ account }) {
   return (
     <div style={{ marginTop: theme.space[4], padding: theme.space[4], background: theme.bg.base, borderRadius: theme.radius.md, border: `1px solid ${theme.border.default}` }}>
       {/* Three summary blocks — matches spec layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.space[4], marginBottom: theme.space[4] }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: theme.space[4], marginBottom: theme.space[4] }}>
         <SummaryBlock label="Current Month" rows={[
           ["Realized",           formatDollarsFull(fc.realized_to_date ?? 0)],
           ["Expected remaining", `~${formatDollarsFull(fc.this_month_remaining ?? 0)}`],
@@ -163,7 +163,7 @@ function ForecastConfidenceBlock({ fc, account }) {
           VIX {vix != null ? vix.toFixed(1) : "—"} · regime ×{vixMul.toFixed(2)} · σ {formatDollars(Math.round(std))}
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${CI_LEVELS.length}, 1fr)`, gap: theme.space[3] }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: theme.space[3] }}>
         {CI_LEVELS.map(({ label, z }) => {
           const halfWidth = z * std;
           const lo = mean - halfWidth;
