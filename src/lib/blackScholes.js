@@ -1,5 +1,5 @@
 // Black-Scholes option pricing and price target utilities.
-// Pure functions, no imports, no side effects.
+import { targetProfitPctForDtePct } from "./positionAttention.js";
 
 // ~4.5% — approximate current T-bill rate. Review quarterly.
 export const RISK_FREE_RATE = 0.045;
@@ -208,11 +208,8 @@ export function computePriceTargets(position, currentIV, currentStockPrice, curr
   const remainingDTE = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
   const dtePct = originalDTE > 0 ? Math.round((remainingDTE / originalDTE) * 100) : 0;
 
-  // Dynamic profit target based on DTE band
-  let targetProfitPct;
-  if (dtePct > 80)      targetProfitPct = 50;
-  else if (dtePct > 40) targetProfitPct = 60;
-  else                  targetProfitPct = 80;
+  // Dynamic profit target based on DTE band (shared with positionAttention)
+  const targetProfitPct = targetProfitPctForDtePct(dtePct);
 
   // Premium per share
   const premiumPerShare = position.premium_collected / (position.contracts * 100);

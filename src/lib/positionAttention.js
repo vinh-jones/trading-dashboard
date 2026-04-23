@@ -4,16 +4,17 @@ import {
   shortOptionGlPct as _shortOptionGlPct,
   dtePctRemaining,
 } from "./positionMetrics.js";
+import { PROFIT_TIERS } from "./strategyConfig.js";
 
 // ── Target profit % based on how much DTE remains (per user's 60/60 framework) ──
-// >80% of DTE left  → take ~50% profit fast and redeploy
-// 41–79%            → standard 60/60
-// ≤40%              → late stage, take 80%
+// Walks PROFIT_TIERS (sorted by descending minDtePct) and returns the first
+// tier whose threshold the remaining-DTE% exceeds. Last tier acts as floor.
 export function targetProfitPctForDtePct(dtePct) {
   if (dtePct == null) return null;
-  if (dtePct > 80) return 50;
-  if (dtePct > 40) return 60;
-  return 80;
+  for (const tier of PROFIT_TIERS) {
+    if (dtePct > tier.minDtePct) return tier.targetProfitPct;
+  }
+  return PROFIT_TIERS[PROFIT_TIERS.length - 1].targetProfitPct;
 }
 
 // Fraction of the way from 0% G/L to target, clamped to [0, 1]. Null/negative → 0.

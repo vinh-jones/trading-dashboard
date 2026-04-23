@@ -15,6 +15,7 @@ import {
 } from "../lib/positionMetrics";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
+import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { SixtyCheck } from "./SixtyCheck";
 import { theme } from "../lib/theme";
 
@@ -415,7 +416,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
             // Row highlight — CSP/CC profit target or LEAPS management signals
             let rowHighlightColor = null;
             if (!isLeap && glPct != null && dtePct != null) {
-              const targetPct = dtePct > 80 ? 50 : dtePct > 40 ? 60 : 80;
+              const targetPct = targetProfitPctForDtePct(dtePct);
               if (glPct >= targetPct) rowHighlightColor = theme.green;
             } else if (isLeap) {
               if (glPct != null && glPct >= 10) {

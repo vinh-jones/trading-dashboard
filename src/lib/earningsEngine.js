@@ -1,4 +1,11 @@
 import { getVixBand } from "./vixBand.js";
+import {
+  EARNINGS_PATHS,
+  EARNINGS_PATH_SCORING,
+  resolveEarningsPriceTarget,
+  CONVICTION_THRESHOLDS,
+  DEPLOYMENT_GATE_TIGHT_THRESHOLD,
+} from "./strategyConfig.js";
 
 /**
  * earningsEngine.js — pure helpers for the Earnings Play Tool.
@@ -69,37 +76,25 @@ export function pickEarningsWeekExpiry(fridays, earningsIso) {
 }
 
 // ── Strike selection ─────────────────────────────────────────────────────────
-// Each path has its own delta target + price target + price constraint.
-// Scoring weights delta-match ~10× price-match — delta dominates per spec.
-
-const PATH_RULES = {
-  A: { targetDelta: 0.17, priceTarget: "lowerBound",         priceConstraint: "below" },
-  B: { targetDelta: 0.16, priceTarget: "lowerBoundMinus5",   priceConstraint: "below" },
-  C: { targetDelta: 0.23, priceTarget: "lowerBound",         priceConstraint: "near"  },
-  D: { targetDelta: 0.27, priceTarget: "aggressiveTarget",   priceConstraint: "above" },
-};
+// Path deltas, price targets, and scoring weights are tuned in strategyConfig.
 
 export function selectStrikeForPath(pathKey, spot, lowerBound, strikes) {
   const valid = (strikes || []).filter(s => s.delta != null && s.strike != null);
   if (!valid.length || lowerBound == null) return null;
 
-  const rule = PATH_RULES[pathKey];
+  const rule = EARNINGS_PATHS[pathKey];
   if (!rule) return null;
 
-  const priceTargets = {
-    lowerBound:         lowerBound,
-    lowerBoundMinus5:   lowerBound * 0.95,
-    aggressiveTarget:   lowerBound + (spot - lowerBound) * 0.3,
-  };
-  const targetPrice = priceTargets[rule.priceTarget];
+  const targetPrice = resolveEarningsPriceTarget(rule.priceTarget, spot, lowerBound);
+  const { deltaWeight, constraintPenalty } = EARNINGS_PATH_SCORING;
 
   const scored = valid.map(s => {
     const deltaDist = Math.abs(s.delta - rule.targetDelta);
     const priceDist = Math.abs(s.strike - targetPrice) / spot;
     let penalty = 0;
-    if (rule.priceConstraint === "below" && s.strike > lowerBound)       penalty = 0.5;
-    if (rule.priceConstraint === "above" && s.strike < lowerBound)       penalty = 0.5;
-    return { s, score: deltaDist * 10 + priceDist + penalty };
+    if (rule.priceConstraint === "below" && s.strike > lowerBound) penalty = constraintPenalty;
+    if (rule.priceConstraint === "above" && s.strike < lowerBound) penalty = constraintPenalty;
+    return { s, score: deltaDist * deltaWeight + priceDist + penalty };
   });
   scored.sort((a, b) => a.score - b.score);
   return scored[0].s;
@@ -153,7 +148,7 @@ export function computeDeploymentGate(vix, freeCashPct, accountValue) {
   let status;
   if (roomToDeploy == null) status = "unknown";
   else if (roomToDeploy <= 0) status = "at-floor";
-  else if (roomToDeploy < 0.05) status = "tight";
+  else if (roomToDeploy < DEPLOYMENT_GATE_TIGHT_THRESHOLD) status = "tight";
   else status = "open";
 
   return { vix, band, floorPct, freeCashPct, roomToDeploy, marginPct, status };
@@ -167,10 +162,10 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
   let lowCount = 0, highCount = 0, standardCount = 0;
 
   if (bbPosition != null) {
-    if (bbPosition < 0.20) {
+    if (bbPosition < CONVICTION_THRESHOLDS.bbPositionLow) {
       factors.push({ label: "BB Position", value: `${bbPosition.toFixed(2)} (at/below lower band)`, suggests: "High" });
       highCount++;
-    } else if (bbPosition > 0.80) {
+    } else if (bbPosition > CONVICTION_THRESHOLDS.bbPositionHigh) {
       factors.push({ label: "BB Position", value: `${bbPosition.toFixed(2)} (near upper band)`, suggests: "Low" });
       lowCount++;
     } else {
@@ -195,10 +190,10 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
 
   if (concentration != null) {
     const pct = concentration * 100;
-    if (concentration < 0.05) {
+    if (concentration < CONVICTION_THRESHOLDS.concentrationLow) {
       factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (underweight)`, suggests: "Standard or High" });
       highCount++;
-    } else if (concentration > 0.10) {
+    } else if (concentration > CONVICTION_THRESHOLDS.concentrationHigh) {
       factors.push({ label: "Concentration", value: `${pct.toFixed(1)}% (at/above 10% target)`, suggests: "Low" });
       lowCount++;
     } else {
@@ -213,22 +208,27 @@ export function scoreConvictionFactors({ bbPosition, ivRank, concentration, rece
     const relStr  = relativeRoi != null ? ` · ${relativeRoi >= 0 ? "+" : ""}${relativeRoi.toFixed(1)} pp vs avg` : "";
     const asgStr  = assignments > 0 ? ` · ${assignments} assigned` : "";
     const value   = `${lifetimeCsps} prior CSPs · ${winPct}${relStr}${asgStr}`;
-    if (winRate != null && winRate >= 0.70) {
+    const w = CONVICTION_THRESHOLDS.familiarityWeight;
+    if (winRate != null && winRate >= CONVICTION_THRESHOLDS.winRateHigh) {
       factors.push({ label: "Familiarity", value, suggests: "Standard or High" });
-      highCount += 0.3;
-    } else if (winRate != null && winRate < 0.40) {
+      highCount += w;
+    } else if (winRate != null && winRate < CONVICTION_THRESHOLDS.winRateLow) {
       factors.push({ label: "Familiarity", value, suggests: "Low" });
-      lowCount += 0.3;
+      lowCount += w;
     } else {
       factors.push({ label: "Familiarity", value, suggests: "Standard" });
-      standardCount += 0.3;
+      standardCount += w;
     }
   } else if (familiarity != null && familiarity.lifetimeCsps === 0) {
     factors.push({ label: "Familiarity", value: "No prior CSPs on this ticker", suggests: "No history" });
   }
 
   if (ivRank != null) {
-    const ctx = ivRank >= 70 ? "elevated" : ivRank >= 40 ? "moderate" : "low";
+    const ctx = ivRank >= CONVICTION_THRESHOLDS.ivRankElevated
+      ? "elevated"
+      : ivRank >= CONVICTION_THRESHOLDS.ivRankModerate
+      ? "moderate"
+      : "low";
     factors.push({
       label: "IV Rank", value: `${Math.round(ivRank)} (${ctx})`,
       suggests: "Rich premium context — applies to any path",
