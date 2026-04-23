@@ -25,10 +25,16 @@ function computeIvTrend(rows) {
     ? currentIv - dayOldRow.iv
     : null;
 
-  // A spike/crush requires raw IV to have also moved meaningfully.
-  // If IVR moved but raw IV didn't, the 52-week window rolled — not a vol event.
-  const rawIvMoved = oneDayIvChange == null || Math.abs(oneDayIvChange) >= RAW_IV_CRUSH_THRESHOLD;
-  const isSpike    = oneDayChange != null && Math.abs(oneDayChange) >= 15 && rawIvMoved;
+  // All trend labels require raw IV to have also moved meaningfully.
+  // If IVR moved but raw IV didn't, the 52-week denominator shifted — not a
+  // real vol event. Use the 5-day raw IV change for rising/falling (longer
+  // window), and 1-day for spike/crush (acute event).
+  const fiveDayIvChange = (currentIv != null && oldest.iv != null)
+    ? currentIv - oldest.iv
+    : null;
+  const rawIvMovedToday  = oneDayIvChange  == null || Math.abs(oneDayIvChange)  >= RAW_IV_CRUSH_THRESHOLD;
+  const rawIvMovedFiveDay = fiveDayIvChange == null || Math.abs(fiveDayIvChange) >= RAW_IV_CRUSH_THRESHOLD;
+  const isSpike = oneDayChange != null && Math.abs(oneDayChange) >= 15 && rawIvMovedToday;
 
   const r1 = v => Math.round(v * 10) / 10;
 
@@ -38,11 +44,11 @@ function computeIvTrend(rows) {
     dataPoints:    rows.length,
   };
 
-  if (isSpike && fiveDayChange > 0)  return { ...base, state: "spiking",    label: "IV Spike ↑",  modifier: 0.85 };
-  if (isSpike && fiveDayChange < 0)  return { ...base, state: "collapsing", label: "IV Crush ↓",  modifier: 0.90 };
-  if (fiveDayChange >= 8)             return { ...base, state: "rising",     label: "IV Rising ↑", modifier: 1.10 };
-  if (fiveDayChange <= -8)            return { ...base, state: "falling",    label: "IV Falling ↓",modifier: 0.90 };
-  return                                     { ...base, state: "stable",     label: null,           modifier: 1.00 };
+  if (isSpike && fiveDayChange > 0)                    return { ...base, state: "spiking",    label: "IV Spike ↑",  modifier: 0.85 };
+  if (isSpike && fiveDayChange < 0)                    return { ...base, state: "collapsing", label: "IV Crush ↓",  modifier: 0.90 };
+  if (fiveDayChange >= 8  && rawIvMovedFiveDay)         return { ...base, state: "rising",     label: "IV Rising ↑", modifier: 1.10 };
+  if (fiveDayChange <= -8 && rawIvMovedFiveDay)         return { ...base, state: "falling",    label: "IV Falling ↓",modifier: 0.90 };
+  return                                                       { ...base, state: "stable",     label: null,          modifier: 1.00 };
 }
 
 export function useIvTrends(tickers) {
