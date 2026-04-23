@@ -1,8 +1,24 @@
+import { Suspense } from "react";
 import { REVIEW_SUBVIEWS, SUBVIEW_LABELS, isValidSubView } from "../lib/modes";
 import { theme } from "../lib/theme";
-import { SummaryTab } from "./SummaryTab";
-import { CalendarTab } from "./CalendarTab";
-import { JournalTab } from "./journal/JournalTab";
+import { lazyNamed } from "../lib/lazyNamed";
+
+const SummaryTab  = lazyNamed(() => import("./SummaryTab"),         "SummaryTab");
+const CalendarTab = lazyNamed(() => import("./CalendarTab"),        "CalendarTab");
+const JournalTab  = lazyNamed(() => import("./journal/JournalTab"), "JournalTab");
+
+function TabLoading() {
+  return (
+    <div style={{
+      padding:   theme.space[5],
+      color:     theme.text.muted,
+      fontSize:  theme.size.sm,
+      textAlign: "center",
+    }}>
+      Loading…
+    </div>
+  );
+}
 
 function Chip({ active, onClick, children }) {
   return (
@@ -56,27 +72,29 @@ export function ReviewView({
         ))}
       </div>
 
-      {active === "monthly" && (
-        <CalendarTab
-          selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
-          selectedType={selectedType}     setSelectedType={setSelectedType}
-          selectedDay={selectedDay}       setSelectedDay={setSelectedDay}
-          captureRate={captureRate}       setCaptureRate={setCaptureRate}
-        />
-      )}
-      {active === "ytd" && (
-        <SummaryTab
-          selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
-          selectedType={selectedType}     setSelectedType={setSelectedType}
-          selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
-        />
-      )}
-      {active === "journal" && (
-        <JournalTab
-          journalIntent={journalIntent}
-          onJournalIntentConsumed={onJournalIntentConsumed}
-        />
-      )}
+      <Suspense fallback={<TabLoading />}>
+        {active === "monthly" && (
+          <CalendarTab
+            selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
+            selectedType={selectedType}     setSelectedType={setSelectedType}
+            selectedDay={selectedDay}       setSelectedDay={setSelectedDay}
+            captureRate={captureRate}       setCaptureRate={setCaptureRate}
+          />
+        )}
+        {active === "ytd" && (
+          <SummaryTab
+            selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
+            selectedType={selectedType}     setSelectedType={setSelectedType}
+            selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
+          />
+        )}
+        {active === "journal" && (
+          <JournalTab
+            journalIntent={journalIntent}
+            onJournalIntentConsumed={onJournalIntentConsumed}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

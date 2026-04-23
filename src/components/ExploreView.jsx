@@ -1,10 +1,26 @@
+import { Suspense } from "react";
 import { useData } from "../hooks/useData";
 import { EXPLORE_SUBVIEWS, SUBVIEW_LABELS, isValidSubView } from "../lib/modes";
 import { theme } from "../lib/theme";
-import { OpenPositionsTab } from "./OpenPositionsTab";
-import { RadarTab } from "./RadarTab";
-import { MacroTab } from "./MacroTab";
-import { EarningsTab } from "./EarningsTab";
+import { lazyNamed } from "../lib/lazyNamed";
+
+const OpenPositionsTab = lazyNamed(() => import("./OpenPositionsTab"), "OpenPositionsTab");
+const RadarTab         = lazyNamed(() => import("./RadarTab"),         "RadarTab");
+const MacroTab         = lazyNamed(() => import("./MacroTab"),         "MacroTab");
+const EarningsTab      = lazyNamed(() => import("./EarningsTab"),      "EarningsTab");
+
+function TabLoading() {
+  return (
+    <div style={{
+      padding:   theme.space[5],
+      color:     theme.text.muted,
+      fontSize:  theme.size.sm,
+      textAlign: "center",
+    }}>
+      Loading…
+    </div>
+  );
+}
 
 // Chip-nav button. Active chip gets the blue accent.
 function Chip({ active, onClick, children }) {
@@ -51,15 +67,17 @@ export function ExploreView({ subView, onSubViewChange, positionIntent, onPositi
         ))}
       </div>
 
-      {active === "positions" && (
-        <OpenPositionsTab
-          positionIntent={positionIntent}
-          onPositionIntentConsumed={onPositionIntentConsumed}
-        />
-      )}
-      {active === "radar"     && <RadarTab positions={positions} account={account} />}
-      {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
-      {active === "macro"     && <MacroTab />}
+      <Suspense fallback={<TabLoading />}>
+        {active === "positions" && (
+          <OpenPositionsTab
+            positionIntent={positionIntent}
+            onPositionIntentConsumed={onPositionIntentConsumed}
+          />
+        )}
+        {active === "radar"     && <RadarTab positions={positions} account={account} />}
+        {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
+        {active === "macro"     && <MacroTab />}
+      </Suspense>
     </div>
   );
 }

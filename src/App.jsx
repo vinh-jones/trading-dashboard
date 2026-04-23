@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 // Static JSON fallbacks — replaced by /api/data on mount in prod (see useEffect below).
 const tradesData    = { trades: [] };
 const positionsData = { open_csps: [], assigned_shares: [], open_leaps: [], open_spreads: [] };
@@ -9,16 +9,32 @@ import { TYPE_COLORS, VERSION } from "./lib/constants";
 import { theme } from "./lib/theme";
 import { defaultSubView, isValidMode, isValidSubView } from "./lib/modes";
 import { DataContext } from "./hooks/useData";
+import { lazyNamed } from "./lib/lazyNamed";
 
 import { PersistentHeader } from "./components/PersistentHeader";
 import { ModeNav } from "./components/ModeNav";
 import { FocusTab } from "./components/FocusTab";
-import { ExploreView } from "./components/ExploreView";
-import { ReviewView } from "./components/ReviewView";
 import { useFocusItems } from "./hooks/useFocusItems";
 import { useHotkey } from "./hooks/useHotkey";
 import { buildPaletteItems } from "./lib/paletteItems";
-import { CommandPalette } from "./components/palette/CommandPalette";
+
+// Lazy-loaded routes — Focus is the default mode, so only FocusTab loads eagerly.
+const ExploreView   = lazyNamed(() => import("./components/ExploreView"), "ExploreView");
+const ReviewView    = lazyNamed(() => import("./components/ReviewView"), "ReviewView");
+const CommandPalette = lazyNamed(() => import("./components/palette/CommandPalette"), "CommandPalette");
+
+function TabLoading() {
+  return (
+    <div style={{
+      padding:   theme.space[5],
+      color:     theme.text.muted,
+      fontSize:  theme.size.sm,
+      textAlign: "center",
+    }}>
+      Loading…
+    </div>
+  );
+}
 
 export default function TradeDashboard() {
   const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
@@ -227,35 +243,41 @@ export default function TradeDashboard() {
               marketContext={focus.marketContext}
             />
           )}
-          {mode === "explore" && (
-            <ExploreView
-              subView={subView}
-              onSubViewChange={setSubView}
-              positionIntent={positionIntent}
-              onPositionIntentConsumed={() => setPositionIntent(null)}
-            />
-          )}
-          {mode === "review" && (
-            <ReviewView
-              subView={subView}
-              onSubViewChange={setSubView}
-              selectedTicker={selectedTicker}     setSelectedTicker={setSelectedTicker}
-              selectedType={selectedType}         setSelectedType={setSelectedType}
-              selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
-              selectedDay={selectedDay}           setSelectedDay={setSelectedDay}
-              captureRate={captureRate}           setCaptureRate={setCaptureRate}
-              journalIntent={journalIntent}
-              onJournalIntentConsumed={() => setJournalIntent(null)}
-            />
-          )}
+          <Suspense fallback={<TabLoading />}>
+            {mode === "explore" && (
+              <ExploreView
+                subView={subView}
+                onSubViewChange={setSubView}
+                positionIntent={positionIntent}
+                onPositionIntentConsumed={() => setPositionIntent(null)}
+              />
+            )}
+            {mode === "review" && (
+              <ReviewView
+                subView={subView}
+                onSubViewChange={setSubView}
+                selectedTicker={selectedTicker}     setSelectedTicker={setSelectedTicker}
+                selectedType={selectedType}         setSelectedType={setSelectedType}
+                selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
+                selectedDay={selectedDay}           setSelectedDay={setSelectedDay}
+                captureRate={captureRate}           setCaptureRate={setCaptureRate}
+                journalIntent={journalIntent}
+                onJournalIntentConsumed={() => setJournalIntent(null)}
+              />
+            )}
+          </Suspense>
         </div>
       </div>
-      <CommandPalette
-        open={paletteOpen}
-        items={paletteItems}
-        onClose={() => setPaletteOpen(false)}
-        onSelect={handlePaletteSelect}
-      />
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={paletteOpen}
+            items={paletteItems}
+            onClose={() => setPaletteOpen(false)}
+            onSelect={handlePaletteSelect}
+          />
+        </Suspense>
+      )}
     </DataContext.Provider>
   );
 }
