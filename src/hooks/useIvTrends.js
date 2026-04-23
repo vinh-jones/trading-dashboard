@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
+// Minimum raw IV move (absolute, decimal scale) required to call something a
+// real crush or spike. Without this, a 52-week high rolling off the window can
+// produce a 30-pt IVR drop while actual implied vol is unchanged — which isn't
+// a crush, it's just the ranking denominator shifting.
+const RAW_IV_CRUSH_THRESHOLD = 0.08; // 8 percentage points (e.g. 0.90 → 0.82)
+
 function computeIvTrend(rows) {
   // rows sorted desc by captured_at (newest first)
   if (rows.length < 3) {
@@ -8,14 +14,22 @@ function computeIvTrend(rows) {
   }
 
   const current       = rows[0].iv_rank;
+  const currentIv     = rows[0].iv;
   const oldest        = rows[rows.length - 1];
   const fiveDayChange = current - oldest.iv_rank;
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const dayOldRow = rows.find(r => new Date(r.captured_at) <= oneDayAgo);
-  const oneDayChange = dayOldRow != null ? current - dayOldRow.iv_rank : null;
+  const oneDayChange   = dayOldRow != null ? current - dayOldRow.iv_rank : null;
+  const oneDayIvChange = (dayOldRow?.iv != null && currentIv != null)
+    ? currentIv - dayOldRow.iv
+    : null;
 
-  const isSpike = oneDayChange != null && Math.abs(oneDayChange) >= 15;
+  // A spike/crush requires raw IV to have also moved meaningfully.
+  // If IVR moved but raw IV didn't, the 52-week window rolled — not a vol event.
+  const rawIvMoved = oneDayIvChange == null || Math.abs(oneDayIvChange) >= RAW_IV_CRUSH_THRESHOLD;
+  const isSpike    = oneDayChange != null && Math.abs(oneDayChange) >= 15 && rawIvMoved;
+
   const r1 = v => Math.round(v * 10) / 10;
 
   const base = {
@@ -45,7 +59,7 @@ export function useIvTrends(tickers) {
 
     supabase
       .from("iv_snapshots")
-      .select("ticker, iv_rank, captured_at")
+      .select("ticker, iv, iv_rank, captured_at")
       .in("ticker", tickers)
       .gte("captured_at", since)
       .order("captured_at", { ascending: false })
