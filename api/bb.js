@@ -2,6 +2,7 @@
  * api/bb.js — Vercel serverless function
  *
  * GET /api/bb
+ * GET /api/bb?force=1   — bypass the 2h stale gate (manual refresh escape hatch)
  *
  * Fetches 20-day Bollinger Band data from Yahoo Finance for all approved
  * tickers and stores results in the quotes table. No market hours gate —
@@ -119,8 +120,9 @@ export default async function handler(req, res) {
 
     const lastRefresh = latestRow?.bb_refreshed_at ? new Date(latestRow.bb_refreshed_at) : null;
     const ageMs       = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
+    const force       = req.query?.force === "1" || req.query?.force === "true";
 
-    if (ageMs < STALE_MS) {
+    if (!force && ageMs < STALE_MS) {
       // Return current cached BB data
       const { data: cached, error: cacheError } = await supabase
         .from("quotes")
