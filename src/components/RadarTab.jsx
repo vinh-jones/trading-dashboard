@@ -898,20 +898,22 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
                   marginBottom: theme.space[2],
                 }}>
                   <div style={{ fontWeight: 600, color: theme.amber, marginBottom: theme.space[1] }}>
-                    ⚠ IVR reading affected by 52-week window drift
+                    ⚠ IVR reading recently shifted by 52-week window change
                   </div>
                   {ticker}&apos;s IV Rank {ivTrend.drift.direction === "deflated" ? "dropped" : "rose"}{" "}
-                  {Math.abs(ivTrend.drift.ivrChange).toFixed(1)} points over the past {ivTrend.drift.daysAgo} days,
-                  but raw IV has {ivTrend.drift.ivChangeAbsPp < 1 ? "been flat" : `moved only ${ivTrend.drift.ivChangeAbsPp.toFixed(1)}pp`}
-                  {iv != null ? ` (currently ~${(iv * 100).toFixed(0)}%)` : ""} over the same window.
-                  This means an old {ivTrend.drift.direction === "deflated" ? "high" : "low"} IV reading rolled off the 52-week lookback, mechanically{" "}
-                  {ivTrend.drift.direction === "deflated" ? "lowering" : "raising"} the rank without any actual change in option premium.
+                  {Math.abs(ivTrend.drift.ivrChange).toFixed(1)} points over the past {ivTrend.drift.daysAgo} days
+                  {iv != null ? ` while raw IV stayed flat at ~${(iv * 100).toFixed(0)}%` : " while raw IV stayed flat"}.
+                  This happens when an extreme IV reading from ~52 weeks ago rolls off the lookback window.
                   <div style={{ marginTop: theme.space[2] }}>
-                    <strong style={{ color: theme.text.primary }}>Practical implication:</strong>{" "}
-                    IVR is currently{" "}
-                    {ivTrend.drift.direction === "deflated" ? "understating" : "overstating"}{" "}
-                    premium richness on this ticker. Weight IVR lightly for the next 1–2 weeks as the reading normalizes.
-                    {iv != null && ` Raw IV of ${(iv * 100).toFixed(0)}% is the more reliable signal right now.`}
+                    Neither the old nor new IVR is &quot;wrong&quot; — they measure current IV against
+                    different historical windows. The new reading reflects where IV sits relative to
+                    a more recent baseline (the last 3–6 months) rather than including older extremes.
+                  </div>
+                  <div style={{ marginTop: theme.space[2] }}>
+                    <strong style={{ color: theme.text.primary }}>How to read it:</strong>{" "}
+                    {iv != null && <>Use raw IV (<strong style={{ color: theme.text.primary }}>{(iv * 100).toFixed(0)}%</strong>) as the absolute premium reading. </>}
+                    Use current IVR ({iv_rank != null ? iv_rank.toFixed(0) : "—"}) for &quot;is this rich
+                    relative to the recent regime.&quot; The pre-drift IVR is no longer a useful reference.
                   </div>
                 </div>
               )}
@@ -980,10 +982,10 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
               {(IV_EXPLANATIONS[ivLabelForTemplate] ?? IV_EXPLANATIONS.Moderate)(ticker, iv, iv_rank, ivComp, vixSentiment)}
               {ivTrend?.drift?.detected && (
                 <div style={{ marginTop: theme.space[2], color: theme.amber }}>
-                  ⚠ Note: IVR reading currently affected by window drift. See IV Trend
-                  section for context. Raw IV of {(iv * 100).toFixed(0)}% suggests premium is{" "}
-                  {ivTrend.drift.direction === "deflated" ? "richer" : "thinner"} than
-                  the composite score indicates.
+                  ⚠ Note: IVR reading recently shifted by a 52-week window change —
+                  see IV Trend section for context. Raw IV of {(iv * 100).toFixed(0)}%
+                  is the more stable reading; the current IVR reflects a revised
+                  historical baseline.
                 </div>
               )}
             </div>
@@ -1089,8 +1091,7 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
               lineHeight: 1.5,
               marginTop:  theme.space[2],
             }}>
-              ⚠ IV component may be {ivTrend.drift.direction === "deflated" ? "understating" : "overstating"} premium
-              richness — see IV Trend section
+              ⚠ IV component reflects a recently shifted IVR baseline — see IV Trend section
             </div>
           )}
         </>
