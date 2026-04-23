@@ -465,7 +465,11 @@ export default async function handler(req, res) {
       ? accountSnapshotResult.value.data ?? null
       : null;
 
-  let effectiveSnapshot = dailySnapshot;
+  // Use daily_snapshot only when it has real account data.
+  // If the cron wrote a partial row (account_value null — e.g. sync race), fall through
+  // to the live accountSnap fallback the same as if no row existed yet.
+  const dailySnapshotIsUsable = dailySnapshot && dailySnapshot.account_value != null;
+  let effectiveSnapshot = dailySnapshotIsUsable ? dailySnapshot : null;
   if (!effectiveSnapshot && accountSnap) {
     const vix     = liveVix ?? accountSnap.vix_current ?? null;
     const band    = getVixBand(vix);
