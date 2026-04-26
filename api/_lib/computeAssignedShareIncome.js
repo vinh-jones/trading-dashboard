@@ -31,6 +31,8 @@ import {
 } from "./publicCom.js";
 
 const TARGET_DELTA_BELOW   = 0.09;   // 8-10Δ band, target middle
+const DELTA_ON_TARGET_MIN  = 0.05;   // chain-granularity tolerance — flag if outside
+const DELTA_ON_TARGET_MAX  = 0.13;
 const TARGET_DTE_ABOVE     = 28;     // ATM monthly
 const TARGET_DTE_BELOW     = 7;      // weekly grind
 const WEEKLY_TO_MONTHLY    = 4.33;
@@ -224,6 +226,16 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker }) {
     ? perContractPremium
     : perContractPremium * WEEKLY_TO_MONTHLY;
 
+  // Below-assignment regime targets ~9Δ. Flag when chain granularity forces
+  // a strike well outside the 5-13Δ band — those positions contribute more
+  // to income capacity than the spec's "low-risk grind" assumption implies.
+  // Above-assignment regime is ATM, no delta gate.
+  const deltaOffTarget = !aboveAssignment && (
+    chosen.delta == null ||
+    chosen.delta < DELTA_ON_TARGET_MIN ||
+    chosen.delta > DELTA_ON_TARGET_MAX
+  );
+
   return {
     ...base,
     current_spot: spot,
@@ -236,7 +248,8 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker }) {
     cc_delta:     chosen.delta,
     cc_iv:        chosen.iv,
     cc_mid:       chosen.mid,
-    monthly_income: Math.round(monthlyIncome),
+    monthly_income:    Math.round(monthlyIncome),
+    delta_off_target:  deltaOffTarget,
     status: "ok",
   };
 }
@@ -274,15 +287,17 @@ export async function computeAssignedShareIncome({ supabase, positions, todayISO
   const assigned = (positions || []).filter(p => p.position_type === "assigned_shares");
 
   // IV rank from radar (15-min ingest, same source as Conviction Factors)
+  // IV rank from quotes table (same source as Conviction Factors / Radar surface),
+  // populated via api/ingest-iv.js on ~15min cadence. Keyed on `symbol`.
   const tickers = assigned.map(p => p.ticker);
   const ivByTicker = {};
   if (tickers.length) {
-    const { data: radarRows } = await supabase
-      .from("radar")
-      .select("ticker, iv_rank")
-      .in("ticker", tickers);
-    for (const r of radarRows || []) {
-      if (r.iv_rank != null) ivByTicker[r.ticker] = Math.round(Number(r.iv_rank));
+    const { data: quoteRows } = await supabase
+      .from("quotes")
+      .select("symbol, iv_rank")
+      .in("symbol", tickers);
+    for (const r of quoteRows || []) {
+      if (r.iv_rank != null) ivByTicker[r.symbol] = Math.round(Number(r.iv_rank));
     }
   }
 
@@ -292,12 +307,20 @@ export async function computeAssignedShareIncome({ supabase, positions, todayISO
     computeOnePosition({ token, position: p, todayISO, ivByTicker })
   );
 
-  // Aggregate by health band
+  // Aggregate by health band. Two income totals:
+  //  - total_monthly_income: every position's income, raw
+  //  - total_monthly_income_on_target: excludes below-assignment positions
+  //    where the chain didn't offer a true ~9Δ strike (chosen delta is way
+  //    off). Those positions are real premium opportunities but at higher
+  //    assignment risk than the spec's grind assumption — separating them
+  //    keeps the headline number honest.
   const aggregate = {
     total_monthly_income: 0,
-    healthy:    { count: 0, monthly_income: 0 },
-    recovering: { count: 0, monthly_income: 0 },
-    grinding:   { count: 0, monthly_income: 0 },
+    total_monthly_income_on_target: 0,
+    delta_off_target_count: 0,
+    healthy:      { count: 0, monthly_income: 0 },
+    recovering:   { count: 0, monthly_income: 0 },
+    grinding:     { count: 0, monthly_income: 0 },
     unclassified: { count: 0, monthly_income: 0 },
   };
 
@@ -309,16 +332,19 @@ export async function computeAssignedShareIncome({ supabase, positions, todayISO
     }
     const inc = Number(row.monthly_income) || 0;
     aggregate.total_monthly_income += inc;
+    if (!row.delta_off_target) aggregate.total_monthly_income_on_target += inc;
+    if (row.delta_off_target)  aggregate.delta_off_target_count += 1;
     const bucket = row.health_band && aggregate[row.health_band] ? row.health_band : "unclassified";
     aggregate[bucket].count += 1;
     aggregate[bucket].monthly_income += inc;
   }
 
-  aggregate.total_monthly_income       = Math.round(aggregate.total_monthly_income);
-  aggregate.healthy.monthly_income     = Math.round(aggregate.healthy.monthly_income);
-  aggregate.recovering.monthly_income  = Math.round(aggregate.recovering.monthly_income);
-  aggregate.grinding.monthly_income    = Math.round(aggregate.grinding.monthly_income);
-  aggregate.unclassified.monthly_income = Math.round(aggregate.unclassified.monthly_income);
+  aggregate.total_monthly_income           = Math.round(aggregate.total_monthly_income);
+  aggregate.total_monthly_income_on_target = Math.round(aggregate.total_monthly_income_on_target);
+  aggregate.healthy.monthly_income         = Math.round(aggregate.healthy.monthly_income);
+  aggregate.recovering.monthly_income      = Math.round(aggregate.recovering.monthly_income);
+  aggregate.grinding.monthly_income        = Math.round(aggregate.grinding.monthly_income);
+  aggregate.unclassified.monthly_income    = Math.round(aggregate.unclassified.monthly_income);
 
   return {
     aggregate,
