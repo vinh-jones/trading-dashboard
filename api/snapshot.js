@@ -26,6 +26,10 @@ import {
   serializePerPosition,
   buildPositionStateRows,
 } from "./_lib/computeForecastV2.js";
+import { computeAssignedShareIncome } from "./_lib/computeAssignedShareIncome.js";
+
+const ASSIGNED_INCOME_CACHE_KEY    = "assigned_share_income_latest";
+const ASSIGNED_INCOME_CACHE_TTL_MS = 60 * 60 * 1000;
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -161,6 +165,28 @@ export default async function handler(req, res) {
     mtdPremium = (mtdTrades || []).reduce((sum, t) => sum + (t.premium_collected || 0), 0);
   }
 
+  // 6b. Assigned-share income & health — option-chain priced capacity per
+  // assigned-share position, plus health-band rollups. Wrapped so a chain
+  // failure (Public.com hiccup, single-ticker edge case) cannot block the
+  // snapshot. Also refreshes app_cache so the next anon dashboard read
+  // serves a fresh value without a cold recompute.
+  let assignedShareIncome = null;
+  try {
+    assignedShareIncome = await computeAssignedShareIncome({
+      supabase,
+      positions,
+      todayISO: today,
+    });
+    const expiresAt = new Date(Date.now() + ASSIGNED_INCOME_CACHE_TTL_MS).toISOString();
+    await supabase.from("app_cache").upsert({
+      key:        ASSIGNED_INCOME_CACHE_KEY,
+      value:      JSON.stringify(assignedShareIncome),
+      expires_at: expiresAt,
+    });
+  } catch (incomeErr) {
+    console.error("[api/snapshot] assigned-share income failed (non-blocking):", incomeErr);
+  }
+
   // 7. Open premium pipeline (CSPs and CCs only) — legacy flat-60%
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
@@ -221,6 +247,13 @@ export default async function handler(req, res) {
     underdeployed,
     spy_close:                 spy ?? null,
     qqq_close:                 qqq ?? null,
+    // Assigned-share income & health — null-filled on compute failure
+    assigned_share_income_total:        assignedShareIncome?.aggregate?.total_monthly_income           ?? null,
+    assigned_share_income_on_target:    assignedShareIncome?.aggregate?.total_monthly_income_on_target ?? null,
+    assigned_share_income_healthy:      assignedShareIncome?.aggregate?.healthy?.monthly_income        ?? null,
+    assigned_share_income_recovering:   assignedShareIncome?.aggregate?.recovering?.monthly_income     ?? null,
+    assigned_share_income_grinding:     assignedShareIncome?.aggregate?.grinding?.monthly_income       ?? null,
+    assigned_share_income_per_position: assignedShareIncome?.per_position                              ?? null,
   };
 
   const { error } = await supabase
@@ -312,6 +345,12 @@ export default async function handler(req, res) {
       forward:       forecastV2.forward_pipeline_premium,
       phase:         forecastV2.pipeline_phase,
       positions:     forecastV2.per_position.length,
+    } : null,
+    assigned_share_income: assignedShareIncome ? {
+      total:       assignedShareIncome.aggregate.total_monthly_income,
+      on_target:   assignedShareIncome.aggregate.total_monthly_income_on_target,
+      off_target:  assignedShareIncome.aggregate.delta_off_target_count,
+      positions:   assignedShareIncome.per_position.length,
     } : null,
     notifications,
   });
