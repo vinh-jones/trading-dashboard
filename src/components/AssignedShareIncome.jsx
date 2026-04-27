@@ -41,16 +41,16 @@ function describeStrike(row) {
   return `${tag} ${formatStrike(row.cc_strike)}`;
 }
 
-function sigmaColor(sigmas) {
+// Buckets per spec §sigma interpretation. Negative sigmas mean the CC
+// is already ITM (spot rallied past strike); we surface that as "ITM".
+function sigmaBucket(sigmas) {
   if (sigmas == null) return null;
-  if (sigmas < 0.5) return theme.red;     // very likely breach
-  if (sigmas < 1.0) return theme.amber;   // realistic risk
-  return theme.green;                      // uncommon / unlikely
-}
-
-function sigmaLabel(sigmas) {
-  if (sigmas == null) return null;
-  return `${sigmas.toFixed(1)}σ`;
+  if (sigmas <  0  ) return { label: "ITM",         color: theme.red };
+  if (sigmas <  0.5) return { label: "very likely", color: theme.red };
+  if (sigmas <  1.0) return { label: "realistic",   color: theme.amber };
+  if (sigmas <  2.0) return { label: "uncommon",    color: theme.text.secondary };
+  if (sigmas <  3.0) return { label: "unlikely",    color: theme.green };
+  return                   { label: "tail",        color: theme.text.muted };
 }
 
 function BreachWatch({ row }) {
@@ -71,16 +71,21 @@ function BreachWatch({ row }) {
     ? `${movePct >= 0 ? "+" : ""}${(movePct * 100).toFixed(1)}% in ${dte}d`
     : `rally past ${formatStrike(row.cc_strike)} within ${dte}d`;
 
-  const sColor = sigmaColor(sigmas);
-  const sText  = sigmaLabel(sigmas);
+  const bucket = sigmaBucket(sigmas);
 
   return (
     <span>
       {moveText}
-      {sText && (
-        <span style={{ color: sColor, marginLeft: theme.space[1], fontWeight: 600 }}>
-          {" "}({sText})
-        </span>
+      {bucket && (
+        <>
+          {" · "}
+          <span style={{ color: bucket.color, fontWeight: 600 }}>{bucket.label}</span>
+          {sigmas != null && (
+            <span style={{ color: theme.text.faint, marginLeft: theme.space[1] }}>
+              ({sigmas.toFixed(1)}σ)
+            </span>
+          )}
+        </>
       )}
     </span>
   );
