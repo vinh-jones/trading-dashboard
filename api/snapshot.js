@@ -187,6 +187,37 @@ export default async function handler(req, res) {
     console.error("[api/snapshot] assigned-share income failed (non-blocking):", incomeErr);
   }
 
+  // 6c. Append assigned-share breach history — one row per assigned-share
+  // position per day. Enables trend queries ("did IREN's sigma deteriorate
+  // this week?"). Non-blocking: a write failure here never aborts the snapshot.
+  if (assignedShareIncome?.per_position?.length) {
+    try {
+      const breachRows = assignedShareIncome.per_position
+        .filter(r => r.ticker)
+        .map(r => ({
+          snapshot_date:        today,
+          ticker:               r.ticker,
+          regime:               r.regime ?? null,
+          health_band:          r.health_band ?? null,
+          has_active_cc:        r.regime === "active_cc",
+          distance_pct:         r.distance_pct ?? null,
+          cc_strike:            r.cc_strike ?? null,
+          cc_dte:               r.cc_dte ?? null,
+          cc_required_move_pct: r.cc_required_move_pct ?? null,
+          cc_sigmas_to_breach:  r.cc_sigmas_to_breach ?? null,
+          iv_used:              r.cc_atm_iv ?? null,
+        }));
+      if (breachRows.length) {
+        const { error: bhErr } = await supabase
+          .from("assigned_share_breach_history")
+          .upsert(breachRows, { onConflict: "snapshot_date,ticker" });
+        if (bhErr) console.error("[api/snapshot] breach history write failed:", bhErr);
+      }
+    } catch (err) {
+      console.error("[api/snapshot] breach history unexpected error:", err);
+    }
+  }
+
   // 7. Open premium pipeline (CSPs and CCs only) — legacy flat-60%
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
