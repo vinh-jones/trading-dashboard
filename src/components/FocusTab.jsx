@@ -15,7 +15,7 @@ const RULES = [
   { priority: "P1", rule: "Uncovered shares",       trigger: "Assigned shares with no active covered call. IV guidance appended when available.",                 source: "Positions + Quotes" },
   { priority: "P1", rule: "CC deeply ITM",          trigger: "Stock > strike by 2–7% (threshold scales with entry delta). P2 if DTE > 7",                         source: "Positions + Quotes" },
   { priority: "P1", rule: "CSP ITM urgency",        trigger: "ITM% × DTE-elapsed% score ≥ 0.05 (min 3% ITM to fire). P2 if score < 0.10",                         source: "Positions + Quotes" },
-  { priority: "P1", rule: "Assigned CC breach imminent", trigger: "Active CC on below-assignment shares with sigmas-to-breach < 0.5 (within ½σ of being called). P2 if 0.5–1.0σ. Above-assignment CCs and modeled (non-active) capacity are excluded.", source: "Assigned-share income" },
+  { priority: "P1", rule: "Assigned CC breach imminent", trigger: "Active CC whose strike sits below the share basis with sigmas-to-breach < 0.5 (within ½σ of being called). P2 if 0.5–1.0σ. CCs at or above basis and modeled (non-active) capacity are excluded.", source: "Assigned-share income" },
   { priority: "P2", rule: "Expiring soon",          trigger: "CC or CSP with DTE 3–5",                                                                            source: "Positions" },
   { priority: "P2", rule: "Earnings before expiry", trigger: "Earnings date falls on or before an option expiry",                                                 source: "Market context" },
   { priority: "P2", rule: "Macro overlap",          trigger: "CPI/FOMC/NFP within 2 days of any option expiry",                                                   source: "Market context" },

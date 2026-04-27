@@ -585,11 +585,11 @@ function ruleRollOpportunity(positions, rollAnalysisMap) {
   return items;
 }
 
-// Active CC on below-assignment shares with sigmas-to-breach < 1.0. Modeled
-// (non-active) capacity is excluded — those are hypothetical strikes, not
-// actual contract risk. Above-assignment positions are excluded — a breach
-// there is a profitable exit, not a loss to manage. ≥1σ alerts are excluded
-// because most underwater positions sit there and would become noise.
+// Active CC whose strike sits below the share basis with sigmas-to-breach < 1.0.
+// Modeled (non-active) capacity is excluded — those are hypothetical strikes,
+// not actual contract risk. CCs at or above assignment basis are excluded —
+// a breach there is a profitable exit, not a loss to manage. ≥1σ alerts are
+// excluded because most underwater positions sit there and would become noise.
 function ruleAssignedCcBreachImminent(assignedShareIncome) {
   const items = [];
   const positions = assignedShareIncome?.per_position;
@@ -597,7 +597,8 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
 
   for (const p of positions) {
     if (p.regime !== "active_cc") continue;
-    if (p.distance_pct == null || p.distance_pct >= 0) continue;
+    if (p.cc_strike == null || p.assignment_price == null) continue;
+    if (p.cc_strike >= p.assignment_price) continue;
     const sigmas = p.cc_sigmas_to_breach;
     if (sigmas == null || sigmas >= 1.0) continue;
 
@@ -607,7 +608,7 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
       ? `${(p.cc_required_move_pct * 100).toFixed(1)}%`
       : "—";
     const dte             = p.cc_dte ?? 0;
-    const distanceDisplay = (p.distance_pct * 100).toFixed(1);
+    const ccBelowPct      = ((p.assignment_price - p.cc_strike) / p.assignment_price) * 100;
     const expiryKey       = p.cc_expiry ?? `dte${dte}`;
 
     items.push({
@@ -619,7 +620,7 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
       dte,
       urgency:  sigmas, // lower σ → more urgent within priority bucket
       title:    `${p.ticker} CC $${p.cc_strike} — breach in ${sigmasDisplay}σ`,
-      detail:   `Active CC on below-assignment shares (${distanceDisplay}% from basis). `
+      detail:   `CC strike $${p.cc_strike} is ${ccBelowPct.toFixed(1)}% below basis $${p.assignment_price.toFixed(2)}. `
         + `Spot needs ${moveDisplay} in ${dte}d to breach (${sigmasDisplay}σ — within 1σ noise). `
         + `Review whether to roll up before assignment.`,
     });

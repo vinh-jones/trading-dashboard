@@ -73,6 +73,8 @@ function alertBelongsToRow(item, pos, type) {
   if (rule === "cc_deeply_itm")      return type === "CC";
   // LEAP-only rules
   if (rule === "leaps_low_dte" || rule === "leaps_profit_target") return type === "LEAP";
+  // Assigned-CC breach is a CC-only signal
+  if (rule === "assigned_cc_breach_imminent") return type === "CC";
 
   // Expiry+strike scoped rules — match on fields added to each item by focusEngine
   if (rule === "csp_itm_urgency") {
