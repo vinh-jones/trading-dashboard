@@ -16,7 +16,7 @@ import {
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
-import { SixtyCheck } from "./SixtyCheck";
+import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
 
 // ── Roll Analysis card section ────────────────────────────────────────────────
@@ -839,8 +839,8 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
         </>
       )}
 
-      {/* ── 60/60 Quick-Check ── */}
-      <SixtyCheck />
+      {/* ── Assigned Shares — Income & Health ── */}
+      <AssignedShareIncome />
     </div>
   );
 }
