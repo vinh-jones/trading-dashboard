@@ -25,15 +25,16 @@
 import { generateFocusItems, NOTIFY_RULES } from "../../src/lib/focusEngine.js";
 import { reshapePositions } from "./reshapePositions.js";
 import { sendPushover } from "./notify.js";
-import { loadQuoteMap, loadMarketContext, loadRollAnalysisMap } from "./loadFocusData.js";
+import { loadQuoteMap, loadMarketContext, loadRollAnalysisMap, loadAssignedShareIncome } from "./loadFocusData.js";
 
 export async function evaluateAlerts({ supabase, accountSnap, positionRows, liveVix }) {
   const reshapedPositions = reshapePositions(positionRows);
 
-  const [quoteMap, marketContext, rollAnalysisMap] = await Promise.all([
+  const [quoteMap, marketContext, rollAnalysisMap, assignedShareIncome] = await Promise.all([
     loadQuoteMap(supabase),
     loadMarketContext(supabase),
     loadRollAnalysisMap(supabase),
+    loadAssignedShareIncome(supabase),
   ]);
 
   const items = generateFocusItems(
@@ -43,6 +44,7 @@ export async function evaluateAlerts({ supabase, accountSnap, positionRows, live
     liveVix,
     quoteMap,
     rollAnalysisMap,
+    assignedShareIncome,
   );
 
   const pushItems   = items.filter(i => NOTIFY_RULES[i.rule] === true);

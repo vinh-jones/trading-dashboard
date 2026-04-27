@@ -10,12 +10,14 @@ Update this file whenever rules are added, changed, or removed.
 | **Cash below floor** | `free_cash_pct` is below the VIX band floor (e.g. VIX 20–25 → floor is 10%) | Account snapshot |
 | **Expiring soon** | CC or CSP with DTE ≤ 2 | Positions |
 | **Uncovered shares** | Assigned shares with no active covered call | Positions |
+| **Assigned CC breach imminent** | Active CC on below-assignment shares with sigmas-to-breach < 0.5 (within ½σ of being called). Above-assignment CCs and modeled (non-active) capacity are excluded — those don't represent contract risk. | Assigned-share income |
 
 ## P2 — Review This Week
 
 | Rule | Trigger | Data Source |
 |------|---------|-------------|
 | **Expiring soon** | CC or CSP with DTE 3–5 | Positions |
+| **Assigned CC breach imminent** | Active CC on below-assignment shares with sigmas-to-breach in 0.5–1.0σ. Same exclusions as P1 variant (above-assignment / modeled excluded). | Assigned-share income |
 | **Earnings before expiry** | Next earnings date falls on or before an option's expiry date | Market context (Finnhub via OpenClaw) |
 | **Macro overlap** | CPI, FOMC, or NFP event within 2 calendar days of any option expiry | Market context (TradingView via OpenClaw) |
 

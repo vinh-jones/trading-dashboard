@@ -24,6 +24,7 @@ export const NOTIFY_RULES = {
   leaps_low_dte:          true,
   leaps_profit_target:    true,
   roll_opportunity:       true,
+  assigned_cc_breach_imminent: true,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -584,9 +585,51 @@ function ruleRollOpportunity(positions, rollAnalysisMap) {
   return items;
 }
 
+// Active CC on below-assignment shares with sigmas-to-breach < 1.0. Modeled
+// (non-active) capacity is excluded — those are hypothetical strikes, not
+// actual contract risk. Above-assignment positions are excluded — a breach
+// there is a profitable exit, not a loss to manage. ≥1σ alerts are excluded
+// because most underwater positions sit there and would become noise.
+function ruleAssignedCcBreachImminent(assignedShareIncome) {
+  const items = [];
+  const positions = assignedShareIncome?.per_position;
+  if (!Array.isArray(positions)) return items;
+
+  for (const p of positions) {
+    if (p.regime !== "active_cc") continue;
+    if (p.distance_pct == null || p.distance_pct >= 0) continue;
+    const sigmas = p.cc_sigmas_to_breach;
+    if (sigmas == null || sigmas >= 1.0) continue;
+
+    const priority = sigmas < 0.5 ? "P1" : "P2";
+    const sigmasDisplay   = sigmas.toFixed(2);
+    const moveDisplay     = p.cc_required_move_pct != null
+      ? `${(p.cc_required_move_pct * 100).toFixed(1)}%`
+      : "—";
+    const dte             = p.cc_dte ?? 0;
+    const distanceDisplay = (p.distance_pct * 100).toFixed(1);
+    const expiryKey       = p.cc_expiry ?? `dte${dte}`;
+
+    items.push({
+      id:       `assigned-cc-breach-${p.ticker}-${p.cc_strike}-${expiryKey}`,
+      priority,
+      rule:     "assigned_cc_breach_imminent",
+      ticker:   p.ticker,
+      strike:   p.cc_strike,
+      dte,
+      urgency:  sigmas, // lower σ → more urgent within priority bucket
+      title:    `${p.ticker} CC $${p.cc_strike} — breach in ${sigmasDisplay}σ`,
+      detail:   `Active CC on below-assignment shares (${distanceDisplay}% from basis). `
+        + `Spot needs ${moveDisplay} in ${dte}d to breach (${sigmasDisplay}σ — within 1σ noise). `
+        + `Review whether to roll up before assignment.`,
+    });
+  }
+  return items;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map(), rollAnalysisMap = {}) {
+export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map(), rollAnalysisMap = {}, assignedShareIncome = null) {
   if (!positions) return [];
 
   // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
@@ -608,6 +651,7 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ...ruleLeapsLowDTE(positions),
     ...ruleLeapsProfitTarget(positions, quoteMap),
     ...ruleRollOpportunity(positions, rollAnalysisMap),
+    ...ruleAssignedCcBreachImminent(assignedShareIncome),
   ];
 
   const priorityOrder = { P1: 0, P2: 1, P3: 2 };

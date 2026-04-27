@@ -45,6 +45,23 @@ export async function loadMarketContext(supabase) {
   }
 }
 
+export async function loadAssignedShareIncome(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from("app_cache")
+      .select("value")
+      .eq("key", "assigned_share_income_latest")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.value) return null;
+    // app_cache stores JSON as text — parse defensively
+    return typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+  } catch (err) {
+    console.warn("[loadFocusData] assigned_share_income load failed:", err.message);
+    return null;
+  }
+}
+
 export async function loadRollAnalysisMap(supabase) {
   try {
     const { data, error } = await supabase.from("roll_analysis").select("*");

@@ -3,6 +3,7 @@ import marketContextDev from "../data/market-context.json";
 import { useLiveVix } from "./useLiveVix";
 import { useQuotes } from "./useQuotes";
 import { useRollAnalysis } from "./useRollAnalysis";
+import { useAssignedShareIncome } from "./useAssignedShareIncome";
 import { generateFocusItems, categorizeFocusItems } from "../lib/focusEngine";
 
 // One-shot pipeline. Call at App.jsx level and pass results down to consumers
@@ -15,6 +16,7 @@ export function useFocusItems({ positions, account }) {
   const { vix: liveVix } = useLiveVix(account?.vix_current);
   const { quoteMap, refreshedAt: quotesRefreshedAt } = useQuotes();
   const { rollMap } = useRollAnalysis();
+  const { data: assignedShareIncome } = useAssignedShareIncome();
 
   const [marketContext, setMarketContext] = useState(null);
   const [mcLoading, setMcLoading]         = useState(true);
@@ -40,8 +42,8 @@ export function useFocusItems({ positions, account }) {
   }, []);
 
   const items = useMemo(
-    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap, rollMap),
-    [positions, account, marketContext, liveVix, quoteMap, rollMap]
+    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap, rollMap, assignedShareIncome),
+    [positions, account, marketContext, liveVix, quoteMap, rollMap, assignedShareIncome]
   );
 
   const categorized = useMemo(() => categorizeFocusItems(items), [items]);
