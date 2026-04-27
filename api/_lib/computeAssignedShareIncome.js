@@ -60,6 +60,29 @@ function deriveAssignmentPrice(positionRow) {
   return deriveTotalFronted(positionRow) / shares;
 }
 
+// ── Sigma-to-breach calc ─────────────────────────────────────────────────────
+// expected_move_pct = atm_iv × sqrt(dte / 365)
+// sigmas_to_breach  = required_move_pct / expected_move_pct
+// where required_move_pct = (strike - spot) / spot. Positive when strike is
+// above spot (CC is OTM); negative for ITM active CCs.
+
+function computeSigmasToBreach({ strike, spot, dte, atmIv }) {
+  if (atmIv == null || dte == null || dte <= 0 || !spot) return null;
+  const expectedMovePct = atmIv * Math.sqrt(dte / 365);
+  if (!expectedMovePct) return null;
+  const requiredMovePct = (strike - spot) / spot;
+  return { requiredMovePct, sigmas: requiredMovePct / expectedMovePct };
+}
+
+function findAtmIv(enrichedCalls, spot) {
+  let best = null;
+  for (const c of enrichedCalls) {
+    if (c.iv == null) continue;
+    if (!best || Math.abs(c.strike - spot) < Math.abs(best.strike - spot)) best = c;
+  }
+  return best?.iv ?? null;
+}
+
 // ── Health band classifier ───────────────────────────────────────────────────
 
 function healthBand(distancePct) {
@@ -124,10 +147,10 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByT
   const distancePct = (spot - assignmentPrice) / assignmentPrice;
   const band = healthBand(distancePct);
 
-  // Active-CC branch: shares are already committed at a known strike/expiry,
-  // so showing a hypothetical 9Δ pick would be misleading. Use the actual CC's
-  // monthly-equivalent run-rate (premium_collected scaled to 30 days over the
-  // CC's full open→expiry term). Skips chain/greeks fetches entirely.
+  // Active-CC branch: shares are already committed at a known strike/expiry.
+  // Use actual premium scaled to 30 days for income. For sigma-to-breach we
+  // need ATM IV at the CC's expiry — fetch chain+greeks for the closest
+  // strikes to spot. Skip gracefully on failure (sigma will be null).
   if (activeCc && activeCc.strike != null && activeCc.open_date && activeCc.expiry_date) {
     const openMs   = Date.parse(activeCc.open_date);
     const expiryMs = Date.parse(activeCc.expiry_date);
@@ -137,24 +160,60 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByT
     const premium = Number(activeCc.premium_collected) || 0;
     const monthlyIncome = totalDays ? (premium * 30 / totalDays) : null;
 
+    let atmIv = null;
+    try {
+      const ccChain = await fetchChain(token, ticker, activeCc.expiry_date);
+      const ccCalls = (ccChain.calls || [])
+        .map(row => ({
+          osi:    row.instrument?.symbol,
+          strike: row.instrument?.symbol ? strikeFromOCC(row.instrument.symbol) : null,
+        }))
+        .filter(c => c.osi && c.strike != null)
+        .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
+        .slice(0, 5);
+      if (ccCalls.length) {
+        const greekRows = await fetchGreeks(token, ccCalls.map(c => c.osi));
+        const enriched = greekRows
+          .map(g => {
+            const strike = ccCalls.find(c => c.osi === g.symbol)?.strike;
+            const iv = g.greeks?.impliedVolatility != null ? Number(g.greeks.impliedVolatility) : null;
+            return strike != null && iv != null ? { strike, iv } : null;
+          })
+          .filter(Boolean);
+        atmIv = findAtmIv(enriched, spot);
+      }
+    } catch (err) {
+      console.warn(`[assigned-share-income] active-CC ATM IV fetch failed for ${ticker}:`, err.message);
+    }
+
+    const breach = computeSigmasToBreach({
+      strike: Number(activeCc.strike),
+      spot,
+      dte:    activeCc.days_to_expiry,
+      atmIv,
+    });
+
     return {
       ...base,
-      current_spot:         spot,
-      distance_pct:         distancePct,
-      health_band:          band,
-      regime:               "active_cc",
-      cc_expiry:            activeCc.expiry_date,
-      cc_dte:               activeCc.days_to_expiry ?? null,
-      cc_strike:            Number(activeCc.strike),
-      cc_delta:             activeCc.delta != null ? Math.abs(Number(activeCc.delta)) : null,
-      cc_iv:                null,
-      cc_mid:               null,
-      cc_contracts:         activeCc.contracts ?? null,
-      cc_premium_collected: premium,
-      cc_term_days:         totalDays,
-      monthly_income:       monthlyIncome != null ? Math.round(monthlyIncome) : null,
-      delta_off_target:     false,
-      status:               "ok",
+      current_spot:           spot,
+      distance_pct:           distancePct,
+      health_band:            band,
+      regime:                 "active_cc",
+      cc_expiry:              activeCc.expiry_date,
+      cc_dte:                 activeCc.days_to_expiry ?? null,
+      cc_strike:              Number(activeCc.strike),
+      cc_delta:               activeCc.delta != null ? Math.abs(Number(activeCc.delta)) : null,
+      cc_iv:                  null,
+      cc_atm_iv:              atmIv,
+      cc_mid:                 null,
+      cc_contracts:           activeCc.contracts ?? null,
+      cc_premium_collected:   premium,
+      cc_term_days:           totalDays,
+      cc_required_move_pct:   breach?.requiredMovePct ?? null,
+      cc_sigmas_to_breach:    breach?.sigmas ?? null,
+      monthly_income:         monthlyIncome != null ? Math.round(monthlyIncome) : null,
+      delta_off_target:       false,
+      status:                 "ok",
     };
   }
 
@@ -283,6 +342,14 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByT
     chosen.delta > DELTA_ON_TARGET_MAX
   );
 
+  const atmIv = findAtmIv(enriched, spot);
+  const breach = computeSigmasToBreach({
+    strike: chosen.strike,
+    spot,
+    dte:    picked.dte,
+    atmIv,
+  });
+
   return {
     ...base,
     current_spot: spot,
@@ -294,7 +361,10 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByT
     cc_strike:    chosen.strike,
     cc_delta:     chosen.delta,
     cc_iv:        chosen.iv,
+    cc_atm_iv:    atmIv,
     cc_mid:       chosen.mid,
+    cc_required_move_pct: breach?.requiredMovePct ?? null,
+    cc_sigmas_to_breach:  breach?.sigmas ?? null,
     monthly_income:    Math.round(monthlyIncome),
     delta_off_target:  deltaOffTarget,
     status: "ok",

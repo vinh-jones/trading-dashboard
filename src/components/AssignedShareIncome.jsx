@@ -41,9 +41,49 @@ function describeStrike(row) {
   return `${tag} ${formatStrike(row.cc_strike)}`;
 }
 
-function describeBreach(row) {
-  if (row.cc_strike == null || row.cc_dte == null) return "—";
-  return `rally past ${formatStrike(row.cc_strike)} within ${row.cc_dte}d`;
+function sigmaColor(sigmas) {
+  if (sigmas == null) return null;
+  if (sigmas < 0.5) return theme.red;     // very likely breach
+  if (sigmas < 1.0) return theme.amber;   // realistic risk
+  return theme.green;                      // uncommon / unlikely
+}
+
+function sigmaLabel(sigmas) {
+  if (sigmas == null) return null;
+  return `${sigmas.toFixed(1)}σ`;
+}
+
+function BreachWatch({ row }) {
+  if (row.cc_strike == null || row.cc_dte == null) {
+    return <span>—</span>;
+  }
+  const movePct = row.cc_required_move_pct;
+  const sigmas  = row.cc_sigmas_to_breach;
+  const dte     = row.cc_dte;
+
+  // Above-assignment ATM picks have ~0% required move; "ATM" reads cleaner
+  // than "+0% in 28d (0σ)".
+  if (row.regime === "above_assignment" && movePct != null && Math.abs(movePct) < 0.01) {
+    return <span>ATM, {dte}d</span>;
+  }
+
+  const moveText = movePct != null
+    ? `${movePct >= 0 ? "+" : ""}${(movePct * 100).toFixed(1)}% in ${dte}d`
+    : `rally past ${formatStrike(row.cc_strike)} within ${dte}d`;
+
+  const sColor = sigmaColor(sigmas);
+  const sText  = sigmaLabel(sigmas);
+
+  return (
+    <span>
+      {moveText}
+      {sText && (
+        <span style={{ color: sColor, marginLeft: theme.space[1], fontWeight: 600 }}>
+          {" "}({sText})
+        </span>
+      )}
+    </span>
+  );
 }
 
 function HealthChip({ band }) {
@@ -182,7 +222,7 @@ function PositionRow({ row }) {
         )}
       </td>
       <td style={{ ...cellStyle, color: theme.text.muted, fontSize: theme.size.xs }}>
-        {describeBreach(row)}
+        <BreachWatch row={row} />
       </td>
       <td style={cellStyle}>
         <HealthChip band={row.health_band} />
