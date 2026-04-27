@@ -30,7 +30,14 @@ function formatStrike(value) {
 
 function describeStrike(row) {
   if (row.cc_strike == null) return "—";
-  const tag = row.regime === "above_assignment" ? "ATM (4w)" : "9Δ (1w)";
+  let tag;
+  if (row.regime === "active_cc") {
+    tag = row.cc_dte != null ? `Active (${row.cc_dte}d)` : "Active";
+  } else if (row.regime === "above_assignment") {
+    tag = "ATM (4w)";
+  } else {
+    tag = "9Δ (1w)";
+  }
   return `${tag} ${formatStrike(row.cc_strike)}`;
 }
 

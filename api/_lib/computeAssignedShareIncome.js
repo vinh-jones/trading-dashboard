@@ -88,11 +88,12 @@ function findStrikeByDelta(callRows, targetDelta) {
 
 // ── Per-position calc ────────────────────────────────────────────────────────
 
-async function computeOnePosition({ token, position, todayISO, ivByTicker }) {
+async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByTicker }) {
   const ticker = position.ticker;
   const shares = deriveTotalShares(position);
   const assignmentPrice = deriveAssignmentPrice(position);
   const contractsWriteable = Math.floor(shares / 100);
+  const activeCc = position.has_active_cc ? ccByTicker[ticker] : null;
 
   const base = {
     ticker,
@@ -122,6 +123,41 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker }) {
 
   const distancePct = (spot - assignmentPrice) / assignmentPrice;
   const band = healthBand(distancePct);
+
+  // Active-CC branch: shares are already committed at a known strike/expiry,
+  // so showing a hypothetical 9Δ pick would be misleading. Use the actual CC's
+  // monthly-equivalent run-rate (premium_collected scaled to 30 days over the
+  // CC's full open→expiry term). Skips chain/greeks fetches entirely.
+  if (activeCc && activeCc.strike != null && activeCc.open_date && activeCc.expiry_date) {
+    const openMs   = Date.parse(activeCc.open_date);
+    const expiryMs = Date.parse(activeCc.expiry_date);
+    const totalDays = Number.isFinite(openMs) && Number.isFinite(expiryMs)
+      ? Math.max(1, Math.round((expiryMs - openMs) / 86400000))
+      : null;
+    const premium = Number(activeCc.premium_collected) || 0;
+    const monthlyIncome = totalDays ? (premium * 30 / totalDays) : null;
+
+    return {
+      ...base,
+      current_spot:         spot,
+      distance_pct:         distancePct,
+      health_band:          band,
+      regime:               "active_cc",
+      cc_expiry:            activeCc.expiry_date,
+      cc_dte:               activeCc.days_to_expiry ?? null,
+      cc_strike:            Number(activeCc.strike),
+      cc_delta:             activeCc.delta != null ? Math.abs(Number(activeCc.delta)) : null,
+      cc_iv:                null,
+      cc_mid:               null,
+      cc_contracts:         activeCc.contracts ?? null,
+      cc_premium_collected: premium,
+      cc_term_days:         totalDays,
+      monthly_income:       monthlyIncome != null ? Math.round(monthlyIncome) : null,
+      delta_off_target:     false,
+      status:               "ok",
+    };
+  }
+
   const aboveAssignment = spot >= assignmentPrice;
   const targetDte = aboveAssignment ? TARGET_DTE_ABOVE : TARGET_DTE_BELOW;
 
@@ -286,7 +322,16 @@ async function mapWithLimit(items, limit, fn) {
 export async function computeAssignedShareIncome({ supabase, positions, todayISO }) {
   const assigned = (positions || []).filter(p => p.position_type === "assigned_shares");
 
-  // IV rank from radar (15-min ingest, same source as Conviction Factors)
+  // Active CCs are stored as separate rows (position_type=open_csp, type=CC),
+  // keyed by ticker. Index them so the per-position calc can swap actual
+  // strike/premium in for tickers where shares are already committed.
+  const ccByTicker = {};
+  for (const p of positions || []) {
+    if (p.position_type === "open_csp" && p.type === "CC" && p.ticker) {
+      ccByTicker[p.ticker] = p;
+    }
+  }
+
   // IV rank from quotes table (same source as Conviction Factors / Radar surface),
   // populated via api/ingest-iv.js on ~15min cadence. Keyed on `symbol`.
   const tickers = assigned.map(p => p.ticker);
@@ -304,7 +349,7 @@ export async function computeAssignedShareIncome({ supabase, positions, todayISO
   const token = await getPublicAccessToken(supabase);
 
   const perPosition = await mapWithLimit(assigned, CONCURRENCY_LIMIT, (p) =>
-    computeOnePosition({ token, position: p, todayISO, ivByTicker })
+    computeOnePosition({ token, position: p, todayISO, ivByTicker, ccByTicker })
   );
 
   // Aggregate by health band. Two income totals:
