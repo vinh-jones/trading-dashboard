@@ -39,7 +39,7 @@ const WEEKLY_TO_MONTHLY    = 4.33;
 const HEALTHY_FLOOR_PCT    = -0.15;
 const RECOVERING_FLOOR_PCT = -0.25;
 const STRIKE_BAND_PCT      = 0.30;   // ±30% of spot for greeks query
-const MAX_GREEKS_SYMBOLS   = 30;
+const MAX_GREEKS_SYMBOLS   = 60;
 const CONCURRENCY_LIMIT    = 3;
 
 // ── Position-shape adapters (DB-row variant of src/lib/positionSchema.js) ────
@@ -209,13 +209,24 @@ async function computeOnePosition({ token, position, todayISO, ivByTicker, ccByT
     };
   }
 
-  // Cap symbols for greeks query — center near spot
+  // Cap symbols for greeks query. Window depends on regime:
+  //  - above_assignment (ATM monthly): center on spot, balanced both sides
+  //  - below_assignment (9Δ weekly): bias upward — we only ever pick OTM
+  //    calls above spot, so spending half the budget on strikes < spot
+  //    wastes coverage. Keep a small below-spot tail (~1/6) to anchor the
+  //    delta curve, the rest above. Fixes cases like HOOD where dense $1
+  //    spacing pushed the true 9Δ strike outside a centered 30-symbol window.
   let greekSymbols = calls.map(c => c.osi);
   if (greekSymbols.length > MAX_GREEKS_SYMBOLS) {
     const spotIdx = calls.reduce((closest, c, i) =>
       Math.abs(c.strike - spot) < Math.abs(calls[closest].strike - spot) ? i : closest, 0);
-    const half = Math.floor(MAX_GREEKS_SYMBOLS / 2);
-    const start = Math.max(0, Math.min(calls.length - MAX_GREEKS_SYMBOLS, spotIdx - half));
+    const offsetFromSpot = aboveAssignment
+      ? Math.floor(MAX_GREEKS_SYMBOLS / 2)
+      : Math.floor(MAX_GREEKS_SYMBOLS / 6);
+    const start = Math.max(
+      0,
+      Math.min(calls.length - MAX_GREEKS_SYMBOLS, spotIdx - offsetFromSpot)
+    );
     greekSymbols = calls.slice(start, start + MAX_GREEKS_SYMBOLS).map(c => c.osi);
   }
 
