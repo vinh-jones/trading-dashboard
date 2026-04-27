@@ -19,3 +19,4 @@ RUNBOOK_*.md
 
 # Brainstorm companion session state (per-session, not durable)
 .superpowers/brainstorm/
+.claude/scheduled_tasks.lock
