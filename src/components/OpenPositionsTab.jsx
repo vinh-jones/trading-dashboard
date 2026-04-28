@@ -343,21 +343,47 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
   const canExpand = !isLeap;
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
+
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === "desc" ? "asc" : "desc");
+    } else {
+      setSortCol(col);
+      setSortDir("desc");
+    }
+  }
 
   const numericCols = new Set(["Strike", "% OTM", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
-  const colHeader = (label) => (
-    <th key={label} style={{
-      padding:       `${theme.space[2]}px ${theme.space[3]}px`,
-      textAlign:     numericCols.has(label) ? "right" : "left",
-      color:         theme.text.muted,
-      fontWeight:    500,
-      fontSize:      theme.size.sm,
-      textTransform: "uppercase",
-      letterSpacing: "0.5px",
-    }}>
-      {label}
-    </th>
-  );
+  const colHeader = (label) => {
+    if (!label) return <th key="__chevron__" style={{ width: 30 }} />;
+    const isActive = sortCol === label;
+    const isNumeric = numericCols.has(label);
+    return (
+      <th
+        key={label}
+        onClick={() => handleSort(label)}
+        style={{
+          padding:       `${theme.space[2]}px ${theme.space[3]}px`,
+          textAlign:     isNumeric ? "right" : "left",
+          color:         isActive ? theme.text.primary : theme.text.muted,
+          fontWeight:    isActive ? 600 : 500,
+          fontSize:      theme.size.sm,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          cursor:        "pointer",
+          userSelect:    "none",
+          whiteSpace:    "nowrap",
+        }}
+      >
+        {label}
+        <span style={{ marginLeft: 4, opacity: isActive ? 0.8 : 0.25, fontSize: theme.size.xs }}>
+          {isActive ? (sortDir === "desc" ? "▼" : "▲") : "⇅"}
+        </span>
+      </th>
+    );
+  };
 
   if (!rows.length) {
     return (
@@ -366,6 +392,63 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
       </div>
     );
   }
+
+  // Pre-compute all derived values so we can sort on them
+  const enriched = rows.map(pos => {
+    const dte    = calcDTE(pos.expiry_date);
+    const dtePct = dtePctRemaining({ openDateIso: pos.open_date, expiryDateIso: pos.expiry_date, dte });
+
+    let glDollars = null, glPct = null;
+    if (pos.expiry_date && pos.strike != null && pos.contracts) {
+      const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC || isLeap, pos.strike);
+      const mid = quoteMap.get(sym)?.mid ?? null;
+      if (isLeap) {
+        glDollars = leapGlDollars({ capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
+        glPct     = leapGlPct({     capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
+      } else {
+        glDollars = shortOptionGlDollars({ premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
+        glPct     = shortOptionGlPct({     premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
+      }
+    }
+
+    let otmPct = null;
+    if (!isLeap && pos.strike != null) {
+      const stockMid = quoteMap.get(pos.ticker)?.mid;
+      if (stockMid != null) {
+        otmPct = isCC
+          ? ((pos.strike - stockMid) / stockMid) * 100
+          : ((stockMid - pos.strike) / pos.strike) * 100;
+      }
+    }
+
+    const displayValue = isLeap ? pos.capital_fronted : pos.premium_collected;
+    return { pos, dte, dtePct, glDollars, glPct, otmPct, displayValue };
+  });
+
+  const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
+    let aVal, bVal;
+    switch (sortCol) {
+      case "Ticker":     aVal = a.pos.ticker;      bVal = b.pos.ticker;      break;
+      case "Expiry":     aVal = a.pos.expiry_date; bVal = b.pos.expiry_date; break;
+      case "Strike":     aVal = a.pos.strike;      bVal = b.pos.strike;      break;
+      case "% OTM":      aVal = a.otmPct;          bVal = b.otmPct;          break;
+      case "DTE":        aVal = a.dte;             bVal = b.dte;             break;
+      case "% DTE Left": aVal = a.dtePct;          bVal = b.dtePct;          break;
+      case "Premium":
+      case "Cost":       aVal = a.displayValue;    bVal = b.displayValue;    break;
+      case "G/L $":      aVal = a.glDollars;       bVal = b.glDollars;       break;
+      case "G/L %":      aVal = a.glPct;           bVal = b.glPct;           break;
+      default:           return 0;
+    }
+    if (aVal == null && bVal == null) return 0;
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+    if (typeof aVal === "string") {
+      const cmp = aVal.localeCompare(bVal);
+      return sortDir === "desc" ? -cmp : cmp;
+    }
+    return sortDir === "desc" ? bVal - aVal : aVal - bVal;
+  });
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -387,79 +470,37 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
           </tr>
         </thead>
         <tbody>
-          {rows.map((pos, i) => {
-            const dte = calcDTE(pos.expiry_date);
-            const dtePct = dtePctRemaining({
-              openDateIso:   pos.open_date,
-              expiryDateIso: pos.expiry_date,
-              dte,
-            });
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
               : theme.red;
+            const glColor    = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
+            const otmColor   = otmPct == null ? theme.text.muted : otmPct > 0 ? theme.green : theme.red;
+            const valueColor = isLeap ? theme.chart.leaps : theme.green;
 
-            // G/L — dispatch to positionMetrics based on long vs short side.
-            let glDollars = null, glPct = null;
-            if (pos.expiry_date && pos.strike != null && pos.contracts) {
-              const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC || isLeap, pos.strike);
-              const mid = quoteMap.get(sym)?.mid ?? null;
-              if (isLeap) {
-                glDollars = leapGlDollars({ capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
-                glPct     = leapGlPct({     capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
-              } else {
-                glDollars = shortOptionGlDollars({ premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
-                glPct     = shortOptionGlPct({     premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
-              }
-            }
-            const glColor = glDollars == null ? theme.text.muted : glDollars >= 0 ? theme.green : theme.red;
-
-            // Row highlight — CSP/CC profit target or LEAPS management signals
             let rowHighlightColor = null;
             if (!isLeap && glPct != null && dtePct != null) {
-              const targetPct = targetProfitPctForDtePct(dtePct);
-              if (glPct >= targetPct) rowHighlightColor = theme.green;
+              if (glPct >= targetProfitPctForDtePct(dtePct)) rowHighlightColor = theme.green;
             } else if (isLeap) {
-              if (glPct != null && glPct >= 10) {
-                rowHighlightColor = theme.green;   // profit target hit
-              } else if (dte != null && dte < 90) {
-                rowHighlightColor = theme.red;     // needs managing
-              }
+              if (glPct != null && glPct >= 10)      rowHighlightColor = theme.green;
+              else if (dte != null && dte < 90)      rowHighlightColor = theme.red;
             }
-
-            // % OTM — how far stock is from strike (positive = OTM / safe)
-            let otmPct = null, otmColor = theme.text.muted;
-            if (!isLeap && pos.strike != null) {
-              const stockMid = quoteMap.get(pos.ticker)?.mid;
-              if (stockMid != null) {
-                // CSP (put): OTM when stock > strike. CC (call): OTM when stock < strike.
-                otmPct = isCC
-                  ? ((pos.strike - stockMid) / stockMid) * 100
-                  : ((stockMid - pos.strike) / pos.strike) * 100;
-                otmColor = otmPct > 0 ? theme.green : theme.red;
-              }
-            }
-
-            const displayValue = isLeap ? pos.capital_fronted : pos.premium_collected;
-            const valueColor   = isLeap ? theme.chart.leaps : theme.green;
 
             const td = (content, style = {}) => (
               <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, ...style }}>{content}</td>
             );
 
-            const rowKey = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
+            const rowKey   = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
             const isExpanded = canExpand && expandedRowKey === rowKey;
 
-            // Compute price targets lazily on expand
             let priceTargets = null;
             if (isExpanded) {
-              const currentIV = quoteMap.get(pos.ticker)?.iv ?? null;
+              const currentIV         = quoteMap.get(pos.ticker)?.iv ?? null;
               const currentStockPrice = quoteMap.get(pos.ticker)?.mid ?? null;
-              const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC, pos.strike);
-              const optionQuote = quoteMap.get(sym);
-              const optionMid = optionQuote?.mid ?? null;
-              const optionIV = optionQuote?.iv ?? null; // per-strike IV from greeks API
-              priceTargets = computePriceTargets(pos, currentIV, currentStockPrice, optionMid, optionIV);
+              const sym               = buildOccSymbol(pos.ticker, pos.expiry_date, isCC, pos.strike);
+              const optionQuote       = quoteMap.get(sym);
+              priceTargets = computePriceTargets(pos, currentIV, currentStockPrice, optionQuote?.mid ?? null, optionQuote?.iv ?? null);
             }
 
             return (
@@ -467,28 +508,28 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                 <tr
                   style={{
                     borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
-                    borderLeft: rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
-                    cursor: canExpand ? "pointer" : "default",
-                    background: highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
-                    transition: "background 0.4s",
+                    borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
+                    cursor:       canExpand ? "pointer" : "default",
+                    background:   highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
+                    transition:   "background 0.4s",
                   }}
                   onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
                   onMouseEnter={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.15)" : `${TYPE_COLORS.CSP.bg}22`)}
                   onMouseLeave={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent")}
                 >
-                  {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
-                  {!isMobile && td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
-                  {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
-                  {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—", { color: otmColor, fontWeight: 600, textAlign: "right" })}
+                  {td(pos.ticker,                                                   { fontWeight: 700, color: theme.text.primary })}
+                  {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
+                  {td(pos.strike != null ? `$${pos.strike}` : "—",                 { color: theme.text.primary, textAlign: "right" })}
+                  {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—",   { color: otmColor, fontWeight: 600, textAlign: "right" })}
                   {!isMobile && td(dte != null ? `${dte}d` : "—", {
-                    color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
+                    color:     dte != null && dte <= 5 ? theme.red : theme.text.muted,
                     fontWeight: dte != null && dte <= 5 ? 600 : 400,
-                    textAlign:  "right",
+                    textAlign: "right",
                   })}
                   {!isMobile && td(dtePct != null ? `${dtePct.toFixed(0)}%` : "—", { color: dtePctColor, fontWeight: 600, textAlign: "right" })}
-                  {!isMobile && td(formatDollarsFull(displayValue),               { color: valueColor, fontWeight: 600, textAlign: "right" })}
+                  {!isMobile && td(formatDollarsFull(displayValue),                 { color: valueColor, fontWeight: 600, textAlign: "right" })}
                   {!isMobile && td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
-                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—", { color: glColor, fontWeight: 500, textAlign: "right" })}
+                  {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",                { color: glColor, fontWeight: 500, textAlign: "right" })}
                   {canExpand && td(
                     <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
                     { width: 30, textAlign: "center", padding: "9px 4px" }
