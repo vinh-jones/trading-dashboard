@@ -231,6 +231,15 @@ export default async function handler(req, res) {
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
+
+  // Patch account_snapshots with VIX — syncFromSheets (step 1) wrote the row
+  // without it. Fire-and-forget; a write failure here never blocks the snapshot.
+  if (vix != null) {
+    supabase.from("account_snapshots")
+      .update({ vix_current: vix, vix_band: band?.label ?? null })
+      .eq("snapshot_date", today)
+      .then(({ error }) => { if (error) console.error("[api/snapshot] VIX patch failed:", error); });
+  }
   const withinBand   = band && freeCashPct !== null ? freeCashPct >= band.floorPct && freeCashPct <= band.ceilingPct : null;
   const overdeployed = band && freeCashPct !== null ? freeCashPct < band.floorPct   : null;
   const underdeployed= band && freeCashPct !== null ? freeCashPct > band.ceilingPct : null;

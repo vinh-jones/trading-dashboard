@@ -12,6 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
+import { getVixBand } from "../src/lib/vixBand.js";
 import {
   computeForecastV2,
   serializePerPosition,
@@ -45,7 +46,27 @@ export default async function handler(req, res) {
 
   try {
     const supabase = getSupabase();
+    const TODAY = new Date().toISOString().slice(0, 10);
     const { tradesCount, positionsCount } = await syncFromSheets(supabase);
+
+    // Patch account_snapshots with live VIX — syncFromSheets doesn't have it
+    // (sheets don't carry VIX). Non-blocking: a fetch failure here never fails the sync.
+    try {
+      const vixRes = await fetch(
+        "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d",
+        { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "application/json" } }
+      );
+      if (vixRes.ok) {
+        const vixData = await vixRes.json();
+        const vix = vixData?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+        if (vix != null) {
+          const band = getVixBand(vix);
+          await supabase.from("account_snapshots")
+            .update({ vix_current: vix, vix_band: band?.label ?? null })
+            .eq("snapshot_date", TODAY);
+        }
+      }
+    } catch { /* non-blocking */ }
 
     // ── Auto-journal: insert entries for any trades not yet journaled ──
     const [{ data: trades }, { data: existing }] = await Promise.all([
