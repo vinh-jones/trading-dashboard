@@ -125,8 +125,11 @@ export default async function handler(req, res) {
   // 5. Per-ticker allocations and total deployed
   // Each position has capital_fronted which is the total for that row.
   // Assigned shares: capital_fronted = cost_basis_total (sum of all lots — don't double-count lots).
+  // CCs are excluded: their collateral is the underlying shares, already counted in
+  // assigned_shares.capital_fronted. Including CC capital_fronted would double-count.
   const tickerTotals = {};
   positions.forEach(p => {
+    if (p.type === "CC") return;
     const fronted = p.capital_fronted || 0;
     if (p.ticker && fronted > 0) {
       tickerTotals[p.ticker] = (tickerTotals[p.ticker] || 0) + fronted;
