@@ -126,10 +126,10 @@ function buildTextBlob({
     lines.push(`Free Cash: ${cashPct} ${bandStatus}${bandRange ? "  (" + bandRange + ")" : ""}`);
     lines.push(`Account Value: ${fmt$(ds.account_value)}`);
     lines.push(
-      `MTD Realized: ${fmt$(ds.mtd_premium_collected)} | Pipeline Gross: ${fmt$(ds.open_premium_gross)} | Pipeline Est (60%): ${fmt$(ds.open_premium_expected)}`
+      `MTD Realized: ${fmt$(ds.mtd_premium_collected)} | Pipeline Gross: ${fmt$(ds.open_premium_gross)}`
     );
     lines.push(
-      `Pipeline Implied Monthly: ${fmt$(ds.pipeline_implied_monthly)}`
+      `Forecast Month Total (v2): ${fmt$(ds.forecast_month_total)}`
     );
     if (ds.vix != null)
       lines.push(`VIX: ${ds.vix} · ${ds.vix_band ?? ""}`);
