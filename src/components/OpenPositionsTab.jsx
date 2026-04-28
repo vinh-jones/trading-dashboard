@@ -373,9 +373,10 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
         <thead>
           <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
             {[
-              "Ticker", "Strike",
-              ...(!isLeap ? ["% OTM"] : []),
+              "Ticker",
               ...(!isMobile ? ["Expiry"] : []),
+              "Strike",
+              ...(!isLeap ? ["% OTM"] : []),
               ...(!isMobile ? ["DTE"] : []),
               ...(!isMobile ? ["% DTE Left"] : []),
               ...(!isMobile ? [isLeap ? "Cost" : "Premium"] : []),
@@ -476,9 +477,9 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                   onMouseLeave={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent")}
                 >
                   {td(pos.ticker,                { fontWeight: 700, color: theme.text.primary })}
+                  {!isMobile && td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
                   {td(pos.strike != null ? `$${pos.strike}` : "—", { color: theme.text.primary, textAlign: "right" })}
                   {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—", { color: otmColor, fontWeight: 600, textAlign: "right" })}
-                  {!isMobile && td(formatExpiry(pos.expiry_date),               { color: theme.text.muted })}
                   {!isMobile && td(dte != null ? `${dte}d` : "—", {
                     color:      dte != null && dte <= 5 ? theme.red : theme.text.muted,
                     fontWeight: dte != null && dte <= 5 ? 600 : 400,
