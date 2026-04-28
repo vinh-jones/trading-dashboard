@@ -170,9 +170,11 @@ export default async function handler(req, res) {
     const dataAsOf  = lastSnap?.snapshot_date ?? latestAccountSnap?.snapshot_date ?? null;
 
     // --- Batch 2: position trajectories — depends on trades from batch 1 ---
+    // position_daily_state.position_key uses lowercase type ('csp','cc') from
+    // pipelineForecast.js. trades.type is uppercase ('CSP','CC'). Lowercase to match.
     const positionKeys = trades
       .filter((t) => t.ticker && t.type && t.strike && t.expiry_date)
-      .map((t) => `${t.ticker}|${t.type}|${t.strike}|${t.expiry_date}`);
+      .map((t) => `${t.ticker}|${t.type.toLowerCase()}|${t.strike}|${t.expiry_date}`);
 
     const tradeIds = trades.map((t) => t.id).filter(Boolean);
 
