@@ -125,8 +125,11 @@ export default async function handler(req, res) {
   // 5. Per-ticker allocations and total deployed
   // Each position has capital_fronted which is the total for that row.
   // Assigned shares: capital_fronted = cost_basis_total (sum of all lots — don't double-count lots).
+  // CCs are excluded: their collateral is the underlying shares, already counted in
+  // assigned_shares.capital_fronted. Including CC capital_fronted would double-count.
   const tickerTotals = {};
   positions.forEach(p => {
+    if (p.type === "CC") return;
     const fronted = p.capital_fronted || 0;
     if (p.ticker && fronted > 0) {
       tickerTotals[p.ticker] = (tickerTotals[p.ticker] || 0) + fronted;
@@ -228,6 +231,15 @@ export default async function handler(req, res) {
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
+
+  // Patch account_snapshots with VIX — syncFromSheets (step 1) wrote the row
+  // without it. Fire-and-forget; a write failure here never blocks the snapshot.
+  if (vix != null) {
+    supabase.from("account_snapshots")
+      .update({ vix_current: vix, vix_band: band?.label ?? null })
+      .eq("snapshot_date", today)
+      .then(({ error }) => { if (error) console.error("[api/snapshot] VIX patch failed:", error); });
+  }
   const withinBand   = band && freeCashPct !== null ? freeCashPct >= band.floorPct && freeCashPct <= band.ceilingPct : null;
   const overdeployed = band && freeCashPct !== null ? freeCashPct < band.floorPct   : null;
   const underdeployed= band && freeCashPct !== null ? freeCashPct > band.ceilingPct : null;

@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/monthly-review.js": { "maxDuration": 30 }
+  },
   "crons": [
     {
       "path": "/api/quotes",

@@ -5,15 +5,18 @@
  *
  * Returns a structured payload covering the 7 sections of the monthly review
  * skill template. All data comes from persisted tables — no live lookups.
- * Safe to call for any past month; works for in-progress months too (is_complete=false).
+ * Safe to call for any past month; works for in-progress months (is_complete=false).
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
 
+// Service key bypasses RLS — appropriate for a server-side analytical endpoint.
 function getSupabase() {
-  const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY
+    || process.env.SUPABASE_ANON_KEY
+    || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
 }
@@ -47,7 +50,7 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    // --- Batch 1: primary data sources (all parallel) ---
+    // --- Batch 1: all primary data sources in parallel ---
     const [
       dailySnapshotsResult,
       tradesResult,
@@ -57,6 +60,8 @@ export default async function handler(req, res) {
       forecastCalResult,
       breachHistoryResult,
       nextMonthEarningsResult,
+      latestAccountSnapResult,  // P1-1/P1-2: reliable account_value fallback
+      assignedIncomeCacheResult, // P1-3: fallback when daily_snapshot income cols are null
     ] = await Promise.all([
       supabase
         .from("daily_snapshots")
@@ -86,7 +91,6 @@ export default async function handler(req, res) {
         .lte("snapshot_date", monthEnd)
         .order("snapshot_date", { ascending: true }),
 
-      // Falls back to hardcoded if table doesn't exist yet
       supabase
         .from("monthly_targets")
         .select("baseline, stretch")
@@ -113,6 +117,21 @@ export default async function handler(req, res) {
         .lte("earnings_date", nextEnd)
         .not("earnings_date", "is", null)
         .order("earnings_date", { ascending: true }),
+
+      // P1-1/P1-2: account_snapshots always reflects the latest synced value
+      supabase
+        .from("account_snapshots")
+        .select("snapshot_date, account_value, cost_basis, free_cash_est, free_cash_pct_est")
+        .order("snapshot_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+
+      // P1-3: app_cache holds latest computeAssignedShareIncome result
+      supabase
+        .from("app_cache")
+        .select("value, updated_at")
+        .eq("key", "assigned_share_income_latest")
+        .maybeSingle(),
     ]);
 
     if (dailySnapshotsResult.error)  throw new Error(`daily_snapshots: ${dailySnapshotsResult.error.message}`);
@@ -122,24 +141,49 @@ export default async function handler(req, res) {
     if (forecastCalResult.error)     throw new Error(`forecast_calibration: ${forecastCalResult.error.message}`);
     if (breachHistoryResult.error)   throw new Error(`assigned_share_breach_history: ${breachHistoryResult.error.message}`);
 
-    const dailySnapshots     = dailySnapshotsResult.data     ?? [];
-    const trades             = tradesResult.data             ?? [];
-    const journalEntries     = journalEntriesResult.data     ?? [];
-    const macroSnapshots     = macroSnapshotsResult.data     ?? [];
-    const forecastCalibration = forecastCalResult.data       ?? [];
-    const breachHistory      = breachHistoryResult.data      ?? [];
-    const nextMonthEarnings  = nextMonthEarningsResult.data  ?? [];
+    const dailySnapshots      = dailySnapshotsResult.data      ?? [];
+    const trades              = tradesResult.data              ?? [];
+    const journalEntries      = journalEntriesResult.data      ?? [];
+    const macroSnapshots      = macroSnapshotsResult.data      ?? [];
+    const forecastCalibration = forecastCalResult.data         ?? [];
+    const breachHistory       = breachHistoryResult.data       ?? [];
+    const nextMonthEarnings   = nextMonthEarningsResult.data   ?? [];
+    const latestAccountSnap   = latestAccountSnapResult.data   ?? null;
 
-    // monthly_targets: fall back to hardcoded if table missing or no row
+    // P1-3: parse app_cache assigned-share income (fallback)
+    let assignedIncomeCache = null;
+    try {
+      if (assignedIncomeCacheResult.data?.value) {
+        assignedIncomeCache = JSON.parse(assignedIncomeCacheResult.data.value);
+      }
+    } catch { /* ignore parse errors */ }
+
+    // monthly_targets: fall back to hardcoded if table not yet applied
     const targetRow = !monthlyTargetResult.error ? monthlyTargetResult.data : null;
     const target = targetRow ?? { baseline: MONTHLY_TARGETS.baseline, stretch: MONTHLY_TARGETS.stretch };
 
-    // --- Batch 2: position trajectories for trades closed this month ---
+    // P1-1/P1-2: find the last snapshot that actually has account_value populated.
+    // Cron hasn't run yet today, and some rows may have been written with null
+    // account_value if the account-snapshot load failed that day.
+    const lastSnap  = [...dailySnapshots].reverse().find(s => s.account_value) ?? null;
+    const firstSnap = dailySnapshots.find(s => s.account_value) ?? null;
+    const dataAsOf  = lastSnap?.snapshot_date ?? latestAccountSnap?.snapshot_date ?? null;
+
+    // --- Batch 2: position trajectories — depends on trades from batch 1 ---
+    // position_daily_state.position_key uses lowercase type ('csp','cc') from
+    // pipelineForecast.js. trades.type is uppercase ('CSP','CC'). Lowercase to match.
     const positionKeys = trades
       .filter((t) => t.ticker && t.type && t.strike && t.expiry_date)
-      .map((t) => `${t.ticker}|${t.type}|${t.strike}|${t.expiry_date}`);
+      .map((t) => `${t.ticker}|${t.type.toLowerCase()}|${t.strike}|${t.expiry_date}`);
 
     const tradeIds = trades.map((t) => t.id).filter(Boolean);
+
+    // P1-5: span from earliest trade open_date so we capture full trajectory
+    // for positions that opened before the review month.
+    const earliestOpenDate = trades.reduce(
+      (min, t) => t.open_date && (!min || t.open_date < min) ? t.open_date : min,
+      null
+    ) ?? monthStart;
 
     const [positionStateResult, linkedJournalResult] = await Promise.all([
       positionKeys.length > 0
@@ -147,7 +191,7 @@ export default async function handler(req, res) {
             .from("position_daily_state")
             .select("*")
             .in("position_key", positionKeys)
-            .gte("snapshot_date", monthStart)
+            .gte("snapshot_date", earliestOpenDate)
             .lte("snapshot_date", monthEnd)
             .order("snapshot_date", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
@@ -163,8 +207,8 @@ export default async function handler(req, res) {
     if (positionStateResult.error) throw new Error(`position_daily_state: ${positionStateResult.error.message}`);
     if (linkedJournalResult.error) throw new Error(`journal_entries (linked): ${linkedJournalResult.error.message}`);
 
-    const positionState    = positionStateResult.data  ?? [];
-    const linkedJournals   = linkedJournalResult.data  ?? [];
+    const positionState  = positionStateResult.data ?? [];
+    const linkedJournals = linkedJournalResult.data ?? [];
 
     // Build lookup indexes
     const stateByKey = {};
@@ -181,15 +225,14 @@ export default async function handler(req, res) {
       }
     }
 
-    // Snapshot bookends
-    const firstSnap = dailySnapshots[0]    ?? null;
-    const lastSnap  = dailySnapshots.at(-1) ?? null;
-
     // -------------------------------------------------------------------------
     // Section 1: Financial Snapshot
     // -------------------------------------------------------------------------
-    const mtdRealized          = lastSnap?.forecast_realized_to_date ?? lastSnap?.mtd_premium_collected ?? null;
-    const forecastAtMonthStart = firstSnap?.forecast_month_total ?? null;
+    // P1-1: fall back to account_snapshots for start/end values when daily_snapshot
+    // account_value is null (cron hasn't run yet, or run failed that day).
+    const accountValueEnd   = lastSnap?.account_value   ?? latestAccountSnap?.account_value   ?? null;
+    const accountValueStart = firstSnap?.account_value  ?? latestAccountSnap?.account_value   ?? null;
+    const mtdRealized       = lastSnap?.forecast_realized_to_date ?? lastSnap?.mtd_premium_collected ?? null;
 
     const financial_snapshot = {
       target_baseline:         target.baseline,
@@ -199,19 +242,20 @@ export default async function handler(req, res) {
       vs_baseline_dollar:      mtdRealized != null ? +(mtdRealized - target.baseline).toFixed(2) : null,
       vs_stretch_pct:          mtdRealized != null ? +(mtdRealized / target.stretch).toFixed(4) : null,
       trade_count_closed:      trades.length,
-      account_value_start:     firstSnap?.account_value ?? null,
-      account_value_end:       lastSnap?.account_value  ?? null,
+      account_value_start:     accountValueStart,
+      account_value_end:       accountValueEnd,
       account_value_change:
-        firstSnap && lastSnap
-          ? +(lastSnap.account_value - firstSnap.account_value).toFixed(2)
+        accountValueStart != null && accountValueEnd != null
+          ? +(accountValueEnd - accountValueStart).toFixed(2)
           : null,
-      forecast_at_month_start: forecastAtMonthStart,
-      forecast_at_month_end:   lastSnap?.forecast_month_total ?? null,
+      forecast_at_month_start: firstSnap?.forecast_month_total ?? null,
+      forecast_at_month_end:   lastSnap?.forecast_month_total  ?? null,
       forecast_accuracy_pct:
-        forecastAtMonthStart && mtdRealized
-          ? +(mtdRealized / forecastAtMonthStart).toFixed(4)
+        firstSnap?.forecast_month_total && mtdRealized
+          ? +(mtdRealized / firstSnap.forecast_month_total).toFixed(4)
           : null,
-      by_type: aggregateByType(trades),
+      by_type:    aggregateByType(trades),
+      data_as_of: dataAsOf,
     };
 
     // -------------------------------------------------------------------------
@@ -219,7 +263,6 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------------
     const deployedValues = dailySnapshots.map((s) => s.total_deployed_pct).filter((v) => v != null);
     const vixValues      = dailySnapshots.map((s) => s.vix).filter((v) => v != null);
-    const macroVix       = macroSnapshots.map((s) => s.vix).filter((v) => v != null);
 
     const phaseTransitions = [];
     for (let i = 1; i < dailySnapshots.length; i++) {
@@ -230,32 +273,66 @@ export default async function handler(req, res) {
       }
     }
 
-    // Latest breach state per ticker (breach history is sorted desc)
+    // Latest breach state per ticker (sorted desc so first row is most recent)
     const breachByTicker = {};
     for (const row of breachHistory) {
       if (!breachByTicker[row.ticker]) breachByTicker[row.ticker] = row;
     }
 
+    // P1-3: assigned_share_income from daily_snapshot if populated, else app_cache fallback
+    const assignedIncomeSection = (() => {
+      if (lastSnap?.assigned_share_income_total != null) {
+        return {
+          total_capacity:  lastSnap.assigned_share_income_total,
+          on_target:       lastSnap.assigned_share_income_on_target,
+          by_band: {
+            healthy:    lastSnap.assigned_share_income_healthy,
+            recovering: lastSnap.assigned_share_income_recovering,
+            grinding:   lastSnap.assigned_share_income_grinding,
+          },
+          per_position: lastSnap.assigned_share_income_per_position,
+          source:       "daily_snapshot",
+          as_of:        lastSnap.snapshot_date,
+        };
+      }
+      if (assignedIncomeCache?.aggregate) {
+        return {
+          total_capacity:  assignedIncomeCache.aggregate.total_monthly_income        ?? null,
+          on_target:       assignedIncomeCache.aggregate.total_monthly_income_on_target ?? null,
+          by_band: {
+            healthy:    assignedIncomeCache.aggregate.healthy?.monthly_income    ?? null,
+            recovering: assignedIncomeCache.aggregate.recovering?.monthly_income ?? null,
+            grinding:   assignedIncomeCache.aggregate.grinding?.monthly_income   ?? null,
+          },
+          per_position: assignedIncomeCache.per_position ?? null,
+          source:       "app_cache",
+          as_of:        assignedIncomeCacheResult.data?.updated_at ?? null,
+        };
+      }
+      return null;
+    })();
+
     const portfolio_composition = {
       month_end: lastSnap ? {
-        open_csp_count:          lastSnap.open_csp_count,
-        open_cc_count:           lastSnap.open_cc_count,
-        open_leaps_count:        lastSnap.open_leaps_count,
-        assigned_share_tickers:  lastSnap.assigned_share_tickers,
-        total_open_positions:    lastSnap.total_open_positions,
-        total_deployed_pct:      lastSnap.total_deployed_pct,
-        free_cash_pct:           lastSnap.free_cash_pct,
-        vix:                     lastSnap.vix,
-        vix_band:                lastSnap.vix_band,
-        pipeline_phase:          lastSnap.pipeline_phase,
-        ticker_allocations:      lastSnap.ticker_allocations,
+        open_csp_count:         lastSnap.open_csp_count,
+        open_cc_count:          lastSnap.open_cc_count,
+        open_leaps_count:       lastSnap.open_leaps_count,
+        assigned_share_tickers: lastSnap.assigned_share_tickers,
+        total_open_positions:   lastSnap.total_open_positions,
+        total_deployed_pct:     lastSnap.total_deployed_pct,
+        free_cash_pct:          lastSnap.free_cash_pct,
+        vix:                    lastSnap.vix,
+        vix_band:               lastSnap.vix_band,
+        pipeline_phase:         lastSnap.pipeline_phase,
+        ticker_allocations:     lastSnap.ticker_allocations,
         concentration_flags: {
-          any_above_10pct:       lastSnap.any_ticker_above_10pct,
-          any_above_15pct:       lastSnap.any_ticker_above_15pct,
+          any_above_10pct:      lastSnap.any_ticker_above_10pct,
+          any_above_15pct:      lastSnap.any_ticker_above_15pct,
         },
-        within_vix_band:         lastSnap.within_band,
-        overdeployed:            lastSnap.overdeployed,
-        underdeployed:           lastSnap.underdeployed,
+        within_vix_band:        lastSnap.within_band,
+        overdeployed:           lastSnap.overdeployed,
+        underdeployed:          lastSnap.underdeployed,
+        data_as_of:             dataAsOf,
       } : null,
 
       drift_over_month: {
@@ -267,32 +344,23 @@ export default async function handler(req, res) {
           ? [+Math.min(...vixValues).toFixed(2), +Math.max(...vixValues).toFixed(2)]
           : null,
         snapshot_series: dailySnapshots.map((s) => ({
-          date:         s.snapshot_date,
-          deployed_pct: s.total_deployed_pct,
+          date:          s.snapshot_date,
+          deployed_pct:  s.total_deployed_pct,
           free_cash_pct: s.free_cash_pct,
-          vix:          s.vix,
-          phase:        s.pipeline_phase,
-          within_band:  s.within_band,
+          vix:           s.vix,
+          phase:         s.pipeline_phase,
+          within_band:   s.within_band,
           mtd_collected: s.forecast_realized_to_date ?? s.mtd_premium_collected,
         })),
       },
 
-      assigned_share_income: lastSnap ? {
-        total_capacity:  lastSnap.assigned_share_income_total,
-        on_target:       lastSnap.assigned_share_income_on_target,
-        by_band: {
-          healthy:    lastSnap.assigned_share_income_healthy,
-          recovering: lastSnap.assigned_share_income_recovering,
-          grinding:   lastSnap.assigned_share_income_grinding,
-        },
-        per_position: lastSnap.assigned_share_income_per_position,
-      } : null,
+      assigned_share_income: assignedIncomeSection,
     };
 
     // -------------------------------------------------------------------------
     // Section 3: Execution Quality
     // -------------------------------------------------------------------------
-    const allTags       = journalEntries.flatMap((e) => e.tags ?? []);
+    const allTags         = journalEntries.flatMap((e) => e.tags ?? []);
     const frameworkCounts = countByCategory(allTags, "framework");
 
     const trades_with_context = trades.map((t) => {
@@ -300,23 +368,23 @@ export default async function handler(req, res) {
         ? `${t.ticker}|${t.type}|${t.strike}|${t.expiry_date}`
         : null;
       return {
-        id:                      t.id,
-        ticker:                  t.ticker,
-        type:                    t.type,
-        subtype:                 t.subtype,
-        strike:                  t.strike,
-        contracts:               t.contracts,
-        open_date:               t.open_date,
-        close_date:              t.close_date,
-        expiry_date:             t.expiry_date,
-        days_held:               t.days_held,
-        premium_collected:       t.premium_collected,
-        kept_pct:                t.kept_pct,
-        roi:                     t.roi,
-        capital_fronted:         t.capital_fronted,
-        notes:                   t.notes,
-        linked_journal_entry_ids: journalIdsByTradeId[t.id] ?? [],
-        // Daily trajectory during the month for grading (profit%, DTE, stock price)
+        id:                        t.id,
+        ticker:                    t.ticker,
+        type:                      t.type,
+        subtype:                   t.subtype,
+        strike:                    t.strike,
+        contracts:                 t.contracts,
+        open_date:                 t.open_date,
+        close_date:                t.close_date,
+        expiry_date:               t.expiry_date,
+        days_held:                 t.days_held,
+        premium_collected:         t.premium_collected,
+        kept_pct:                  t.kept_pct,
+        roi:                       t.roi,
+        capital_fronted:           t.capital_fronted,
+        notes:                     t.notes,
+        linked_journal_entry_ids:  journalIdsByTradeId[t.id] ?? [],
+        // P1-5: full trajectory from open_date forward (not just within review month)
         position_daily_trajectory: key ? (stateByKey[key] ?? []) : [],
       };
     });
@@ -324,11 +392,11 @@ export default async function handler(req, res) {
     const execution_quality = {
       trades_this_month: trades_with_context,
       framework_compliance_summary: {
-        "60-60-applied":          frameworkCounts["60-60-applied"]      ?? 0,
-        "60-60-skipped":          frameworkCounts["60-60-skipped"]      ?? 0,
+        "60-60-applied":          frameworkCounts["60-60-applied"]          ?? 0,
+        "60-60-skipped":          frameworkCounts["60-60-skipped"]          ?? 0,
         "conditions-based-close": frameworkCounts["conditions-based-close"] ?? 0,
-        "expiry-cleanup":         frameworkCounts["expiry-cleanup"]     ?? 0,
-        "early-close":            frameworkCounts["early-close"]        ?? 0,
+        "expiry-cleanup":         frameworkCounts["expiry-cleanup"]         ?? 0,
+        "early-close":            frameworkCounts["early-close"]            ?? 0,
       },
     };
 
@@ -337,7 +405,6 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------------
     const tagsByCategory = aggregateByCategory(allTags);
 
-    // Drift-tagged dates: dates where any drift: tag appears, clustered at 2+
     const driftByDate = {};
     for (const e of journalEntries) {
       const driftTags = (e.tags ?? []).filter((t) => t.startsWith("drift:"));
@@ -368,9 +435,7 @@ export default async function handler(req, res) {
     // Section 5: Key Learnings
     // -------------------------------------------------------------------------
     const LEARNING_TAGS = new Set(["framework:gap-identified", "review:key-learning"]);
-    const tagged_entries = journalEntries.filter((e) =>
-      (e.tags ?? []).some((t) => LEARNING_TAGS.has(t))
-    );
+    const tagged_entries        = journalEntries.filter((e) => (e.tags ?? []).some((t) => LEARNING_TAGS.has(t)));
     const weekly_review_entries = journalEntries.filter((e) => e.entry_type === "weekly_review");
 
     const key_learnings = { tagged_entries, weekly_review_entries };
@@ -378,17 +443,14 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------------
     // Section 6: Macro Context
     // -------------------------------------------------------------------------
+    const macroVix = macroSnapshots.map((s) => s.vix).filter((v) => v != null);
+
     const postureTransitions = [];
     for (let i = 1; i < macroSnapshots.length; i++) {
       const prev = macroSnapshots[i - 1];
       const curr = macroSnapshots[i];
       if (prev.posture !== curr.posture) {
-        postureTransitions.push({
-          date:  curr.snapshot_date,
-          from:  prev.posture,
-          to:    curr.posture,
-          score: curr.posture_score,
-        });
+        postureTransitions.push({ date: curr.snapshot_date, from: prev.posture, to: curr.posture, score: curr.posture_score });
       }
     }
 
@@ -403,11 +465,11 @@ export default async function handler(req, res) {
       posture_score_avg:
         macroSnapshots.length ? +(scoreSum / macroSnapshots.length).toFixed(2) : null,
       snapshot_series: macroSnapshots.map((s) => ({
-        date:            s.snapshot_date,
-        vix:             s.vix,
-        posture:         s.posture,
-        posture_score:   s.posture_score,
-        s5fi_pct:        s.s5fi_pct,
+        date:             s.snapshot_date,
+        vix:              s.vix,
+        posture:          s.posture,
+        posture_score:    s.posture_score,
+        s5fi_pct:         s.s5fi_pct,
         fear_greed_score: s.fear_greed_score,
       })),
     };
@@ -433,16 +495,13 @@ export default async function handler(req, res) {
         month_end_breach_status: Object.values(breachByTicker),
       },
       earnings_in_next_month: nextMonthEarnings.map((q) => ({
-        ticker:       q.symbol,
+        ticker:        q.symbol,
         earnings_date: q.earnings_date,
-        hour:         q.earnings_meta?.hour        ?? null,
-        confidence:   q.earnings_meta?.confidence  ?? null,
+        hour:          q.earnings_meta?.hour       ?? null,
+        confidence:    q.earnings_meta?.confidence ?? null,
       })),
     };
 
-    // -------------------------------------------------------------------------
-    // Forecast Calibration (reference data)
-    // -------------------------------------------------------------------------
     const forecast_calibration_snapshot = {
       current_calibration_date: latestCalDate,
       csp_buckets: latestCal
@@ -494,9 +553,10 @@ function countByCategory(tags, category) {
   for (const tag of tags) {
     const idx = tag.indexOf(":");
     if (idx === -1) continue;
-    const cat = tag.slice(0, idx);
-    const val = tag.slice(idx + 1);
-    if (cat === category) result[val] = (result[val] ?? 0) + 1;
+    if (tag.slice(0, idx) === category) {
+      const val = tag.slice(idx + 1);
+      result[val] = (result[val] ?? 0) + 1;
+    }
   }
   return result;
 }
