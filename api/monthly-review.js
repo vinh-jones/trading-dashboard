@@ -367,7 +367,7 @@ export default async function handler(req, res) {
 
     const trades_with_context = trades.map((t) => {
       const key = t.ticker && t.type && t.strike && t.expiry_date
-        ? `${t.ticker}|${t.type}|${t.strike}|${t.expiry_date}`
+        ? `${t.ticker}|${t.type.toLowerCase()}|${t.strike}|${t.expiry_date}`
         : null;
       return {
         id:                        t.id,
@@ -657,12 +657,14 @@ function clusterDecisions(trades) {
   let counter = 0;
   const nextId = () => `d_${String(++counter).padStart(3, "0")}`;
 
-  function addDecision(type, ticker, date, legs, extra = {}) {
-    const id         = nextId();
-    const components = legs.map((t) => legTypeMap.get(t.id));
-    const net_pnl    = +legs.reduce((s, t) => s + (t.premium_collected ?? 0), 0).toFixed(2);
-    const summary    = buildDecisionSummary(type, ticker, legs, extra.roll_subtype);
-    decisions[id]    = { decision_id: id, decision_type: type, ticker, decision_date: date,
+  // decision_date = close_date of legs[0], which is always the triggering (closing) trade.
+  function addDecision(type, ticker, legs, extra = {}) {
+    const id            = nextId();
+    const components    = legs.map((t) => legTypeMap.get(t.id));
+    const net_pnl       = +legs.reduce((s, t) => s + (t.premium_collected ?? 0), 0).toFixed(2);
+    const decision_date = legs[0]?.close_date ?? null;
+    const summary       = buildDecisionSummary(type, ticker, legs, extra.roll_subtype);
+    decisions[id]       = { decision_id: id, decision_type: type, ticker, decision_date,
       trade_ids: legs.map((t) => t.id), components, net_pnl, summary, ...extra };
     for (const t of legs) { assigned.add(t.id); tradeDecisionId[t.id] = id; }
   }
@@ -680,7 +682,7 @@ function clusterDecisions(trades) {
     if (assigned.has(t.id) || legTypeMap.get(t.id) !== "shares_disposed" || !t.ticker) continue;
     const peers = byTickerDate[`${t.ticker}|${t.close_date}`] ?? [];
     const cc    = peers.find((u) => !assigned.has(u.id) && legTypeMap.get(u.id) === "cc_closed");
-    if (cc) addDecision("coordinated_exit", t.ticker, t.close_date, [t, cc]);
+    if (cc) addDecision("coordinated_exit", t.ticker, [t, cc]);
   }
 
   // Pass 2: wheel_cycle_complete — cc_assigned + shares_disposed, same ticker + same close_date
@@ -688,7 +690,7 @@ function clusterDecisions(trades) {
     if (assigned.has(t.id) || legTypeMap.get(t.id) !== "cc_assigned" || !t.ticker) continue;
     const peers  = byTickerDate[`${t.ticker}|${t.close_date}`] ?? [];
     const shares = peers.find((u) => !assigned.has(u.id) && legTypeMap.get(u.id) === "shares_disposed");
-    if (shares) addDecision("wheel_cycle_complete", t.ticker, t.close_date, [t, shares]);
+    if (shares) addDecision("wheel_cycle_complete", t.ticker, [t, shares]);
   }
 
   // Pass 3: multi_leg_assignment — 2+ csp_assigned on same ticker + same close_date
@@ -699,7 +701,7 @@ function clusterDecisions(trades) {
     if (seenMulti.has(k)) continue;
     seenMulti.add(k);
     const legs = (byTickerDate[k] ?? []).filter((u) => !assigned.has(u.id) && legTypeMap.get(u.id) === "csp_assigned");
-    if (legs.length >= 2) addDecision("multi_leg_assignment", t.ticker, t.close_date, legs);
+    if (legs.length >= 2) addDecision("multi_leg_assignment", t.ticker, legs);
   }
 
   // Pass 4: cc_roll_under_assignment — cc_closed + CC opened within 3 days, different contract
@@ -711,7 +713,7 @@ function clusterDecisions(trades) {
       daysBetween(t.close_date, u.open_date) <= 3 &&
       (u.strike !== t.strike || u.expiry_date !== t.expiry_date)
     );
-    if (newLeg) addDecision("cc_roll_under_assignment", t.ticker, t.close_date, [t, newLeg]);
+    if (newLeg) addDecision("cc_roll_under_assignment", t.ticker, [t, newLeg]);
   }
 
   // Pass 5: csp_roll — csp_closed + CSP opened within 3 days, different contract
@@ -729,7 +731,7 @@ function clusterDecisions(trades) {
       const roll_subtype = !isNaN(oldStrike) && !isNaN(newStrike) && newStrike !== oldStrike
         ? (newStrike > oldStrike ? "roll_up" : "roll_down")
         : "roll_out";
-      addDecision("csp_roll", t.ticker, t.close_date, [t, newLeg], { roll_subtype });
+      addDecision("csp_roll", t.ticker, [t, newLeg], { roll_subtype });
     }
   }
 
@@ -740,7 +742,7 @@ function clusterDecisions(trades) {
     let decision_type = "single_trade_close";
     if (legType === "cc_closed" && (t.premium_collected ?? 0) < -500) decision_type = "defensive_close";
     else if (legType === "csp_assigned" || legType === "cc_assigned")  decision_type = "assignment_taken";
-    addDecision(decision_type, t.ticker ?? "?", t.close_date, [t]);
+    addDecision(decision_type, t.ticker ?? "?", [t]);
   }
 
   return { decisions, tradeDecisionId };
