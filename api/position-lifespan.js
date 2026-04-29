@@ -1,15 +1,14 @@
 /**
  * api/position-lifespan.js — Vercel serverless function
  *
+ * GET /api/position-lifespan
+ *   → summary list of all lifespans across all tickers
+ *
+ * GET /api/position-lifespan?ticker={TICKER}
+ *   → summary list of all lifespans for that ticker
+ *
  * GET /api/position-lifespan?ticker={TICKER}&assignment_id={DATE}
- *
- * Returns the full economic picture of an assigned-share lifespan: from
- * CSP assignment through share disposal, with P&L components and
- * counterfactual benchmarks (SPAXX, cut-and-redeploy).
- *
- * With assignment_id (YYYY-MM-DD): returns single lifespan object.
- * Without assignment_id: returns list of all lifespans for the ticker.
- * No lifespans found: 404 with informative error.
+ *   → full single lifespan object with CC history, decisions, benchmarks
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -31,43 +30,79 @@ export default async function handler(req, res) {
 
   const { ticker, assignment_id } = req.query;
 
-  if (!ticker) {
-    return res.status(400).json({ ok: false, error: "ticker is required" });
-  }
-
-  const tickerUpper = ticker.toUpperCase();
   const today = new Date().toISOString().slice(0, 10);
 
   try {
     const supabase = getSupabase();
 
-    // Fetch all trades for this ticker + CSP baseline (last 60 closed CSPs) in parallel
-    const [tickerTradesResult, cspBaselineResult] = await Promise.all([
-      supabase
-        .from("trades")
-        .select("*")
-        .eq("ticker", tickerUpper)
-        .order("close_date", { ascending: true }),
+    // CSP baseline is always needed
+    const cspBaselineResult = await supabase
+      .from("trades")
+      .select("id, premium_collected, capital_fronted, days_held, close_date")
+      .eq("type", "CSP")
+      .eq("subtype", "Close")
+      .gt("days_held", 0)
+      .gt("capital_fronted", 0)
+      .order("close_date", { ascending: false })
+      .limit(60);
 
-      // CSP performance baseline: last 60 closed (non-assigned) CSPs
-      supabase
-        .from("trades")
-        .select("id, premium_collected, capital_fronted, days_held, close_date")
-        .eq("type", "CSP")
-        .eq("subtype", "Close")
-        .gt("days_held", 0)
-        .gt("capital_fronted", 0)
-        .order("close_date", { ascending: false })
-        .limit(60),
-    ]);
-
-    if (tickerTradesResult.error)
-      throw new Error(`trades: ${tickerTradesResult.error.message}`);
     if (cspBaselineResult.error)
       throw new Error(`csp_baseline: ${cspBaselineResult.error.message}`);
 
+    const cspBaseline = computeCspBaseline(cspBaselineResult.data ?? []);
+
+    // --- No ticker: return summaries for all tickers ---
+    if (!ticker) {
+      const allTradesResult = await supabase
+        .from("trades")
+        .select("*")
+        .order("close_date", { ascending: true });
+
+      if (allTradesResult.error)
+        throw new Error(`trades: ${allTradesResult.error.message}`);
+
+      const tradesByTicker = {};
+      for (const t of allTradesResult.data ?? []) {
+        if (!tradesByTicker[t.ticker]) tradesByTicker[t.ticker] = [];
+        tradesByTicker[t.ticker].push(t);
+      }
+
+      const allSummaries = [];
+      for (const tickerTrades of Object.values(tradesByTicker)) {
+        const assignments = tickerTrades
+          .filter((t) => t.type === "CSP" && t.subtype === "Assigned")
+          .sort((a, b) => (b.close_date ?? "").localeCompare(a.close_date ?? ""));
+
+        for (const triggeringCsp of assignments) {
+          const l = buildLifespan(triggeringCsp, tickerTrades, assignments, cspBaseline, today);
+          allSummaries.push(lifespanSummary(l));
+        }
+      }
+
+      allSummaries.sort((a, b) => (b.assignment_date ?? "").localeCompare(a.assignment_date ?? ""));
+
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Content-Type", "application/json");
+      return res.status(200).json({
+        ok: true,
+        lifespan_count: allSummaries.length,
+        lifespans: allSummaries,
+      });
+    }
+
+    // --- Ticker-scoped: fetch only that ticker's trades ---
+    const tickerUpper = ticker.toUpperCase();
+
+    const tickerTradesResult = await supabase
+      .from("trades")
+      .select("*")
+      .eq("ticker", tickerUpper)
+      .order("close_date", { ascending: true });
+
+    if (tickerTradesResult.error)
+      throw new Error(`trades: ${tickerTradesResult.error.message}`);
+
     const allTickerTrades = tickerTradesResult.data ?? [];
-    const cspBaselineTrades = cspBaselineResult.data ?? [];
 
     // All assignment events for this ticker (CSP Assigned), most-recent-first
     const assignmentEvents = allTickerTrades
@@ -83,8 +118,6 @@ export default async function handler(req, res) {
           `CSP-only or LEAPS positions are not included.`,
       });
     }
-
-    const cspBaseline = computeCspBaseline(cspBaselineTrades);
 
     if (assignment_id) {
       // --- Single lifespan mode ---
@@ -136,18 +169,7 @@ export default async function handler(req, res) {
         )
       );
 
-      const summaries = lifespans.map((l) => ({
-        assignment_id: l.assignment_id,
-        lifespan_status: l.lifespan_status,
-        assignment_date: l.assignment_event.date,
-        exit_date: l.exit_event?.date ?? null,
-        days_active: l.lifespan_metrics.days_active,
-        initial_capital: l.assignment_event.initial_capital,
-        total_lifespan_pnl: l.lifespan_metrics.total_lifespan_pnl,
-        return_pct_on_capital: l.lifespan_metrics.return_pct_on_capital,
-        spaxx_verdict: l.benchmarks.spaxx_baseline.verdict,
-        cut_and_redeploy_verdict: l.benchmarks.cut_and_redeploy_baseline.verdict,
-      }));
+      const summaries = lifespans.map(lifespanSummary);
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");
@@ -162,6 +184,26 @@ export default async function handler(req, res) {
     console.error("[api/position-lifespan] Error:", err.message);
     return res.status(500).json({ ok: false, error: err.message });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Summary shape (used in list modes)
+// ---------------------------------------------------------------------------
+
+function lifespanSummary(l) {
+  return {
+    ticker: l.ticker,
+    assignment_id: l.assignment_id,
+    lifespan_status: l.lifespan_status,
+    assignment_date: l.assignment_event.date,
+    exit_date: l.exit_event?.date ?? null,
+    days_active: l.lifespan_metrics.days_active,
+    initial_capital: l.assignment_event.initial_capital,
+    total_lifespan_pnl: l.lifespan_metrics.total_lifespan_pnl,
+    return_pct_on_capital: l.lifespan_metrics.return_pct_on_capital,
+    spaxx_verdict: l.benchmarks.spaxx_baseline.verdict,
+    cut_and_redeploy_verdict: l.benchmarks.cut_and_redeploy_baseline.verdict,
+  };
 }
 
 // ---------------------------------------------------------------------------
