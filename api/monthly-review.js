@@ -199,7 +199,7 @@ export default async function handler(req, res) {
       tradeIds.length > 0
         ? supabase
             .from("journal_entries")
-            .select("id, entry_date, title, body, tags, trade_id")
+            .select("id, entry_date, entry_type, title, body, tags, mood, trade_id")
             .in("trade_id", tradeIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -218,11 +218,18 @@ export default async function handler(req, res) {
     }
 
     const journalIdsByTradeId = {};
+    const journalByTradeId   = {};
     for (const e of linkedJournals) {
-      if (e.trade_id) {
-        if (!journalIdsByTradeId[e.trade_id]) journalIdsByTradeId[e.trade_id] = [];
-        journalIdsByTradeId[e.trade_id].push(e.id);
-      }
+      if (!e.trade_id) continue;
+      (journalIdsByTradeId[e.trade_id] ??= []).push(e.id);
+      (journalByTradeId[e.trade_id]   ??= []).push({
+        entry_id:   e.id,
+        entry_date: e.entry_date,
+        entry_type: e.entry_type,
+        body:       e.body,
+        tags:       e.tags,
+        mood:       e.mood,
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -365,6 +372,14 @@ export default async function handler(req, res) {
 
     const { decisions, tradeDecisionId } = clusterDecisions(trades);
 
+    // Attach journal context to each decision (aggregated from all constituent trades)
+    for (const d of Object.values(decisions)) {
+      d.journal_context = d.trade_ids.flatMap((id) => journalByTradeId[id] ?? []);
+    }
+
+    // Build campaign chains from sustained CC sequences
+    const campaigns = buildCampaigns(trades, decisions);
+
     const trades_with_context = trades.map((t) => {
       const key = t.ticker && t.type && t.strike && t.expiry_date
         ? `${t.ticker}|${t.type.toLowerCase()}|${t.strike}|${t.expiry_date}`
@@ -386,6 +401,7 @@ export default async function handler(req, res) {
         capital_fronted:           t.capital_fronted,
         notes:                     t.notes,
         decision_id:               tradeDecisionId[t.id] ?? null,
+        journal_context:           journalByTradeId[t.id] ?? [],
         linked_journal_entry_ids:  journalIdsByTradeId[t.id] ?? [],
         // P1-5: full trajectory from open_date forward (not just within review month)
         position_daily_trajectory: key ? (stateByKey[key] ?? []) : [],
@@ -395,6 +411,7 @@ export default async function handler(req, res) {
     const execution_quality = {
       trades_this_month: trades_with_context,
       decisions,
+      campaigns,
       framework_compliance_summary: {
         "60-60-applied":          frameworkCounts["60-60-applied"]          ?? 0,
         "60-60-skipped":          frameworkCounts["60-60-skipped"]          ?? 0,
@@ -746,4 +763,71 @@ function clusterDecisions(trades) {
   }
 
   return { decisions, tradeDecisionId };
+}
+
+// Builds campaign objects from sustained CC sequences on the same ticker.
+// A campaign = chain of CC trades where each consecutive pair has a gap of
+// ≤21 days between the old close and the new open (covers weekly and monthly CCs).
+// Chains with only one trade are singletons and not surfaced as campaigns.
+function buildCampaigns(trades, decisions) {
+  const CHAIN_GAP_DAYS = 21;
+
+  const ccByTicker = {};
+  for (const t of trades) {
+    if (t.type !== "CC" || !t.ticker) continue;
+    (ccByTicker[t.ticker] ??= []).push(t);
+  }
+
+  const decisionByTradeId = {};
+  for (const [dId, d] of Object.entries(decisions)) {
+    for (const tId of d.trade_ids) decisionByTradeId[tId] = dId;
+  }
+
+  const campaigns = {};
+  let counter = 0;
+
+  for (const [ticker, ccTrades] of Object.entries(ccByTicker)) {
+    const sorted = [...ccTrades].sort((a, b) => (a.open_date ?? "").localeCompare(b.open_date ?? ""));
+
+    // Partition into chains: consecutive trades linked when gap ≤ CHAIN_GAP_DAYS
+    const chains = [];
+    let chain = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      const gap = daysBetween(sorted[i - 1].close_date, sorted[i].open_date);
+      if (gap <= CHAIN_GAP_DAYS) {
+        chain.push(sorted[i]);
+      } else {
+        chains.push(chain);
+        chain = [sorted[i]];
+      }
+    }
+    chains.push(chain);
+
+    for (const ch of chains) {
+      if (ch.length < 2) continue;
+      const cId         = `c_${String(++counter).padStart(3, "0")}`;
+      const tradeIds    = ch.map((t) => t.id);
+      const decisionIds = [...new Set(tradeIds.map((id) => decisionByTradeId[id]).filter(Boolean))];
+      const total_pnl   = +ch.reduce((s, t) => s + (t.premium_collected ?? 0), 0).toFixed(2);
+      const start_date  = ch[0].open_date;
+      const last        = ch[ch.length - 1];
+      const end_date    = last.close_date;
+      const weeks_active = Math.max(1, Math.round(daysBetween(start_date, end_date ?? start_date) / 7));
+      const current_status = getLegType(last) === "cc_assigned" ? "assigned" : "closed";
+      campaigns[cId] = {
+        campaign_id:    cId,
+        ticker,
+        start_date,
+        end_date,
+        decision_ids:   decisionIds,
+        trade_ids:      tradeIds,
+        total_pnl,
+        weeks_active,
+        current_strike: last.strike,
+        current_status,
+      };
+    }
+  }
+
+  return campaigns;
 }
