@@ -783,6 +783,9 @@ function buildCampaigns(trades, decisions) {
     for (const tId of d.trade_ids) decisionByTradeId[tId] = dId;
   }
 
+  // Needed to sum premium from non-CC trades pulled in via decisions (e.g. share disposals)
+  const tradeById = new Map(trades.map((t) => [t.id, t]));
+
   const campaigns = {};
   let counter = 0;
 
@@ -806,9 +809,17 @@ function buildCampaigns(trades, decisions) {
     for (const ch of chains) {
       if (ch.length < 2) continue;
       const cId         = `c_${String(++counter).padStart(3, "0")}`;
-      const tradeIds    = ch.map((t) => t.id);
-      const decisionIds = [...new Set(tradeIds.map((id) => decisionByTradeId[id]).filter(Boolean))];
-      const total_pnl   = +ch.reduce((s, t) => s + (t.premium_collected ?? 0), 0).toFixed(2);
+      const ccTradeIds  = ch.map((t) => t.id);
+      const decisionIds = [...new Set(ccTradeIds.map((id) => decisionByTradeId[id]).filter(Boolean))];
+      // Expand trade_ids to include all trades from constituent decisions (e.g. share
+      // disposals in coordinated_exit or wheel_cycle_complete) so total_pnl is accurate.
+      const allTradeIds = [...new Set([
+        ...ccTradeIds,
+        ...decisionIds.flatMap((dId) => decisions[dId]?.trade_ids ?? []),
+      ])];
+      const total_pnl   = +allTradeIds
+        .reduce((s, id) => s + (tradeById.get(id)?.premium_collected ?? 0), 0)
+        .toFixed(2);
       const start_date  = ch[0].open_date;
       const last        = ch[ch.length - 1];
       const end_date    = last.close_date;
@@ -820,7 +831,7 @@ function buildCampaigns(trades, decisions) {
         start_date,
         end_date,
         decision_ids:   decisionIds,
-        trade_ids:      tradeIds,
+        trade_ids:      allTradeIds,
         total_pnl,
         weeks_active,
         current_strike: last.strike,
