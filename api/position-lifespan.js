@@ -169,6 +169,7 @@ export default async function handler(req, res) {
 // ---------------------------------------------------------------------------
 
 function buildLifespan(triggeringCsp, allTickerTrades, allAssignmentEvents, cspBaseline, today) {
+  const tickerUpper      = (triggeringCsp.ticker ?? "").toUpperCase();
   const assignmentDate   = triggeringCsp.close_date;
   const assignmentPrice  = parseFloat(triggeringCsp.strike) || 0;
   const shares           = (triggeringCsp.contracts ?? 1) * 100;
