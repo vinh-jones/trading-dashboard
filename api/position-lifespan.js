@@ -8,10 +8,12 @@
  *   → summary list of all lifespans for that ticker
  *
  * GET /api/position-lifespan?ticker={TICKER}&assignment_id={DATE}
- *   → full single lifespan object with CC history, decisions, benchmarks
+ *   → full single lifespan (DATE = first assignment event date for the lifespan)
  */
 
 import { createClient } from "@supabase/supabase-js";
+
+const DATA_QUALITY_THRESHOLD = "2026-01-01";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -29,13 +31,11 @@ export default async function handler(req, res) {
   }
 
   const { ticker, assignment_id } = req.query;
-
   const today = new Date().toISOString().slice(0, 10);
 
   try {
     const supabase = getSupabase();
 
-    // CSP baseline is always needed
     const cspBaselineResult = await supabase
       .from("trades")
       .select("id, premium_collected, capital_fronted, days_held, close_date")
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
 
     const cspBaseline = computeCspBaseline(cspBaselineResult.data ?? []);
 
-    // --- No ticker: return summaries for all tickers ---
+    // --- No ticker: summaries for all tickers ---
     if (!ticker) {
       const allTradesResult = await supabase
         .from("trades")
@@ -68,18 +68,14 @@ export default async function handler(req, res) {
       }
 
       const allSummaries = [];
-      for (const tickerTrades of Object.values(tradesByTicker)) {
-        const assignments = tickerTrades
-          .filter((t) => t.type === "CSP" && t.subtype === "Assigned")
-          .sort((a, b) => (b.close_date ?? "").localeCompare(a.close_date ?? ""));
-
-        for (const triggeringCsp of assignments) {
-          const l = buildLifespan(triggeringCsp, tickerTrades, assignments, cspBaseline, today);
-          allSummaries.push(lifespanSummary(l));
+      for (const [tk, tickerTrades] of Object.entries(tradesByTicker)) {
+        for (const raw of detectLifespans(tk, tickerTrades)) {
+          allSummaries.push(lifespanSummary(buildLifespan(raw, cspBaseline, today)));
         }
       }
-
-      allSummaries.sort((a, b) => (b.assignment_date ?? "").localeCompare(a.assignment_date ?? ""));
+      allSummaries.sort((a, b) =>
+        (b.assignment_date ?? "").localeCompare(a.assignment_date ?? "")
+      );
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");
@@ -90,7 +86,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // --- Ticker-scoped: fetch only that ticker's trades ---
+    // --- Ticker-scoped ---
     const tickerUpper = ticker.toUpperCase();
 
     const tickerTradesResult = await supabase
@@ -102,14 +98,9 @@ export default async function handler(req, res) {
     if (tickerTradesResult.error)
       throw new Error(`trades: ${tickerTradesResult.error.message}`);
 
-    const allTickerTrades = tickerTradesResult.data ?? [];
+    const rawLifespans = detectLifespans(tickerUpper, tickerTradesResult.data ?? []);
 
-    // All assignment events for this ticker (CSP Assigned), most-recent-first
-    const assignmentEvents = allTickerTrades
-      .filter((t) => t.type === "CSP" && t.subtype === "Assigned")
-      .sort((a, b) => (b.close_date ?? "").localeCompare(a.close_date ?? ""));
-
-    if (assignmentEvents.length === 0) {
+    if (rawLifespans.length === 0) {
       return res.status(404).json({
         ok: false,
         error:
@@ -121,55 +112,42 @@ export default async function handler(req, res) {
 
     if (assignment_id) {
       // --- Single lifespan mode ---
-      const triggeringCsp = assignmentEvents.find(
-        (t) => t.close_date === assignment_id
+      const raw = rawLifespans.find(
+        (l) => l.assignment_events[0]?.date === assignment_id
       );
-      if (!triggeringCsp) {
+      if (!raw) {
+        const available = rawLifespans
+          .map((l) => l.assignment_events[0]?.date)
+          .filter(Boolean);
         return res.status(404).json({
           ok: false,
           error:
-            `No assignment found for ${tickerUpper} on ${assignment_id}. ` +
-            `Available assignment dates: ${assignmentEvents.map((t) => t.close_date).join(", ")}`,
+            `No lifespan found for ${tickerUpper} starting on ${assignment_id}. ` +
+            `Available lifespan start dates: ${available.join(", ")}`,
         });
       }
 
-      const lifespan = buildLifespan(
-        triggeringCsp,
-        allTickerTrades,
-        assignmentEvents,
-        cspBaseline,
-        today
-      );
+      const lifespan = buildLifespan(raw, cspBaseline, today);
 
-      // Fetch journal entries linked to lifespan trades
-      const tradeIds = lifespan._tradeIds;
       let linkedJournals = [];
-      if (tradeIds.length > 0) {
+      if (lifespan._tradeIds.length > 0) {
         const journalResult = await supabase
           .from("journal_entries")
           .select("id, entry_date, entry_type, title, body, trade_id")
-          .in("trade_id", tradeIds);
+          .in("trade_id", lifespan._tradeIds);
         if (!journalResult.error) linkedJournals = journalResult.data ?? [];
       }
 
-      const result = finalizeLifespan(lifespan, linkedJournals);
+      const result = attachJournalContext(lifespan, linkedJournals);
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");
       return res.status(200).json({ ok: true, ...result });
     } else {
       // --- List mode: all lifespans for ticker ---
-      const lifespans = assignmentEvents.map((triggeringCsp) =>
-        buildLifespan(
-          triggeringCsp,
-          allTickerTrades,
-          assignmentEvents,
-          cspBaseline,
-          today
-        )
-      );
-
-      const summaries = lifespans.map(lifespanSummary);
+      const summaries = rawLifespans
+        .map((r) => buildLifespan(r, cspBaseline, today))
+        .map(lifespanSummary);
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");
@@ -187,7 +165,7 @@ export default async function handler(req, res) {
 }
 
 // ---------------------------------------------------------------------------
-// Summary shape (used in list modes)
+// Summary shape (list modes)
 // ---------------------------------------------------------------------------
 
 function lifespanSummary(l) {
@@ -195,10 +173,13 @@ function lifespanSummary(l) {
     ticker: l.ticker,
     assignment_id: l.assignment_id,
     lifespan_status: l.lifespan_status,
-    assignment_date: l.assignment_event.date,
+    data_quality: l.data_quality,
+    assignment_date: l.assignment_events[0]?.date ?? null,
     exit_date: l.exit_event?.date ?? null,
     days_active: l.lifespan_metrics.days_active,
-    initial_capital: l.assignment_event.initial_capital,
+    total_shares_at_peak: l.total_shares_at_peak,
+    total_capital_committed: l.total_capital_committed,
+    blended_cost_basis: l.blended_cost_basis,
     total_lifespan_pnl: l.lifespan_metrics.total_lifespan_pnl,
     return_pct_on_capital: l.lifespan_metrics.return_pct_on_capital,
     spaxx_verdict: l.benchmarks.spaxx_baseline.verdict,
@@ -207,193 +188,278 @@ function lifespanSummary(l) {
 }
 
 // ---------------------------------------------------------------------------
-// Core lifespan builder
+// Lifespan detection — running share count
 // ---------------------------------------------------------------------------
 
-function buildLifespan(triggeringCsp, allTickerTrades, allAssignmentEvents, cspBaseline, today) {
-  const tickerUpper      = (triggeringCsp.ticker ?? "").toUpperCase();
-  const assignmentDate   = triggeringCsp.close_date;
-  const assignmentPrice  = parseFloat(triggeringCsp.strike) || 0;
-  const shares           = (triggeringCsp.contracts ?? 1) * 100;
-  const initialCapital   = round2(assignmentPrice * shares);
-  const cspPremium       = parseFloat(triggeringCsp.premium_collected) || 0;
-  const spotAtAssignment =
-    triggeringCsp.spot_at_assignment != null
-      ? parseFloat(triggeringCsp.spot_at_assignment)
-      : null;
+function detectLifespans(ticker, allTickerTrades) {
+  // Only trades that affect share count or CC activity, with a close_date
+  const relevant = allTickerTrades.filter(
+    (t) =>
+      t.close_date &&
+      ((t.type === "CSP" && t.subtype === "Assigned") ||
+        (t.type === "CC" &&
+          (t.subtype === "Close" ||
+            t.subtype === "Roll Loss" ||
+            t.subtype === "Assigned")) ||
+        (t.type === "Shares" &&
+          (t.subtype === "Sold" || t.subtype === "Exit")))
+  );
 
-  // Later assignment events on the same ticker (for overlap warning)
-  const laterAssignments = allAssignmentEvents
-    .filter((t) => t.id !== triggeringCsp.id && t.close_date > assignmentDate)
-    .sort((a, b) => a.close_date.localeCompare(b.close_date));
-  const nextAssignmentDate = laterAssignments[0]?.close_date ?? null;
+  // Sort by close_date ASC; open_date tiebreaker ensures CC Close before Shares Sold on same day
+  const sorted = [...relevant].sort((a, b) => {
+    const d = (a.close_date ?? "").localeCompare(b.close_date ?? "");
+    if (d !== 0) return d;
+    return (a.open_date ?? "").localeCompare(b.open_date ?? "");
+  });
 
-  // Share disposal: first eligible trade after assignment_date
-  // - Shares Sold/Exit: manual sale or coordinated exit
-  // - CC Assigned: shares called away
-  const disposalTrade =
-    allTickerTrades
-      .filter(
-        (t) =>
-          t.close_date > assignmentDate &&
-          t.id !== triggeringCsp.id &&
-          ((t.type === "Shares" && (t.subtype === "Sold" || t.subtype === "Exit")) ||
-            (t.type === "CC" && t.subtype === "Assigned"))
-      )
-      .sort((a, b) => a.close_date.localeCompare(b.close_date))[0] ?? null;
+  let runningShares = 0;
+  let current = null;
+  const lifespans = [];
+  const orphanWarnings = [];
 
-  const lifespanStatus      = disposalTrade ? "closed" : "active";
-  const effectiveDisposalDate = disposalTrade?.close_date ?? today;
+  for (const trade of sorted) {
+    // --- CSP Assigned: shares enter the position ---
+    if (trade.type === "CSP" && trade.subtype === "Assigned") {
+      const sharesAdded = (trade.contracts ?? 1) * 100;
+      if (runningShares === 0) {
+        current = {
+          ticker,
+          assignment_events: [],
+          _cspTrades: [],
+          cc_history: [],
+          partial_dispositions: [],
+          exit_event: null,
+          _disposalTrade: null,
+          _orphanWarnings: [],
+        };
+      }
+      current._cspTrades.push(trade);
+      current.assignment_events.push({
+        date: trade.close_date,
+        triggering_csp_id: trade.id,
+        strike: parseFloat(trade.strike) || 0,
+        csp_premium_collected: round2(parseFloat(trade.premium_collected) || 0),
+        shares_added: sharesAdded,
+        capital_added: round2(sharesAdded * (parseFloat(trade.strike) || 0)),
+        spot_at_assignment:
+          trade.spot_at_assignment != null
+            ? parseFloat(trade.spot_at_assignment)
+            : null,
+      });
+      runningShares += sharesAdded;
 
-  // CCs written during the lifespan window
-  const ccTrades = allTickerTrades
-    .filter(
-      (t) =>
-        t.type === "CC" &&
-        t.open_date >= assignmentDate &&
-        t.close_date <= effectiveDisposalDate
-    )
-    .sort((a, b) => (a.open_date ?? "").localeCompare(b.open_date ?? ""));
+    // --- CC Close / Roll Loss: no share change ---
+    } else if (
+      trade.type === "CC" &&
+      (trade.subtype === "Close" || trade.subtype === "Roll Loss")
+    ) {
+      if (current !== null) {
+        current.cc_history.push(trade);
+      } else {
+        orphanWarnings.push(
+          `CC ${trade.subtype} for ${ticker} on ${trade.close_date} (id: ${trade.id}) with no active lifespan`
+        );
+      }
 
-  // Duration
-  const daysAct    = daysBetween(assignmentDate, effectiveDisposalDate);
-  const capitalDays = round2(initialCapital * daysAct);
+    // --- CC Assigned: shares called away ---
+    } else if (trade.type === "CC" && trade.subtype === "Assigned") {
+      const sharesRemoved = (trade.contracts ?? 1) * 100;
+      if (current !== null) {
+        current.cc_history.push(trade);
+        const basis = computeBlendedBasis(current.assignment_events);
+        const disposalPnl = round2(
+          (parseFloat(trade.strike) - basis) * sharesRemoved
+        );
+        runningShares -= sharesRemoved;
+        if (runningShares === 0) {
+          current.exit_event = {
+            date: trade.close_date,
+            exit_type: "called_away",
+            exit_price: parseFloat(trade.strike) || null,
+            shares_disposed: sharesRemoved,
+            share_disposal_pnl: disposalPnl,
+            triggering_decision_id: null,
+          };
+          current._disposalTrade = trade;
+          lifespans.push(current);
+          current = null;
+        } else {
+          current.partial_dispositions.push({
+            date: trade.close_date,
+            type: "called_away",
+            shares: sharesRemoved,
+            disposal_pnl: disposalPnl,
+          });
+        }
+      }
 
-  // P&L components
-  const ccPremiumTotal   = round2(ccTrades.reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
-  const ccPremiumWinning = round2(ccTrades.filter((t) => (parseFloat(t.premium_collected) || 0) > 0)
-    .reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
-  const ccPremiumLosing  = round2(ccTrades.filter((t) => (parseFloat(t.premium_collected) || 0) < 0)
-    .reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
-
-  // Exit event
-  let exitEvent        = null;
-  let shareDisposalPnl = null;
-
-  if (disposalTrade) {
-    let exitType  = "manual_sale";
-    let exitPrice = null;
-
-    if (disposalTrade.type === "CC" && disposalTrade.subtype === "Assigned") {
-      exitType  = "called_away";
-      exitPrice = parseFloat(disposalTrade.strike) || null;
-    } else {
-      // Shares Sold/Exit — coordinated_exit if a CC also closed the same day
-      const sameDayCcClose = allTickerTrades.find(
-        (t) =>
-          t.type === "CC" &&
-          (t.subtype === "Close" || t.subtype === "Roll Loss") &&
-          t.close_date === disposalTrade.close_date
-      );
-      exitType  = sameDayCcClose ? "coordinated_exit" : "manual_sale";
-      exitPrice = parseFloat(disposalTrade.strike) || null;
+    // --- Shares Sold / Exit: manual disposal ---
+    } else if (
+      trade.type === "Shares" &&
+      (trade.subtype === "Sold" || trade.subtype === "Exit")
+    ) {
+      const sharesRemoved = trade.contracts ?? 0;
+      // premium_collected confirmed as gain/loss directly (not gross proceeds)
+      const disposalPnl = round2(parseFloat(trade.premium_collected) || 0);
+      if (current !== null) {
+        // coordinated_exit: CC Close/Roll Loss already in cc_history on same day
+        const sameDayCc = current.cc_history.find(
+          (cc) =>
+            cc.close_date === trade.close_date &&
+            (cc.subtype === "Close" || cc.subtype === "Roll Loss")
+        );
+        const exitType = sameDayCc ? "coordinated_exit" : "manual_sale";
+        const basis = computeBlendedBasis(current.assignment_events);
+        const exitPrice =
+          sharesRemoved > 0
+            ? round2(basis + disposalPnl / sharesRemoved)
+            : null;
+        runningShares -= sharesRemoved;
+        if (runningShares === 0) {
+          current.exit_event = {
+            date: trade.close_date,
+            exit_type: exitType,
+            exit_price: exitPrice,
+            shares_disposed: sharesRemoved,
+            share_disposal_pnl: disposalPnl,
+            triggering_decision_id: null,
+          };
+          current._disposalTrade = trade;
+          lifespans.push(current);
+          current = null;
+        } else {
+          current.partial_dispositions.push({
+            date: trade.close_date,
+            type: exitType,
+            shares: sharesRemoved,
+            disposal_pnl: disposalPnl,
+          });
+        }
+      }
     }
-
-    shareDisposalPnl =
-      exitPrice != null ? round2((exitPrice - assignmentPrice) * shares) : null;
-
-    exitEvent = {
-      date:                   disposalTrade.close_date,
-      exit_type:              exitType,
-      exit_price:             exitPrice,
-      shares_disposed:        shares,
-      share_disposal_pnl:     shareDisposalPnl,
-      triggering_decision_id: null,
-    };
   }
 
+  // Remaining active lifespan
+  if (current !== null) lifespans.push(current);
+
+  // Orphaned CC warnings attach to the first lifespan for the ticker
+  if (orphanWarnings.length > 0 && lifespans.length > 0) {
+    lifespans[0]._orphanWarnings.push(...orphanWarnings);
+  }
+
+  return lifespans;
+}
+
+// ---------------------------------------------------------------------------
+// Lifespan computation — metrics, benchmarks, decisions
+// ---------------------------------------------------------------------------
+
+function buildLifespan(raw, cspBaseline, today) {
+  const { ticker, assignment_events, cc_history, partial_dispositions, exit_event } = raw;
+
+  const firstAssignment = assignment_events[0];
+  const assignmentId    = firstAssignment?.date ?? null;
+  const lifespanStatus  = exit_event ? "closed" : "active";
+  const effectiveEnd    = exit_event ? exit_event.date : today;
+
+  // Full-precision basis for computation; round2 for display
+  const basisRaw           = computeBlendedBasis(assignment_events);
+  const blendedBasis        = round2(basisRaw);
+  const totalSharesAtPeak   = assignment_events.reduce((s, e) => s + e.shares_added, 0);
+  const totalCapital        = round2(assignment_events.reduce((s, e) => s + e.capital_added, 0));
+  const cspPremiumTotal     = round2(assignment_events.reduce((s, e) => s + e.csp_premium_collected, 0));
+
+  // CC premium (all cc_history entries, including CC Assigned)
+  const ccPremiumTotal   = round2(cc_history.reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
+  const ccPremiumWinning = round2(cc_history.filter((t) => (parseFloat(t.premium_collected) || 0) > 0)
+    .reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
+  const ccPremiumLosing  = round2(cc_history.filter((t) => (parseFloat(t.premium_collected) || 0) < 0)
+    .reduce((s, t) => s + (parseFloat(t.premium_collected) || 0), 0));
+
+  // Share disposal P&L = sum across all partial + final disposals
+  const shareDisposalPnl = lifespanStatus === "closed"
+    ? round2([
+        ...partial_dispositions.map((d) => d.disposal_pnl ?? 0),
+        exit_event ? (exit_event.share_disposal_pnl ?? 0) : 0,
+      ].reduce((s, v) => s + v, 0))
+    : null;
+
   const totalLifespanPnl =
-    lifespanStatus === "closed" && shareDisposalPnl != null
-      ? round2(cspPremium + ccPremiumTotal + shareDisposalPnl)
+    lifespanStatus === "closed" && shareDisposalPnl !== null
+      ? round2(cspPremiumTotal + ccPremiumTotal + shareDisposalPnl)
       : null;
 
-  // Rate metrics — null if active, days < 1, or no capital
-  const canRate    = daysAct >= 1 && initialCapital > 0 && totalLifespanPnl != null;
-  const returnPct  = canRate ? round6(totalLifespanPnl / initialCapital) : null;
-  const annualPct  = canRate ? round6(returnPct * (365 / daysAct)) : null;
+  // Duration / rates
+  const daysActive    = daysBetween(assignmentId, effectiveEnd);
+  const capitalDays   = round2(totalCapital * daysActive);
+  const canRate       = daysActive >= 1 && totalCapital > 0 && totalLifespanPnl !== null;
+  const returnPct     = canRate ? round6(totalLifespanPnl / totalCapital) : null;
+  const annualPct     = canRate ? round6(returnPct * (365 / daysActive)) : null;
   const returnPerCapDay = canRate && capitalDays > 0
     ? +(totalLifespanPnl / capitalDays).toFixed(8)
     : null;
 
-  // --- SPAXX benchmark ---
-  const spaxxReturn  = round2(initialCapital * 0.04 * (daysAct / 365));
-  const spaxxVsActual =
-    totalLifespanPnl != null ? round2(totalLifespanPnl - spaxxReturn) : null;
-  const spaxxVerdict =
-    lifespanStatus === "active"
-      ? "active"
-      : spaxxVsActual != null && spaxxVsActual >= 0
-      ? "outperformed"
-      : "underperformed";
+  // SPAXX benchmark
+  const spaxxReturn   = round2(totalCapital * 0.04 * (daysActive / 365));
+  const spaxxVsActual = totalLifespanPnl !== null ? round2(totalLifespanPnl - spaxxReturn) : null;
 
-  // --- Cut-and-redeploy benchmark ---
+  // Cut-and-redeploy benchmark (uses first assignment only)
   const { avg_return_per_capital_day, sample_size } = cspBaseline;
+  const hasSpotAtFirst = firstAssignment?.spot_at_assignment != null;
   let cutAndRedeploy;
 
-  if (spotAtAssignment == null) {
+  if (!hasSpotAtFirst) {
     cutAndRedeploy = {
-      requires_spot_at_assignment:    true,
-      sell_at_assignment_recovery:    null,
-      realized_loss_at_assignment:    null,
-      capital_to_redeploy:            null,
-      avg_csp_return_per_capital_day: avg_return_per_capital_day,
-      sample_size_csps_used:          sample_size,
-      estimated_csp_pnl_over_lifespan: null,
-      net_outcome_if_cut_and_redeploy: null,
-      vs_actual_pnl:                  null,
-      verdict:                        "data_missing",
+      requires_spot_at_first_assignment:  true,
+      sell_at_assignment_recovery:        null,
+      realized_loss_at_assignment:        null,
+      capital_to_redeploy:                null,
+      avg_csp_return_per_capital_day:     avg_return_per_capital_day,
+      sample_size_csps_used:              sample_size,
+      estimated_csp_pnl_over_lifespan:    null,
+      net_outcome_if_cut_and_redeploy:    null,
+      vs_actual_pnl:                      null,
+      verdict: computeVerdict(lifespanStatus, null, false),
     };
   } else {
-    const sellRecovery       = round2(spotAtAssignment * shares);
-    const realizedLoss       = round2(initialCapital - sellRecovery);
-    const capitalToRedeploy  = sellRecovery;
-    const estCspPnl          =
-      avg_return_per_capital_day > 0
-        ? round2(capitalToRedeploy * avg_return_per_capital_day * daysAct)
-        : 0;
-    const netOutcome  = round2(-realizedLoss + estCspPnl);
-    const vsActual    = totalLifespanPnl != null ? round2(totalLifespanPnl - netOutcome) : null;
-    const verdict     =
-      lifespanStatus === "active"
-        ? "active"
-        : vsActual != null && vsActual >= 0
-        ? "outperformed"
-        : "underperformed";
-
+    const fa             = firstAssignment;
+    const sellRecovery   = round2(fa.spot_at_assignment * fa.shares_added);
+    const realizedLoss   = round2(fa.capital_added - sellRecovery);
+    const toRedeploy     = sellRecovery;
+    const estCspPnl      = avg_return_per_capital_day > 0
+      ? round2(toRedeploy * avg_return_per_capital_day * daysActive)
+      : 0;
+    const netOutcome     = round2(-realizedLoss + estCspPnl);
+    const vsActual       = totalLifespanPnl !== null ? round2(totalLifespanPnl - netOutcome) : null;
     cutAndRedeploy = {
-      requires_spot_at_assignment:     true,
-      sell_at_assignment_recovery:     sellRecovery,
-      realized_loss_at_assignment:     realizedLoss,
-      capital_to_redeploy:             capitalToRedeploy,
-      avg_csp_return_per_capital_day:  avg_return_per_capital_day,
-      sample_size_csps_used:           sample_size,
-      estimated_csp_pnl_over_lifespan: estCspPnl,
-      net_outcome_if_cut_and_redeploy: netOutcome,
-      vs_actual_pnl:                   vsActual,
-      verdict,
+      requires_spot_at_first_assignment:  true,
+      sell_at_assignment_recovery:        sellRecovery,
+      realized_loss_at_assignment:        realizedLoss,
+      capital_to_redeploy:                toRedeploy,
+      avg_csp_return_per_capital_day:     avg_return_per_capital_day,
+      sample_size_csps_used:              sample_size,
+      estimated_csp_pnl_over_lifespan:    estCspPnl,
+      net_outcome_if_cut_and_redeploy:    netOutcome,
+      vs_actual_pnl:                      vsActual,
+      verdict: computeVerdict(lifespanStatus, vsActual, true),
     };
   }
 
-  // --- Data completeness & warnings ---
-  const warnings = [];
-  if (daysAct < 1) {
+  // Data quality
+  const dataQuality = (assignmentId ?? "") >= DATA_QUALITY_THRESHOLD ? "trusted" : "suspect";
+
+  // Warnings
+  const warnings = [...(raw._orphanWarnings ?? [])];
+  if (daysActive < 1)
     warnings.push("days_active < 1: same-day assignment and exit; rate-based metrics are null");
-  }
-  if (sample_size < 10) {
+  if (sample_size < 10)
     warnings.push(
       `CSP baseline uses only ${sample_size} sample${sample_size === 1 ? "" : "s"} (< 10); ` +
-        "cut-and-redeploy estimate is low-confidence"
+      "cut-and-redeploy estimate is low-confidence"
     );
-  }
-  if (nextAssignmentDate) {
-    warnings.push(
-      `Another ${tickerUpper} assignment found on ${nextAssignmentDate}; ` +
-        "verify these lifespans do not overlap"
-    );
-  }
 
-  // --- CC history (journal context filled in by finalizeLifespan) ---
-  const ccHistory = ccTrades.map((t) => ({
+  // CC history formatted (relative_to_assignment uses blended basis)
+  const ccHistoryFormatted = cc_history.map((t) => ({
     trade_id:              t.id,
     open_date:             t.open_date,
     close_date:            t.close_date,
@@ -403,62 +469,52 @@ function buildLifespan(triggeringCsp, allTickerTrades, allAssignmentEvents, cspB
     kept_pct:              t.kept_pct ?? null,
     days_held:             t.days_held,
     relative_to_assignment:
-      parseFloat(t.strike) > assignmentPrice
-        ? "above"
-        : parseFloat(t.strike) === assignmentPrice
-        ? "at"
-        : "below",
+      parseFloat(t.strike) > basisRaw ? "above" :
+      parseFloat(t.strike) === basisRaw ? "at" : "below",
     is_winning:            (parseFloat(t.premium_collected) || 0) > 0,
     journal_context_summary: null,
   }));
 
-  // --- Lifespan decisions ---
+  // Lifespan decisions
   const lifespanTrades = [
-    triggeringCsp,
-    ...ccTrades,
-    ...(disposalTrade ? [disposalTrade] : []),
+    ...(raw._cspTrades ?? []),
+    ...cc_history,
+    ...(raw._disposalTrade ? [raw._disposalTrade] : []),
   ];
-  const lifespanDecisions = clusterLifespanDecisions(lifespanTrades, tickerUpper);
-
-  // Trade IDs for journal fetch (single-lifespan mode)
+  const lifespanDecisions = clusterLifespanDecisions(lifespanTrades, ticker);
   const tradeIds = lifespanTrades.map((t) => t.id).filter(Boolean);
 
   return {
-    ticker:           tickerUpper,
-    assignment_id:    assignmentDate,
-    lifespan_status:  lifespanStatus,
+    ticker,
+    assignment_id:          assignmentId,
+    lifespan_status:        lifespanStatus,
+    data_quality:           dataQuality,
 
-    assignment_event: {
-      date:                  assignmentDate,
-      triggering_csp_id:     triggeringCsp.id,
-      csp_strike:            assignmentPrice,
-      csp_premium_collected: round2(cspPremium),
-      shares,
-      assignment_price:      assignmentPrice,
-      spot_at_assignment:    spotAtAssignment,
-      initial_capital:       initialCapital,
-    },
-
-    exit_event: exitEvent,
+    assignment_events,
+    blended_cost_basis:     blendedBasis,
+    total_shares_at_peak:   totalSharesAtPeak,
+    total_capital_committed: totalCapital,
+    exit_event,
+    partial_dispositions,
 
     lifespan_metrics: {
-      days_active:           daysAct,
-      capital_days:          capitalDays,
-      csp_premium_collected: round2(cspPremium),
-      cc_premium_total:      ccPremiumTotal,
-      cc_premium_winning:    ccPremiumWinning,
-      cc_premium_losing:     ccPremiumLosing,
-      share_disposal_pnl:    shareDisposalPnl,
-      total_lifespan_pnl:    totalLifespanPnl,
-      cc_count_total:        ccTrades.length,
-      cc_count_winning:      ccTrades.filter((t) => (parseFloat(t.premium_collected) || 0) > 0).length,
-      cc_count_losing:       ccTrades.filter((t) => (parseFloat(t.premium_collected) || 0) < 0).length,
-      return_pct_on_capital: returnPct,
-      annualized_return_pct: annualPct,
+      days_active:            daysActive,
+      capital_days:           capitalDays,
+      csp_premium_collected:  cspPremiumTotal,
+      cc_premium_total:       ccPremiumTotal,
+      cc_premium_winning:     ccPremiumWinning,
+      cc_premium_losing:      ccPremiumLosing,
+      share_disposal_pnl:     shareDisposalPnl,
+      total_lifespan_pnl:     totalLifespanPnl,
+      cc_count_total:         cc_history.length,
+      cc_count_winning:       cc_history.filter((t) => (parseFloat(t.premium_collected) || 0) > 0).length,
+      cc_count_losing:        cc_history.filter((t) => (parseFloat(t.premium_collected) || 0) < 0).length,
+      return_pct_on_capital:  returnPct,
+      annualized_return_pct:  annualPct,
       return_per_capital_day: returnPerCapDay,
     },
 
-    cc_history:         ccHistory,
+    cc_history:         ccHistoryFormatted,
     lifespan_decisions: lifespanDecisions,
 
     benchmarks: {
@@ -466,16 +522,16 @@ function buildLifespan(triggeringCsp, allTickerTrades, allAssignmentEvents, cspB
         annual_rate:    0.04,
         total_return:   spaxxReturn,
         vs_actual_pnl:  spaxxVsActual,
-        verdict:        spaxxVerdict,
+        verdict:        computeVerdict(lifespanStatus, spaxxVsActual, true),
       },
       cut_and_redeploy_baseline: cutAndRedeploy,
     },
 
     computed_at: new Date().toISOString(),
     data_completeness: {
-      has_spot_at_assignment: spotAtAssignment != null,
-      has_all_ccs:            true,
-      has_disposal_event:     lifespanStatus === "closed",
+      has_spot_at_first_assignment: hasSpotAtFirst,
+      has_all_ccs:                  true,
+      has_disposal_event:           lifespanStatus === "closed",
       warnings,
     },
 
@@ -483,46 +539,43 @@ function buildLifespan(triggeringCsp, allTickerTrades, allAssignmentEvents, cspB
   };
 }
 
-// Attach journal context summaries to cc_history entries; strip _tradeIds.
-function finalizeLifespan(lifespan, linkedJournals) {
-  const journalByTradeId = {};
+// Attach journal context to cc_history entries; strip internal fields.
+function attachJournalContext(lifespan, linkedJournals) {
+  const byTradeId = {};
   for (const j of linkedJournals) {
-    if (j.trade_id && !journalByTradeId[j.trade_id]) {
-      journalByTradeId[j.trade_id] = j;
-    }
+    if (j.trade_id && !byTradeId[j.trade_id]) byTradeId[j.trade_id] = j;
   }
-
   const cc_history = lifespan.cc_history.map((cc) => ({
     ...cc,
-    journal_context_summary:
-      journalByTradeId[cc.trade_id]?.body?.slice(0, 200) ?? null,
+    journal_context_summary: byTradeId[cc.trade_id]?.body?.slice(0, 200) ?? null,
   }));
-
   const { _tradeIds, ...rest } = lifespan;
   return { ...rest, cc_history };
 }
 
 // ---------------------------------------------------------------------------
-// Decision clustering (lifespan-scoped)
+// Decision clustering
 // ---------------------------------------------------------------------------
 
 function clusterLifespanDecisions(trades, ticker) {
   const decisions = [];
   let counter = 0;
-  const nextId = () => `ld_${String(++counter).padStart(3, "0")}`;
+  const nextId   = () => `ld_${String(++counter).padStart(3, "0")}`;
   const assigned = new Set();
 
-  // 1. CSP assignment — the triggering event
-  const cspAssigned = trades.find((t) => t.type === "CSP" && t.subtype === "Assigned");
-  if (cspAssigned) {
+  // 1. All CSP assignments (chronological)
+  const cspAssignedTrades = trades
+    .filter((t) => t.type === "CSP" && t.subtype === "Assigned")
+    .sort((a, b) => (a.close_date ?? "").localeCompare(b.close_date ?? ""));
+  for (const t of cspAssignedTrades) {
     decisions.push({
       decision_id:   nextId(),
       decision_type: "assignment_taken",
-      decision_date: cspAssigned.close_date,
-      summary:       `${ticker} CSP $${cspAssigned.strike} ${cspAssigned.expiry_date} assigned`,
-      net_pnl:       round2(parseFloat(cspAssigned.premium_collected) || 0),
+      decision_date: t.close_date,
+      summary:       `${ticker} CSP $${t.strike} ${t.expiry_date} assigned`,
+      net_pnl:       round2(parseFloat(t.premium_collected) || 0),
     });
-    assigned.add(cspAssigned.id);
+    assigned.add(t.id);
   }
 
   // 2. CC rolls (close + new CC within 3 days, different contract)
@@ -541,7 +594,7 @@ function clusterLifespanDecisions(trades, ticker) {
     if (newLeg) {
       const net = round2(
         (parseFloat(t.premium_collected) || 0) +
-          (parseFloat(newLeg.premium_collected) || 0)
+        (parseFloat(newLeg.premium_collected) || 0)
       );
       decisions.push({
         decision_id:   nextId(),
@@ -557,7 +610,7 @@ function clusterLifespanDecisions(trades, ticker) {
     }
   }
 
-  // 3. CC assigned (called away) — typically also the disposal event
+  // 3. CC assigned (called away)
   for (const t of trades) {
     if (assigned.has(t.id) || t.type !== "CC" || t.subtype !== "Assigned") continue;
     decisions.push({
@@ -620,25 +673,36 @@ function computeCspBaseline(cspTrades) {
     })
     .filter((r) => r != null);
 
-  const avg =
-    returns.length > 0
-      ? returns.reduce((s, r) => s + r, 0) / returns.length
-      : 0;
+  const avg = returns.length > 0
+    ? returns.reduce((s, r) => s + r, 0) / returns.length
+    : 0;
 
-  return {
-    avg_return_per_capital_day: avg,
-    sample_size: returns.length,
-  };
+  return { avg_return_per_capital_day: avg, sample_size: returns.length };
 }
 
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
+// Full-precision blended basis for use in P&L computation.
+function computeBlendedBasis(assignmentEvents) {
+  const totalCapital = assignmentEvents.reduce((s, e) => s + e.capital_added, 0);
+  const totalShares  = assignmentEvents.reduce((s, e) => s + e.shares_added, 0);
+  return totalShares > 0 ? totalCapital / totalShares : 0;
+}
+
+function computeVerdict(lifespanStatus, vsActualPnl, hasRequiredData) {
+  if (lifespanStatus === "active") return "active";
+  if (!hasRequiredData || vsActualPnl === null) return "data_missing";
+  if (vsActualPnl > 0) return "outperformed";
+  if (vsActualPnl < 0) return "underperformed";
+  return "even";
+}
+
 function daysBetween(fromDate, toDate) {
   if (!fromDate || !toDate) return 0;
   const from = new Date(fromDate + "T00:00:00Z");
-  const to   = new Date(toDate + "T00:00:00Z");
+  const to   = new Date(toDate   + "T00:00:00Z");
   return Math.round((to - from) / 86_400_000);
 }
 
@@ -647,7 +711,7 @@ function daysBetweenDates(d1, d2) {
   return (
     Math.abs(
       new Date(d2 + "T00:00:00Z").getTime() -
-        new Date(d1 + "T00:00:00Z").getTime()
+      new Date(d1 + "T00:00:00Z").getTime()
     ) / 86_400_000
   );
 }
