@@ -16,6 +16,7 @@ export const theme = {
     muted:     "#8b949e",
     subtle:    "#6e7681",
     faint:     "#4e5a65",
+    onAccent:  "#ffffff",  // text on theme.blue / colored button backgrounds
   },
 
   // ── Borders ───────────────────────────────────────────────────────────────

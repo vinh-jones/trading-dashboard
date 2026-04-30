@@ -6,6 +6,7 @@ import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 import { resolvePreset } from "../lib/resolvePreset";
+import { DateRangePicker } from "./DateRangePicker";
 
 /** Formats a Date as "Jan 1" etc. for the summary line label. */
 function fmtDate(d) {
@@ -24,8 +25,11 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
     [preset, customRange]
   );
 
-  const TRADES = TRADES_ALL.filter(
-    t => t.closeDate && t.closeDate >= rangeStart && t.closeDate <= rangeEnd
+  const TRADES = useMemo(
+    () => TRADES_ALL.filter(
+      t => t.closeDate && t.closeDate >= rangeStart && t.closeDate <= rangeEnd
+    ),
+    [TRADES_ALL, rangeStart, rangeEnd]
   );
 
   const DURATION_BUCKETS = [
@@ -62,7 +66,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       map[t.ticker].byType[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [selectedType, selectedDuration]);
+  }, [TRADES, selectedType, selectedDuration]);
 
   const typeSummary = useMemo(() => {
     const source = TRADES.filter((t) => {
@@ -80,7 +84,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       map[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [selectedTicker, selectedDuration]);
+  }, [TRADES, selectedTicker, selectedDuration]);
 
   const filteredTrades = useMemo(() => {
     return TRADES.filter((t) => {
@@ -92,7 +96,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       }
       return true;
     });
-  }, [selectedTicker, selectedType, selectedDuration]);
+  }, [TRADES, selectedTicker, selectedType, selectedDuration]);
 
   const filteredTotal = filteredTrades.reduce((s, t) => s + t.premium, 0);
 
@@ -105,6 +109,15 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
 
   return (
     <div>
+      <DateRangePicker
+        preset={preset}
+        customRange={customRange}
+        onChange={({ preset: p, customRange: cr }) => {
+          setPreset(p);
+          setCustomRange(cr);
+        }}
+      />
+
       {/* Q4/Q2: <p> → <div>, marginBottom 20 → theme.space[5] */}
       <div style={{ fontSize: theme.size.lg, color: theme.text.muted, marginBottom: theme.space[5] }}>
         {filteredTrades.length} trades · {formatDollarsFull(filteredTotal)} net realized
