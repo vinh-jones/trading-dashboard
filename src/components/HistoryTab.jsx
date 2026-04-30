@@ -6,7 +6,7 @@ import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 
-export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
+export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
   const isMobile = useWindowWidth() < 600;
   // Scope the entire Summary tab to YTD (Jan 1 – today)

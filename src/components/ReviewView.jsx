@@ -3,7 +3,7 @@ import { REVIEW_SUBVIEWS, SUBVIEW_LABELS, isValidSubView } from "../lib/modes";
 import { theme } from "../lib/theme";
 import { lazyNamed } from "../lib/lazyNamed";
 
-const SummaryTab  = lazyNamed(() => import("./SummaryTab"),         "SummaryTab");
+const HistoryTab  = lazyNamed(() => import("./HistoryTab"),         "HistoryTab");
 const CalendarTab = lazyNamed(() => import("./CalendarTab"),        "CalendarTab");
 const JournalTab  = lazyNamed(() => import("./journal/JournalTab"), "JournalTab");
 
@@ -81,8 +81,8 @@ export function ReviewView({
             captureRate={captureRate}       setCaptureRate={setCaptureRate}
           />
         )}
-        {active === "ytd" && (
-          <SummaryTab
+        {active === "history" && (
+          <HistoryTab
             selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
             selectedType={selectedType}     setSelectedType={setSelectedType}
             selectedDuration={selectedDuration} setSelectedDuration={setSelectedDuration}
