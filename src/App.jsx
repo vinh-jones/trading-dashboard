@@ -146,10 +146,10 @@ export default function TradeDashboard() {
   const [selectedDay,      setSelectedDay]      = useState(null);
   const [captureRate,      setCaptureRate]      = useState(0.60);
 
-  // Filter chips are relevant only to Review sub-views (Monthly, YTD).
+  // Filter chips are relevant only to Review sub-views (Monthly, History).
   const showFilterChips =
     mode === "review" &&
-    (subView === "monthly" || subView === "ytd") &&
+    (subView === "monthly" || subView === "history") &&
     (selectedTicker || selectedType || selectedDuration != null);
 
   return (
@@ -210,7 +210,7 @@ export default function TradeDashboard() {
                   <span onClick={() => setSelectedType(null)} style={{ marginLeft: 6, cursor: "pointer", color: theme.text.subtle }}>×</span>
                 </span>
               )}
-              {selectedDuration != null && subView === "ytd" && (
+              {selectedDuration != null && subView === "history" && (
                 <span style={{ background: theme.bg.elevated, border: `1px solid ${theme.border.strong}`, padding: "3px 10px", borderRadius: theme.radius.sm, color: theme.blue, fontWeight: 500 }}>
                   {["0-1d", "2-3d", "4-7d", "8-14d", "15-30d", "30d+"][selectedDuration]}
                   <span onClick={() => setSelectedDuration(null)} style={{ marginLeft: 6, cursor: "pointer", color: theme.text.subtle }}>×</span>
