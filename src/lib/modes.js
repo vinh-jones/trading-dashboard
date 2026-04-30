@@ -3,7 +3,7 @@
 export const MODES = ["focus", "explore", "review"];
 
 export const EXPLORE_SUBVIEWS = ["positions", "radar", "earnings", "macro"];
-export const REVIEW_SUBVIEWS  = ["journal", "monthly", "ytd"];
+export const REVIEW_SUBVIEWS  = ["journal", "monthly", "history"];
 
 export const SUBVIEW_LABELS = {
   positions: "Positions",
@@ -11,7 +11,7 @@ export const SUBVIEW_LABELS = {
   earnings:  "Earnings",
   macro:     "Macro",
   monthly:   "Monthly",
-  ytd:       "YTD",
+  history:   "History",
   journal:   "Journal",
 };
 

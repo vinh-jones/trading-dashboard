@@ -11,7 +11,7 @@ describe("modes", () => {
   });
 
   it("exposes Review sub-views in order with Journal first", () => {
-    expect(REVIEW_SUBVIEWS).toEqual(["journal", "monthly", "ytd"]);
+    expect(REVIEW_SUBVIEWS).toEqual(["journal", "monthly", "history"]);
   });
 
   it("returns the default sub-view for each mode", () => {

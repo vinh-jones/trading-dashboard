@@ -6,10 +6,10 @@ import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 
-export function SummaryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
+export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
   const isMobile = useWindowWidth() < 600;
-  // Scope the entire Summary tab to YTD (Jan 1 – today)
+  // Scope the entire History tab to YTD (Jan 1 – today)
   const YTD_START = new Date("2026-01-01T00:00:00");
   const YTD_END   = new Date();
   const TRADES = TRADES_ALL.filter(t => t.closeDate && t.closeDate >= YTD_START && t.closeDate <= YTD_END);
