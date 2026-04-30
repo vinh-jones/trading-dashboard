@@ -54,9 +54,8 @@ export function DateRangePicker({ preset, customRange, onChange }) {
   const hasRange = isCustom && customRange != null;
 
   // Calendar popup state
-  const now = new Date();
-  const [calYear,      setCalYear]      = useState(now.getFullYear());
-  const [calMonth,     setCalMonth]     = useState(now.getMonth());
+  const [calYear,      setCalYear]      = useState(() => new Date().getFullYear());
+  const [calMonth,     setCalMonth]     = useState(() => new Date().getMonth());
   const [pendingStart, setPendingStart] = useState(null); // first clicked date
   const [pendingEnd,   setPendingEnd]   = useState(null); // second clicked date
   const [hoverDate,    setHoverDate]    = useState(null);
@@ -115,7 +114,7 @@ export function DateRangePicker({ preset, customRange, onChange }) {
 
   // Two-click date selection
   function handleDayClick(date) {
-    if (!pendingStart || (pendingStart && pendingEnd)) {
+    if (!pendingStart || pendingEnd) {
       // Start fresh
       setPendingStart(date);
       setPendingEnd(null);
@@ -139,7 +138,7 @@ export function DateRangePicker({ preset, customRange, onChange }) {
     if (isStart || isEnd) {
       return {
         background:   theme.blue,
-        color:        "#fff",
+        color:        theme.text.onAccent,
         borderRadius: theme.radius.sm,
       };
     }
@@ -383,7 +382,7 @@ export function DateRangePicker({ preset, customRange, onChange }) {
                   fontFamily:   "inherit",
                   cursor:       canApply ? "pointer" : "not-allowed",
                   background:   canApply ? theme.blue : theme.border.default,
-                  color:        canApply ? "#fff" : theme.text.muted,
+                  color:        canApply ? theme.text.onAccent : theme.text.muted,
                   border:       "none",
                   transition:   "all 0.15s",
                 }}
