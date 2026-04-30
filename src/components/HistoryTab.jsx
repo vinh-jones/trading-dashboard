@@ -6,6 +6,7 @@ import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 import { resolvePreset } from "../lib/resolvePreset";
+import { DateRangePicker } from "./DateRangePicker";
 
 /** Formats a Date as "Jan 1" etc. for the summary line label. */
 function fmtDate(d) {
@@ -108,6 +109,15 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
 
   return (
     <div>
+      <DateRangePicker
+        preset={preset}
+        customRange={customRange}
+        onChange={({ preset: p, customRange: cr }) => {
+          setPreset(p);
+          setCustomRange(cr);
+        }}
+      />
+
       {/* Q4/Q2: <p> → <div>, marginBottom 20 → theme.space[5] */}
       <div style={{ fontSize: theme.size.lg, color: theme.text.muted, marginBottom: theme.space[5] }}>
         {filteredTrades.length} trades · {formatDollarsFull(filteredTotal)} net realized
