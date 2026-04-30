@@ -24,8 +24,11 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
     [preset, customRange]
   );
 
-  const TRADES = TRADES_ALL.filter(
-    t => t.closeDate && t.closeDate >= rangeStart && t.closeDate <= rangeEnd
+  const TRADES = useMemo(
+    () => TRADES_ALL.filter(
+      t => t.closeDate && t.closeDate >= rangeStart && t.closeDate <= rangeEnd
+    ),
+    [TRADES_ALL, rangeStart, rangeEnd]
   );
 
   const DURATION_BUCKETS = [
@@ -62,7 +65,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       map[t.ticker].byType[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [selectedType, selectedDuration]);
+  }, [TRADES, selectedType, selectedDuration]);
 
   const typeSummary = useMemo(() => {
     const source = TRADES.filter((t) => {
@@ -80,7 +83,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       map[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [selectedTicker, selectedDuration]);
+  }, [TRADES, selectedTicker, selectedDuration]);
 
   const filteredTrades = useMemo(() => {
     return TRADES.filter((t) => {
@@ -92,7 +95,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       }
       return true;
     });
-  }, [selectedTicker, selectedType, selectedDuration]);
+  }, [TRADES, selectedTicker, selectedType, selectedDuration]);
 
   const filteredTotal = filteredTrades.reduce((s, t) => s + t.premium, 0);
 
