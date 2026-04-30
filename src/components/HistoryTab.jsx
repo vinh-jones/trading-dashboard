@@ -5,14 +5,28 @@ import { formatDollars, formatDollarsFull } from "../lib/format";
 import { TYPE_COLORS, SUBTYPE_LABELS, MONTHS } from "../lib/constants";
 import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
+import { resolvePreset } from "../lib/resolvePreset";
+
+/** Formats a Date as "Jan 1" etc. for the summary line label. */
+function fmtDate(d) {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDuration, setSelectedDuration }) {
   const { trades: TRADES_ALL } = useData();
   const isMobile = useWindowWidth() < 600;
-  // Scope the entire History tab to YTD (Jan 1 – today)
-  const YTD_START = new Date("2026-01-01T00:00:00");
-  const YTD_END   = new Date();
-  const TRADES = TRADES_ALL.filter(t => t.closeDate && t.closeDate >= YTD_START && t.closeDate <= YTD_END);
+
+  const [preset,      setPreset]      = useState("ytd");
+  const [customRange, setCustomRange] = useState(null);
+
+  const [rangeStart, rangeEnd] = useMemo(
+    () => resolvePreset(preset, customRange),
+    [preset, customRange]
+  );
+
+  const TRADES = TRADES_ALL.filter(
+    t => t.closeDate && t.closeDate >= rangeStart && t.closeDate <= rangeEnd
+  );
 
   const DURATION_BUCKETS = [
     { label: "0-1d",   min: 0,  max: 1    },
@@ -94,6 +108,9 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       {/* Q4/Q2: <p> → <div>, marginBottom 20 → theme.space[5] */}
       <div style={{ fontSize: theme.size.lg, color: theme.text.muted, marginBottom: theme.space[5] }}>
         {filteredTrades.length} trades · {formatDollarsFull(filteredTotal)} net realized
+        <span style={{ color: theme.text.subtle }}>
+          {" "}· {fmtDate(rangeStart)} – {fmtDate(rangeEnd)}
+        </span>
       </div>
 
       {/* Type filter pills — Q2: gap 8→space[2], marginBottom 16→space[4] */}
