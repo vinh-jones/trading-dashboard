@@ -188,6 +188,40 @@ function lifespanSummary(l) {
 }
 
 // ---------------------------------------------------------------------------
+// Lifespan detection helpers
+// ---------------------------------------------------------------------------
+
+// Sort priority for same-day events: CC bookkeeping first, share-removal last.
+// Ensures coordinated_exit CC Close is in cc_history before Shares Sold runs,
+// and CC Assigned ends the lifespan before any redundant Shares Sold is seen.
+function tradeSortPriority(trade) {
+  if (trade.type === "CC" && (trade.subtype === "Close" || trade.subtype === "Roll Loss")) return 1;
+  if (trade.type === "CC" && trade.subtype === "Assigned")  return 2;
+  if (trade.type === "CSP" && trade.subtype === "Assigned") return 3;
+  if (trade.type === "Shares") return 4;
+  return 5;
+}
+
+// Returns true if a Shares Sold trade is a bookkeeping duplicate of a same-day
+// CC Assigned event (the user logs both for tracking; only the CC Assigned matters).
+function isRedundantSharesSold(trade, closedLifespans, currentLifespan) {
+  const sameDay = (cc) =>
+    cc.type === "CC" &&
+    cc.subtype === "Assigned" &&
+    cc.close_date === trade.close_date &&
+    (cc.contracts ?? 1) * 100 === (trade.contracts ?? 0);
+
+  // Partial disposal: CC Assigned didn't end the lifespan, current is still open
+  if (currentLifespan && currentLifespan.cc_history.some(sameDay)) return true;
+
+  // Full disposal: CC Assigned just ended the lifespan, check last closed
+  const last = closedLifespans[closedLifespans.length - 1];
+  if (last && last.ticker === trade.ticker && last.cc_history.some(sameDay)) return true;
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Lifespan detection — running share count
 // ---------------------------------------------------------------------------
 
@@ -205,10 +239,14 @@ function detectLifespans(ticker, allTickerTrades) {
           (t.subtype === "Sold" || t.subtype === "Exit")))
   );
 
-  // Sort by close_date ASC; open_date tiebreaker ensures CC Close before Shares Sold on same day
+  // Sort: close_date ASC → trade_type_priority ASC → open_date ASC
+  // Priority guarantees CC operations are processed before share-disposal operations
+  // on the same close_date, regardless of open_date differences.
   const sorted = [...relevant].sort((a, b) => {
     const d = (a.close_date ?? "").localeCompare(b.close_date ?? "");
     if (d !== 0) return d;
+    const pd = tradeSortPriority(a) - tradeSortPriority(b);
+    if (pd !== 0) return pd;
     return (a.open_date ?? "").localeCompare(b.open_date ?? "");
   });
 
@@ -298,6 +336,10 @@ function detectLifespans(ticker, allTickerTrades) {
       trade.type === "Shares" &&
       (trade.subtype === "Sold" || trade.subtype === "Exit")
     ) {
+      // Skip bookkeeping duplicates: same-day CC Assigned already handled this disposal.
+      // The user logs a redundant Shares Sold record alongside CC Assignments for tracking.
+      if (isRedundantSharesSold(trade, lifespans, current)) continue;
+
       const sharesRemoved = trade.contracts ?? 0;
       // premium_collected confirmed as gain/loss directly (not gross proceeds)
       const disposalPnl = round2(parseFloat(trade.premium_collected) || 0);
@@ -335,6 +377,10 @@ function detectLifespans(ticker, allTickerTrades) {
             disposal_pnl: disposalPnl,
           });
         }
+      } else {
+        orphanWarnings.push(
+          `Shares ${trade.subtype} for ${ticker} on ${trade.close_date} (id: ${trade.id}) with no active lifespan`
+        );
       }
     }
   }
