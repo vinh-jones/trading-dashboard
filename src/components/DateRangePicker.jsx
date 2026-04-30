@@ -65,7 +65,7 @@ export function DateRangePicker({ preset, customRange, onChange }) {
               key={key}
               onClick={() => handlePresetClick(key)}
               style={{
-                padding:      "4px 12px",
+                padding:      `${theme.space[1]}px ${theme.space[3]}px`,
                 borderRadius: theme.radius.pill,
                 fontSize:     theme.size.sm,
                 fontFamily:   "inherit",
@@ -86,7 +86,7 @@ export function DateRangePicker({ preset, customRange, onChange }) {
         <button
           onClick={handleCustomChipClick}
           style={{
-            padding:      "4px 12px",
+            padding:      `${theme.space[1]}px ${theme.space[3]}px`,
             borderRadius: theme.radius.pill,
             fontSize:     theme.size.sm,
             fontFamily:   "inherit",
