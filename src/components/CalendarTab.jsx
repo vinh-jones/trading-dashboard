@@ -88,19 +88,24 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
     return max || 1;
   }, [dailyData, calMonth]);
 
-  const typeSummary = useMemo(() => {
-    const source = TRADES.filter((t) => {
+  // All trades for the selected month (no type filter — so all type chips remain visible)
+  const monthTradesAll = useMemo(() => {
+    return TRADES.filter((t) => {
       if (selectedTicker && t.ticker !== selectedTicker) return false;
-      return true;
+      if (!t.closeDate) return false;
+      return t.closeDate.getFullYear() === monthInfo.year && t.closeDate.getMonth() === monthInfo.month;
     });
+  }, [TRADES, selectedTicker, calMonth]);
+
+  const typeSummary = useMemo(() => {
     const map = {};
-    source.forEach((t) => {
+    monthTradesAll.forEach((t) => {
       if (!map[t.type]) map[t.type] = { type: t.type, count: 0, premium: 0 };
       map[t.type].count++;
       map[t.type].premium += t.premium;
     });
     return Object.values(map).sort((a, b) => b.premium - a.premium);
-  }, [TRADES, selectedTicker]);
+  }, [monthTradesAll]);
 
   const expiryMap = useMemo(() => {
     const map = {};
@@ -301,7 +306,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 color: !selectedType ? theme.text.primary : theme.text.muted,
               }}
             >
-              ALL ({TRADES.length})
+              ALL ({monthTradesAll.length})
             </button>
             {typeSummary.map(ts => (
               <button
@@ -529,7 +534,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
             transition: "background 0.15s",
           }}
         >
-          ALL ({TRADES.length})
+          ALL ({monthTradesAll.length})
         </button>
         {typeSummary.map((ts) => (
           <button
