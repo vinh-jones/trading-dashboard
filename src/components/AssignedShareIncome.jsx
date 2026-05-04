@@ -42,27 +42,27 @@ function describeStrike(row) {
 }
 
 // Below-assignment shares: a breach locks in loss territory, so frame
-// sigmas as risk (red→amber→neutral→green as breach gets less likely).
+// sigmas as cushion (red→amber→neutral→green as strike gets farther away).
 function sigmaBucketRisk(sigmas) {
   if (sigmas == null) return null;
-  if (sigmas <  0  ) return { label: "ITM",         color: theme.red };
-  if (sigmas <  0.5) return { label: "very likely", color: theme.red };
-  if (sigmas <  1.0) return { label: "realistic",   color: theme.amber };
-  if (sigmas <  2.0) return { label: "uncommon",    color: theme.text.secondary };
-  if (sigmas <  3.0) return { label: "unlikely",    color: theme.green };
-  return                   { label: "tail",        color: theme.text.muted };
+  if (sigmas <  0  ) return { label: "ITM",          color: theme.red };
+  if (sigmas <  0.5) return { label: "at the door",  color: theme.red };
+  if (sigmas <  1.0) return { label: "in range",     color: theme.amber };
+  if (sigmas <  2.0) return { label: "needs a push", color: theme.text.secondary };
+  if (sigmas <  3.0) return { label: "well covered", color: theme.green };
+  return                   { label: "deep OTM",      color: theme.text.muted };
 }
 
 // Above-assignment shares: a breach is a profitable exit, so frame
-// sigmas as exit-likelihood (neutral/positive coloring throughout).
+// sigmas as cushion (neutral/positive coloring throughout).
 function sigmaBucketExit(sigmas) {
   if (sigmas == null) return null;
-  if (sigmas <  0  ) return { label: "ITM exit",        color: theme.green };
-  if (sigmas <  0.5) return { label: "very likely exit", color: theme.green };
-  if (sigmas <  1.0) return { label: "likely exit",      color: theme.green };
-  if (sigmas <  2.0) return { label: "possible exit",    color: theme.text.secondary };
-  if (sigmas <  3.0) return { label: "unlikely exit",    color: theme.text.muted };
-  return                   { label: "tail",             color: theme.text.muted };
+  if (sigmas <  0  ) return { label: "ITM exit",     color: theme.green };
+  if (sigmas <  0.5) return { label: "at the door",  color: theme.green };
+  if (sigmas <  1.0) return { label: "in range",     color: theme.green };
+  if (sigmas <  2.0) return { label: "needs a push", color: theme.text.secondary };
+  if (sigmas <  3.0) return { label: "well covered", color: theme.text.muted };
+  return                   { label: "deep OTM",      color: theme.text.muted };
 }
 
 function BreachWatch({ row }) {
