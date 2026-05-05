@@ -626,7 +626,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                     { width: 30, textAlign: "center", padding: "9px 4px" }
                   )}
                 </tr>
-                {isExpanded && (
+                {isExpanded && (priceTargets || (pos.cushion_state && pos.cushion_state !== "safe")) && (
                   <tr>
                     <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
