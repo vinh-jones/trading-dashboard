@@ -336,7 +336,7 @@ function ruleCushionBreach(positions, quoteMap) {
 
     const state         = cushion.cushion_state;
     const dailyMovePct  = (iv / Math.sqrt(252) * 100).toFixed(1);
-    const cushionPct    = (Math.abs(cushion.cushion_pct) * 100).toFixed(1);
+    const cushionPct    = (cushion.cushion_pct * 100).toFixed(1);
 
     let suggestedAction;
     if (state === "assignment_risk") {
