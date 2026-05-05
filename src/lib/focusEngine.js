@@ -1,6 +1,7 @@
 import { calcDTE, buildOccSymbol, parseShareCount } from "./trading.js";
 import { getVixBand } from "./vixBand.js";
 import { formatExpiry } from "./format.js";
+import { computeCushion } from "./cushionBreach.js";
 
 // ── Notification config ──────────────────────────────────────────────────────
 // Which Focus Engine rules trigger iPhone pushes via /api/snapshot's EOD step.
@@ -25,6 +26,7 @@ export const NOTIFY_RULES = {
   leaps_profit_target:    true,
   roll_opportunity:       true,
   assigned_cc_breach_imminent: true,
+  cushion_breach:              true,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -309,6 +311,57 @@ function ruleNearWorthlessOption(positions, quoteMap) {
       detail:   `${capturedPct}% of premium already captured. `
         + `Current mid $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
         + `${daysToExpiry}d remaining. Consider closing to free collateral.`,
+    });
+  }
+  return items;
+}
+
+function ruleCushionBreach(positions, quoteMap) {
+  const items    = [];
+  const todayStr = today();
+
+  for (const pos of positions.open_csps ?? []) {
+    if (pos.open_date === todayStr) continue;
+
+    const dte = pos.days_to_expiry ?? calcDTE(pos.expiry_date) ?? 0;
+    if (dte === 0) continue;
+
+    const q          = quoteMap.get(pos.ticker);
+    const underlying = q?.mid ?? q?.last ?? null;
+    const iv         = q?.iv ?? null;
+    if (underlying == null || iv == null) continue;
+
+    const cushion = computeCushion(pos.strike, underlying, iv);
+    if (cushion.cushion_state === "safe" || cushion.cushion_state == null) continue;
+
+    const state         = cushion.cushion_state;
+    const dailyMovePct  = (iv / Math.sqrt(252) * 100).toFixed(1);
+    const cushionPct    = (Math.abs(cushion.cushion_pct) * 100).toFixed(1);
+
+    let suggestedAction;
+    if (state === "assignment_risk") {
+      if (dte <= 5) {
+        suggestedAction = `${dte}d to expiry — ITM expiry will result in assignment. Close or roll now.`;
+      } else {
+        suggestedAction = `Active decision required. Consider rolling out/down or accepting assignment.`;
+      }
+    } else {
+      suggestedAction = `Monitor. Amber + low DTE = treat as red. Amber + high DTE = watch and wait.`;
+    }
+
+    items.push({
+      id:          `cushion-${pos.ticker}-${pos.strike}-${pos.expiry_date}-${state}`,
+      priority:    state === "assignment_risk" ? "P1" : "P2",
+      rule:        "cushion_breach",
+      ticker:      pos.ticker,
+      strike:      pos.strike,
+      expiry_date: pos.expiry_date,
+      dte,
+      urgency:     dte,
+      title:       `${pos.ticker} $${pos.strike}p — ${state === "assignment_risk" ? "assignment risk" : "approaching strike"}`,
+      detail:      `Underlying $${underlying.toFixed(2)} · Strike $${pos.strike} · Cushion ${cushionPct}% · DTE ${dte}d · IV ${(iv * 100).toFixed(1)}% · Daily move est. ${dailyMovePct}% · `
+        + `Amber trigger $${cushion.cushion_trigger_amber} (N=2) · Red trigger $${cushion.cushion_trigger_red} (N=1). `
+        + suggestedAction,
     });
   }
   return items;
@@ -638,6 +691,13 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ? { ...account, vix_current: liveVix }
     : account;
 
+  // Run 60/60 first so cushion rule can suppress duplicates
+  const items6060 = rule6060(positions, quoteMap);
+  const ids6060   = new Set(items6060.map(i => `${i.ticker}-${i.strike}-${i.expiry_date}`));
+
+  const cushionItems = ruleCushionBreach(positions, quoteMap)
+    .filter(i => !ids6060.has(`${i.ticker}-${i.strike}-${i.expiry_date}`));
+
   const items = [
     ...ruleCashBelowFloor(accountWithVix),
     ...ruleExpiringSoon(positions),
@@ -647,7 +707,8 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ...ruleEarningsBeforeExpiry(positions, marketContext),
     ...ruleMacroOverlap(positions, marketContext),
     ...ruleNearWorthlessOption(positions, quoteMap),
-    ...rule6060(positions, quoteMap),
+    ...items6060,
+    ...cushionItems,
     ...ruleExpiryCluster(positions),
     ...ruleLeapsLowDTE(positions),
     ...ruleLeapsProfitTarget(positions, quoteMap),
