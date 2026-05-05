@@ -15,6 +15,7 @@ import {
 } from "../lib/positionMetrics";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
+import { computeCushion } from "../lib/cushionBreach";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
@@ -498,7 +499,17 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
     }
 
     const displayValue = isLeap ? pos.capital_fronted : pos.premium_collected;
-    return { pos, dte, dtePct, glDollars, glPct, otmPct, displayValue };
+
+    // Compute cushion fields client-side for CSP positions (not LEAPs, not CCs)
+    const isCsp = !isLeap && pos.type === "CSP";
+    let enrichedPos = pos;
+    if (isCsp) {
+      const stockMid = quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null;
+      const iv       = quoteMap.get(pos.ticker)?.iv  ?? null;
+      enrichedPos    = { ...pos, ...computeCushion(pos.strike, stockMid, iv) };
+    }
+
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
