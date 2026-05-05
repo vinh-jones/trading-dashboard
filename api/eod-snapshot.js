@@ -20,6 +20,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { getVixBand } from "../src/lib/vixBand.js";
+import { computeCushion } from "../src/lib/cushionBreach.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -170,8 +171,11 @@ function buildTextBlob({
     lines.push("─".repeat(40));
     for (const p of csps) {
       const ror = p.roi != null ? `${(p.roi * 100).toFixed(2)}% RoR` : "";
+      const cushionTag = p.cushion_state === "assignment_risk" ? "  [● ASSIGNMENT RISK]"
+        : p.cushion_state === "approaching" ? "  [⚠ APPROACHING]"
+        : "";
       lines.push(
-        `${pad(p.ticker, 6)} $${p.strike}p  exp ${p.expiry_date} (${p.days_to_expiry}d) · ${fmt$(p.premium_collected)} premium · ${fmt$(p.capital_fronted)} capital${ror ? "  " + ror : ""}`
+        `${pad(p.ticker, 6)} $${p.strike}p  exp ${p.expiry_date} (${p.days_to_expiry}d) · ${fmt$(p.premium_collected)} premium · ${fmt$(p.capital_fronted)} capital${ror ? "  " + ror : ""}${cushionTag}`
       );
     }
     lines.push("");
@@ -320,6 +324,19 @@ async function fetchSheetAllocations() {
   return totals;
 }
 
+function enrichCspCushion(openCsps, quotesMap) {
+  const missingIv = [];
+  const enriched  = openCsps.map(p => {
+    const q          = quotesMap[p.ticker];
+    const underlying = q?.mid ?? q?.last ?? null;
+    const iv         = q?.iv ?? null;
+    if (iv == null) missingIv.push(p.ticker);
+    const cushion    = computeCushion(p.strike, underlying, iv);
+    return { ...p, ...cushion };
+  });
+  return { enriched, missingIv };
+}
+
 // ─── Main handler ────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -366,7 +383,7 @@ export default async function handler(req, res) {
     positionsResult.status === "fulfilled"
       ? positionsResult.value.data ?? []
       : [];
-  const positions = reshapePositions(positionRows);
+  let positions = reshapePositions(positionRows);
 
   const dailySnapshot =
     dailySnapshotResult.status === "fulfilled"
@@ -454,6 +471,11 @@ export default async function handler(req, res) {
     };
   });
 
+  let cushionMissingIv = [];
+  const enrichResult = enrichCspCushion(positions.open_csps ?? [], quotesMap);
+  positions        = { ...positions, open_csps: enrichResult.enriched };
+  cushionMissingIv = enrichResult.missingIv;
+
   const spyQuote = spyResult.status === "fulfilled" ? spyResult.value : null;
   const qqqQuote = qqqResult.status === "fulfilled" ? qqqResult.value : null;
   const liveVix  = vixResult.status === "fulfilled"  ? vixResult.value.last : null;
@@ -540,6 +562,10 @@ export default async function handler(req, res) {
     ok:    true,
     date:  today,
     text,
+    data_completeness: {
+      cushion_missing_iv:      cushionMissingIv,
+      cushion_skipped_spreads: [],
+    },
     data: {
       account_summary: effectiveSnapshot,
       positions,
