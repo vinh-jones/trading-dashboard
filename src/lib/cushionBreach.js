@@ -21,7 +21,11 @@ const NULL_RESULT = {
  * @returns cushion fields object — all values null when iv is null
  */
 export function computeCushion(strike, underlyingPrice, iv) {
-  if (iv == null || strike == null || underlyingPrice == null) return NULL_RESULT;
+  if (
+    iv == null || !Number.isFinite(iv) || iv <= 0 ||
+    strike == null || !Number.isFinite(strike) || strike <= 0 ||
+    underlyingPrice == null || !Number.isFinite(underlyingPrice)
+  ) return NULL_RESULT;
 
   const dailyMove           = iv / SQRT_252;
   const cushionTriggerAmber = strike * (1 + dailyMove * CUSHION_N_AMBER);
