@@ -185,6 +185,82 @@ function RollAnalysisSection({ ticker, rollData, rollLoading, lastCheckedAt, cos
   );
 }
 
+// ── Cushion Breach panel ──────────────────────────────────────────────────────
+
+function CushionPanel({ cushion, dte }) {
+  if (!cushion || cushion.cushion_state === "safe" || cushion.cushion_state == null) return null;
+
+  const isRed    = cushion.cushion_state === "assignment_risk";
+  const color    = isRed ? theme.red : theme.amber;
+  const label    = isRed ? "● Assignment Risk" : "⚠ Approaching Strike";
+  const subtitle = isRed
+    ? "underlying within 1 expected daily move of strike"
+    : "underlying within 2 expected daily moves of strike";
+
+  const dailyMovePct = cushion.cushion_iv_used != null
+    ? (cushion.cushion_iv_used / Math.sqrt(252) * 100).toFixed(1)
+    : null;
+
+  const labelStyle = {
+    fontSize:      theme.size.xs,
+    color:         theme.text.muted,
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    fontWeight:    500,
+    marginBottom:  theme.space[1],
+  };
+
+  const gridStyle = {
+    display:             "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap:                 `${theme.space[2]}px ${theme.space[4]}px`,
+    fontSize:            theme.size.sm,
+  };
+
+  const row = (rowLabel, value, valueColor) => (
+    <div>
+      <div style={labelStyle}>{rowLabel}</div>
+      <div style={{ color: valueColor ?? theme.text.primary }}>{value ?? "—"}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background:   isRed ? `${theme.red}11` : `${theme.amber}11`,
+      borderTop:    `1px solid ${color}44`,
+      borderBottom: `1px solid ${theme.border.default}`,
+      padding:      `${theme.space[3]}px ${theme.space[4]}px`,
+    }}>
+      <div style={{ marginBottom: theme.space[2] }}>
+        <span style={{ fontSize: theme.size.sm, fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+          {label}{dte != null ? ` · ${dte}d DTE` : ""}
+        </span>
+        <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginLeft: theme.space[2] }}>
+          {subtitle}
+        </span>
+      </div>
+
+      <div style={gridStyle}>
+        {row("Amber trigger (N=2)",
+          cushion.cushion_trigger_amber != null ? `$${cushion.cushion_trigger_amber.toFixed(2)}${cushion.cushion_state !== "safe" ? " ← crossed" : ""}` : null,
+          theme.amber)}
+        {row("Red trigger (N=1)",
+          cushion.cushion_trigger_red != null
+            ? `$${cushion.cushion_trigger_red.toFixed(2)}${cushion.cushion_state === "assignment_risk" ? " ← crossed" : " · not yet"}`
+            : null,
+          cushion.cushion_state === "assignment_risk" ? theme.red : theme.text.muted)}
+        {row("Cushion %",
+          cushion.cushion_pct != null ? `${(cushion.cushion_pct * 100).toFixed(1)}%` : null,
+          color)}
+        {row("IV used",
+          cushion.cushion_iv_used != null ? `${(cushion.cushion_iv_used * 100).toFixed(1)}%` : null)}
+        {dailyMovePct && row("Daily move est.", `${dailyMovePct}%`)}
+        {row("Formula", "strike × (1 + IV/√252 × N)", theme.text.subtle)}
+      </div>
+    </div>
+  );
+}
+
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
 function PriceTargetPanel({ targets, position, stockPrice }) {
@@ -487,6 +563,9 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
               else if (dte != null && dte < 90)      rowHighlightColor = theme.red;
             }
 
+            if (pos.cushion_state === "assignment_risk") rowHighlightColor = theme.red;
+            else if (pos.cushion_state === "approaching" && rowHighlightColor !== theme.red) rowHighlightColor = theme.amber;
+
             const td = (content, style = {}) => (
               <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, ...style }}>{content}</td>
             );
@@ -517,7 +596,19 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                   onMouseEnter={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.15)" : `${TYPE_COLORS.CSP.bg}22`)}
                   onMouseLeave={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent")}
                 >
-                  {td(pos.ticker,                                                   { fontWeight: 700, color: theme.text.primary })}
+                  {td(
+                    <span style={{ display: "flex", alignItems: "center" }}>
+                      <span style={{ display: "inline-block", width: 38, fontWeight: 700, color: theme.text.primary }}>
+                        {pos.ticker}
+                      </span>
+                      {pos.cushion_state === "assignment_risk" && (
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: theme.red, display: "inline-block", flexShrink: 0 }} />
+                      )}
+                      {pos.cushion_state === "approaching" && (
+                        <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
+                      )}
+                    </span>
+                  )}
                   {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
                   {td(pos.strike != null ? `$${pos.strike}` : "—",                 { color: theme.text.primary, textAlign: "right" })}
                   {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—",   { color: otmColor, fontWeight: 600, textAlign: "right" })}
@@ -535,10 +626,15 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                     { width: 30, textAlign: "center", padding: "9px 4px" }
                   )}
                 </tr>
-                {isExpanded && priceTargets && (
+                {isExpanded && (
                   <tr>
                     <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
-                      <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
+                      {pos.cushion_state && pos.cushion_state !== "safe" && (
+                        <CushionPanel cushion={pos} dte={dte} />
+                      )}
+                      {priceTargets && (
+                        <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
+                      )}
                     </td>
                   </tr>
                 )}
