@@ -28,6 +28,7 @@ import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { buildOccSymbol } from "./_lib/occ.js";
 import { getVixBand } from "../src/lib/vixBand.js";
+import { computeCushion } from "../src/lib/cushionBreach.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -159,6 +160,18 @@ function computeCCBreachRisk(cc, quoteMap) {
   return underlying >= cc.strike * 0.95;
 }
 
+function enrichCspCushion(openCsps, quoteMap) {
+  const missingIv = [];
+  const enriched  = openCsps.map(p => {
+    const q          = quoteMap.get(p.ticker);
+    const underlying = q?.mid ?? q?.last ?? null;
+    const iv         = q?.iv ?? null;
+    if (iv == null) missingIv.push(p.ticker);
+    return { ...p, ...computeCushion(p.strike, underlying, iv) };
+  });
+  return { enriched, missingIv };
+}
+
 // ─── Text blob ───────────────────────────────────────────────────────
 
 function flagTags(flags, isCC = false) {
@@ -257,8 +270,11 @@ function buildTextBlob({
           ? `${(flags.profit_pct * 100).toFixed(0)}% profit`
           : "—% profit";
       const ror = p.roi != null ? `  ${(p.roi * 100).toFixed(2)}% RoR` : "";
+      const cushionTag = p.cushion_state === "assignment_risk" ? "  [● ASSIGNMENT RISK]"
+        : p.cushion_state === "approaching" ? "  [⚠ APPROACHING]"
+        : "";
       lines.push(
-        `${pad(p.ticker, 6)} $${p.strike}p  exp ${p.expiry_date} (${p.days_to_expiry}d)  ${profitStr}  ${fmt$(p.premium_collected)} premium  ${fmt$(p.capital_fronted)} capital${ror}${flagTags(flags)}`
+        `${pad(p.ticker, 6)} $${p.strike}p  exp ${p.expiry_date} (${p.days_to_expiry}d)  ${profitStr}  ${fmt$(p.premium_collected)} premium  ${fmt$(p.capital_fronted)} capital${ror}${flagTags(flags)}${cushionTag}`
       );
     }
     lines.push("");
@@ -425,7 +441,7 @@ export default async function handler(req, res) {
     positionsResult.status === "fulfilled"
       ? positionsResult.value.data ?? []
       : [];
-  const positions = reshapePositions(positionRows);
+  let positions = reshapePositions(positionRows);
 
   const universeRows =
     universeResult.status === "fulfilled"
@@ -511,6 +527,12 @@ export default async function handler(req, res) {
       profit_pct: null,
     };
   }
+
+  // ── Cushion enrichment for CSPs ──
+  let cushionMissingIv = [];
+  const enrichResult = enrichCspCushion(positions.open_csps ?? [], quoteMap);
+  positions        = { ...positions, open_csps: enrichResult.enriched };
+  cushionMissingIv = enrichResult.missingIv;
 
   // ── Market + macro ──
   const [spyResult, qqqResult, vixResult] = await Promise.allSettled([
@@ -619,6 +641,10 @@ export default async function handler(req, res) {
       macro: { ai_context: macroAiContext, posture: macroPosture },
       market: { spy: spyQuote, qqq: qqqQuote, vix: liveVix },
       radar: radarRows,
+    },
+    data_completeness: {
+      cushion_missing_iv:      cushionMissingIv,
+      cushion_skipped_spreads: [],
     },
   });
 }
