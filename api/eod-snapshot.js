@@ -344,7 +344,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const now   = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const nowStr = now.toLocaleTimeString("en-US", {
+    hour:     "numeric",
+    minute:   "2-digit",
+    timeZone: "America/Los_Angeles",
+  }) + " PT";
   const supabase = getSupabase();
 
   // Fetch all Supabase data in parallel
@@ -561,6 +567,7 @@ export default async function handler(req, res) {
   res.status(200).json({
     ok:    true,
     date:  today,
+    time:  nowStr,
     text,
     data_completeness: {
       cushion_missing_iv:      cushionMissingIv,
