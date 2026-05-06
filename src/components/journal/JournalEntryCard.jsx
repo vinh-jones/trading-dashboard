@@ -34,7 +34,10 @@ export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = fa
   }, [positions]);
 
   // Look up the matching trade for emoji + metadata.
-  // Searches closed trades first (matched by close_date), then open positions (matched by open_date).
+  // When the title explicitly says "— Opened" or "— Closed", route to the
+  // correct set directly. This handles same-day rolls where both a close and
+  // an open share the same ticker/type/strike — without disambiguation the
+  // "Opened" entry would accidentally match the closed trade.
   const linkedTrade = useMemo(() => {
     if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
     const typeMatch   = entry.title?.match(/^(\w+)/);
@@ -47,15 +50,24 @@ export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = fa
       t.ticker === entry.ticker &&
       (!titleType   || t.type   === titleType) &&
       (!titleStrike || t.strike === titleStrike);
-    // Closed trades: entry_date = close_date
-    const closed = trades.find(t =>
-      matches(t) && t.closeDate?.toISOString().slice(0, 10) === entry.entry_date
-    );
-    if (closed) return closed;
-    // Open positions: entry_date = open_date
-    return openTrades.find(t =>
-      matches(t) && t.open_date === entry.entry_date
-    ) ?? null;
+
+    const isOpenTitle   = /—\s*Opened\b/i.test(entry.title ?? "");
+    const isClosedTitle = /—\s*Closed\b/i.test(entry.title ?? "");
+
+    // Closed trades: entry_date = close_date (skip if title says Opened)
+    if (!isOpenTitle) {
+      const closed = trades.find(t =>
+        matches(t) && t.closeDate?.toISOString().slice(0, 10) === entry.entry_date
+      );
+      if (closed) return closed;
+    }
+    // Open positions: entry_date = open_date (skip if title says Closed)
+    if (!isClosedTitle) {
+      return openTrades.find(t =>
+        matches(t) && t.open_date === entry.entry_date
+      ) ?? null;
+    }
+    return null;
   }, [trades, entry.ticker, entry.entry_date, entry.title, entry.entry_type]);
 
   // Emoji for context line: computed for trade notes, fixed for position notes, none for EOD
