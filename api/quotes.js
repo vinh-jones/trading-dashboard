@@ -74,7 +74,7 @@ async function getPublicAccessToken(supabase) {
 
 // ── Fetch quotes from Public.com ──────────────────────────────────────────────
 
-async function fetchPublicQuotes(token, instruments) {
+async function fetchPublicQuotes(token, instruments, attempt = 1) {
   if (!ACCOUNT_ID) throw new Error("PUBLIC_COM_ACCOUNT_ID env var not set");
   const res = await fetch(
     `${PUBLIC_COM_BASE}/userapigateway/marketdata/${ACCOUNT_ID}/quotes`,
@@ -90,10 +90,18 @@ async function fetchPublicQuotes(token, instruments) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw Object.assign(new Error(`Public.com quotes failed (${res.status}): ${text}`), {
+    const err  = Object.assign(new Error(`Public.com quotes failed (${res.status}): ${text}`), {
       status: res.status,
       body:   text,
     });
+
+    // Retry on 429 with exponential backoff (2s, 4s)
+    if (res.status === 429 && attempt < 3) {
+      await new Promise(r => setTimeout(r, attempt * 2000));
+      return fetchPublicQuotes(token, instruments, attempt + 1);
+    }
+
+    throw err;
   }
 
   const data = await res.json();
@@ -197,14 +205,12 @@ async function refreshQuotes(supabase) {
   // 2. Authenticate (uses cached 24h token, fetches new one only if expired)
   const token = await getPublicAccessToken(supabase);
 
-  // 3. Fetch in two batches (equities + options have different instrument types)
+  // 3. Fetch in two sequential batches — serialized to avoid bursting Public.com's rate limit
   let equityQuotes = [];
   let optionQuotes = [];
   try {
-    [equityQuotes, optionQuotes] = await Promise.all([
-      equityInstruments.length ? fetchPublicQuotes(token, equityInstruments) : [],
-      optionInstruments.length ? fetchPublicQuotes(token, optionInstruments) : [],
-    ]);
+    if (equityInstruments.length) equityQuotes = await fetchPublicQuotes(token, equityInstruments);
+    if (optionInstruments.length) optionQuotes = await fetchPublicQuotes(token, optionInstruments);
   } catch (err) {
     await maybeAlertOnPublicComError(supabase, err, "quotes");
     throw err;
