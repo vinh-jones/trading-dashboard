@@ -216,10 +216,8 @@ function ruleCCDeeplyITM(positions, quoteMap) {
       ticker:   s.ticker,
       dte:      daysToExpiry,
       urgency:  daysToExpiry,
-      title:    `${s.ticker} CC $${cc.strike} — stock ${itmPctDisplay}% ITM`,
-      detail:   `Stock at $${stockPrice.toFixed(2)} vs strike $${cc.strike}. `
-        + `Opened at ${(entryDelta * 100).toFixed(0)}δ (threshold: ${thresholdDisplay}%). `
-        + `${daysToExpiry}d to expiry. Review roll or assignment plan.`,
+      title:    `${s.ticker} CC $${cc.strike} — ${itmPctDisplay}% ITM, ${daysToExpiry}d left`,
+      detail:   `$${stockPrice.toFixed(2)} vs strike $${cc.strike}. Roll up or accept assignment.`,
     });
   }
   return items;
@@ -260,11 +258,8 @@ function ruleCSPITMUrgency(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte:         remainingDTE,
       urgency:     urgencyScore * 100,
-      title:    `${pos.ticker} CSP $${pos.strike} — ${itmPctDisplay}% ITM`,
-      detail:   `Stock at $${stockPrice.toFixed(2)} vs strike $${pos.strike}. `
-        + `${dteElapsedDisplay}% of DTE elapsed. `
-        + `Urgency score: ${urgencyDisplay} (${urgencyScore >= 0.10 ? "high" : "moderate"}). `
-        + `${remainingDTE}d remaining.`,
+      title:    `${pos.ticker} CSP $${pos.strike} — ${itmPctDisplay}% ITM, ${remainingDTE}d left`,
+      detail:   `$${stockPrice.toFixed(2)} vs strike $${pos.strike}. ${urgencyScore >= 0.10 ? "High urgency" : "Moderate urgency"}: roll down/out or prep for assignment.`,
     });
   }
   return items;
@@ -297,6 +292,7 @@ function ruleNearWorthlessOption(positions, quoteMap) {
     const capturedPct  = ((1 - pctOfOriginal) * 100).toFixed(0);
     const daysToExpiry = calcDTE(pos.expiry_date) ?? 0;
     const typeLabel    = pos.isCall ? "CC" : "CSP";
+    const collateral   = (pos.strike * pos.contracts * 100).toLocaleString();
 
     items.push({
       id:          `near-worthless-${pos.ticker}-${pos.strike}-${pos.expiry_date}`,
@@ -307,10 +303,8 @@ function ruleNearWorthlessOption(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte:         daysToExpiry,
       urgency:     daysToExpiry,
-      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — worth $${currentMid.toFixed(2)}`,
-      detail:   `${capturedPct}% of premium already captured. `
-        + `Current mid $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
-        + `${daysToExpiry}d remaining. Consider closing to free collateral.`,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — close to free $${collateral}`,
+      detail:   `${capturedPct}% captured · $${currentMid.toFixed(2)} mid · ${daysToExpiry}d left.`,
     });
   }
   return items;
@@ -338,15 +332,18 @@ function ruleCushionBreach(positions, quoteMap) {
     const dailyMovePct  = (iv / Math.sqrt(252) * 100).toFixed(1);
     const cushionPct    = (cushion.cushion_pct * 100).toFixed(1);
 
-    let suggestedAction;
+    let title, detail;
     if (state === "assignment_risk") {
       if (dte <= 5) {
-        suggestedAction = `${dte}d to expiry — ITM expiry will result in assignment. Close or roll now.`;
+        title  = `${pos.ticker} $${pos.strike}p — ${dte}d to ITM expiry`;
+        detail = `$${underlying.toFixed(2)}, ${cushionPct}% from strike. Close or roll today.`;
       } else {
-        suggestedAction = `Active decision required. Consider rolling out/down or accepting assignment.`;
+        title  = `${pos.ticker} $${pos.strike}p — assignment risk, ${dte}d`;
+        detail = `$${underlying.toFixed(2)}, ${cushionPct}% from strike. Roll out/down or accept assignment.`;
       }
     } else {
-      suggestedAction = `Monitor. Amber + low DTE = treat as red. Amber + high DTE = watch and wait.`;
+      title  = `${pos.ticker} $${pos.strike}p — approaching strike`;
+      detail = `$${underlying.toFixed(2)}, ${cushionPct}% from strike. Monitor; ${dte}d to expiry.`;
     }
 
     items.push({
@@ -358,10 +355,8 @@ function ruleCushionBreach(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte,
       urgency:     dte,
-      title:       `${pos.ticker} $${pos.strike}p — ${state === "assignment_risk" ? "assignment risk" : "approaching strike"}`,
-      detail:      `Underlying $${underlying.toFixed(2)} · Strike $${pos.strike} · Cushion ${cushionPct}% · DTE ${dte}d · IV ${(iv * 100).toFixed(1)}% · Daily move est. ${dailyMovePct}% · `
-        + `Amber trigger $${cushion.cushion_trigger_amber} (N=2) · Red trigger $${cushion.cushion_trigger_red} (N=1). `
-        + suggestedAction,
+      title,
+      detail,
     });
   }
   return items;
@@ -402,6 +397,7 @@ function rule6060(positions, quoteMap) {
     const profitDisplay = (profitPct * 100).toFixed(0);
     const dteDisplay    = (dteRemainingPct * 100).toFixed(0);
     const typeLabel     = pos.isCall ? "CC" : "CSP";
+    const collateral    = (pos.strike * pos.contracts * 100).toLocaleString();
 
     items.push({
       id:          `60-60-${pos.ticker}-${pos.strike}-${pos.expiry_date}`,
@@ -412,10 +408,8 @@ function rule6060(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte:         remainingDTE,
       urgency:     remainingDTE,
-      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 threshold met`,
-      detail:   `${profitDisplay}% of premium captured with ${dteDisplay}% DTE remaining. `
-        + `Current mark $${currentMid.toFixed(2)} vs $${premiumPerShare.toFixed(2)} at open. `
-        + `${remainingDTE}d remaining. Consider closing and redeploying capital.`,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 hit`,
+      detail:   `${profitDisplay}% captured, ${dteDisplay}% DTE left. Close at $${currentMid.toFixed(2)} to redeploy $${collateral}.`,
     });
   }
   return items;
@@ -563,8 +557,8 @@ function ruleLeapsLowDTE(positions) {
       ticker:   leap.ticker,
       dte,
       urgency:  dte,
-      title:    `${leap.ticker} LEAP $${leap.strike} — ${dte}d to expiry`,
-      detail:   `LEAP has ${dte} DTE (under 90). Time decay accelerates significantly here. Consider rolling to a later expiry, closing the position, or converting to shares.`,
+      title:    `${leap.ticker} LEAP $${leap.strike} — ${dte}d, theta accelerating`,
+      detail:   `Roll out, close, or convert to shares.`,
     });
   }
   return items;
@@ -592,8 +586,8 @@ function ruleLeapsProfitTarget(positions, quoteMap) {
       ticker:   leap.ticker,
       dte,
       urgency:  -glPct,
-      title:    `${leap.ticker} LEAP $${leap.strike} — +${glPct.toFixed(1)}% return`,
-      detail:   `LEAP has returned ${glPct.toFixed(1)}% on $${leap.capital_fronted.toLocaleString()} invested ($${glDollars >= 0 ? "+" : ""}${Math.round(glDollars).toLocaleString()}). Target is 10%+ — consider taking profits.`,
+      title:    `${leap.ticker} LEAP $${leap.strike} — +${glPct.toFixed(1)}% (+$${Math.round(glDollars).toLocaleString()})`,
+      detail:   `Target hit. Take profits at $${mid.toFixed(2)}?`,
     });
   }
   return items;
@@ -611,16 +605,10 @@ function ruleRollOpportunity(positions, rollAnalysisMap) {
             roll_14dte_expiry, roll_14dte_net, roll_14dte_viable,
             roll_28dte_expiry, roll_28dte_net, roll_28dte_viable } = rollData;
 
-    const windows = [
-      roll_14dte_viable && roll_14dte_expiry
-        ? `14 DTE (${formatExpiry(roll_14dte_expiry)}): +$${roll_14dte_net?.toFixed(2)} credit`
-        : null,
-      roll_28dte_viable && roll_28dte_expiry
-        ? `28 DTE (${formatExpiry(roll_28dte_expiry)}): +$${roll_28dte_net?.toFixed(2)} credit`
-        : null,
-    ].filter(Boolean).join(" · ");
-
-    const ccMidStr = current_cc_mid != null ? ` @ $${current_cc_mid.toFixed(2)} mid` : "";
+    const bestWindow = [
+      roll_14dte_viable && roll_14dte_expiry ? { dte: 14, net: roll_14dte_net } : null,
+      roll_28dte_viable && roll_28dte_expiry ? { dte: 28, net: roll_28dte_net } : null,
+    ].filter(Boolean).sort((a, b) => (b.net ?? 0) - (a.net ?? 0))[0];
 
     items.push({
       id:       `roll-opportunity-${s.ticker}`,
@@ -629,10 +617,8 @@ function ruleRollOpportunity(positions, rollAnalysisMap) {
       ticker:   s.ticker,
       dte:      null,
       urgency:  50,
-      title:    `${s.ticker} — roll to $${assignment_strike} available`,
-      detail:   `Net-neutral or better roll from $${current_cc_strike}${ccMidStr} up to assignment price $${assignment_strike}. `
-        + windows
-        + ". Review and decide.",
+      title:    `${s.ticker} — roll up to $${assignment_strike} available`,
+      detail:   `+$${bestWindow.net?.toFixed(2)} credit (${bestWindow.dte} DTE). Net-neutral or better.`,
     });
   }
   return items;
@@ -672,10 +658,8 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
       strike:   p.cc_strike,
       dte,
       urgency:  sigmas, // lower σ → more urgent within priority bucket
-      title:    `${p.ticker} CC $${p.cc_strike} — breach in ${sigmasDisplay}σ`,
-      detail:   `CC strike $${p.cc_strike} is ${ccBelowPct.toFixed(1)}% below basis $${p.assignment_price.toFixed(2)}. `
-        + `Spot needs ${moveDisplay} in ${dte}d to breach (${sigmasDisplay}σ — within 1σ noise). `
-        + `Review whether to roll up before assignment.`,
+      title:    `${p.ticker} CC $${p.cc_strike} — breach risk`,
+      detail:   `Strike ${ccBelowPct.toFixed(1)}% below basis $${p.assignment_price.toFixed(2)}. Roll up before assignment.`,
     });
   }
   return items;
