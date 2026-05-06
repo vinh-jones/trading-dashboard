@@ -629,6 +629,8 @@ function ruleRollOpportunity(positions, rollAnalysisMap) {
 // not actual contract risk. CCs at or above assignment basis are excluded —
 // a breach there is a profitable exit, not a loss to manage. ≥1σ alerts are
 // excluded because most underwater positions sit there and would become noise.
+// DTE gates: red (< 0.5σ) fires only at ≤21 DTE; amber (0.5–1.0σ) only at ≤14 DTE.
+// At higher DTE mean reversion is the base case; spatial proximity alone is noise.
 function ruleAssignedCcBreachImminent(assignedShareIncome) {
   const items = [];
   const positions = assignedShareIncome?.per_position;
@@ -641,12 +643,15 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
     const sigmas = p.cc_sigmas_to_breach;
     if (sigmas == null || sigmas >= 1.0) continue;
 
+    const dte        = p.cc_dte ?? 0;
+    const dteCutoff  = sigmas < 0.5 ? 21 : 14;
+    if (dte > dteCutoff) continue;
+
     const priority = sigmas < 0.5 ? "P1" : "P2";
     const sigmasDisplay   = sigmas.toFixed(2);
     const moveDisplay     = p.cc_required_move_pct != null
       ? `${(p.cc_required_move_pct * 100).toFixed(1)}%`
       : "—";
-    const dte             = p.cc_dte ?? 0;
     const ccBelowPct      = ((p.assignment_price - p.cc_strike) / p.assignment_price) * 100;
     const expiryKey       = p.cc_expiry ?? `dte${dte}`;
 

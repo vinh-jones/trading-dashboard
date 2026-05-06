@@ -41,6 +41,18 @@ function describeStrike(row) {
   return `${tag} ${formatStrike(row.cc_strike)}`;
 }
 
+// Red indicator fires only at ≤21 DTE; amber only at ≤14 DTE.
+// Above-assignment breach is a profitable exit — no DTE gating needed.
+function shouldSuppressIndicator(row) {
+  const sigmas  = row.cc_sigmas_to_breach;
+  const dte     = row.cc_dte;
+  const isAbove = row.distance_pct != null && row.distance_pct >= 0;
+  if (isAbove || sigmas == null || dte == null) return false;
+  if (sigmas < 0.5) return dte > 21;
+  if (sigmas < 1.0) return dte > 14;
+  return false;
+}
+
 // Below-assignment shares: a breach locks in loss territory, so frame
 // sigmas as cushion (red→amber→neutral→green as strike gets farther away).
 function sigmaBucketRisk(sigmas) {
@@ -65,7 +77,7 @@ function sigmaBucketExit(sigmas) {
   return                   { label: "deep OTM",      color: theme.text.muted };
 }
 
-function BreachWatch({ row }) {
+function BreachWatch({ row, showIndicator = true }) {
   if (row.cc_strike == null || row.cc_dte == null) {
     return <span>—</span>;
   }
@@ -84,7 +96,9 @@ function BreachWatch({ row }) {
     : `rally past ${formatStrike(row.cc_strike)} within ${dte}d`;
 
   const isAbove = row.distance_pct != null && row.distance_pct >= 0;
-  const bucket = isAbove ? sigmaBucketExit(sigmas) : sigmaBucketRisk(sigmas);
+  const bucket  = showIndicator
+    ? (isAbove ? sigmaBucketExit(sigmas) : sigmaBucketRisk(sigmas))
+    : null;
 
   return (
     <span>
@@ -199,53 +213,90 @@ function AggregateCard({ aggregate }) {
 }
 
 function PositionRow({ row }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const suppressed = shouldSuppressIndicator(row);
+
   const cellStyle = {
     padding:        `${theme.space[2]}px ${theme.space[3]}px`,
-    borderBottom:   `1px solid ${theme.border.default}`,
+    borderBottom:   expanded ? "none" : `1px solid ${theme.border.default}`,
     fontSize:       theme.size.sm,
     color:          theme.text.secondary,
     verticalAlign:  "middle",
   };
 
   const off = !!row.delta_off_target;
+  const dteCutoff = row.cc_sigmas_to_breach != null && row.cc_sigmas_to_breach < 0.5 ? 21 : 14;
 
   return (
-    <tr>
-      <td style={{ ...cellStyle, color: theme.text.primary, fontWeight: 600 }}>
-        {row.ticker}
-        {row.has_active_cc && (
-          <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginLeft: theme.space[1] }}>·CC</span>
-        )}
-      </td>
-      <td style={{ ...cellStyle, color: row.distance_pct != null && row.distance_pct < 0 ? theme.red : theme.text.secondary }}>
-        {formatPct(row.distance_pct)}
-      </td>
-      <td style={cellStyle}>{row.iv_rank != null ? row.iv_rank : "—"}</td>
-      <td style={cellStyle}>{describeStrike(row)}</td>
-      <td style={{ ...cellStyle, color: theme.green, fontWeight: 500 }}>
-        {row.monthly_income != null ? formatDollars(row.monthly_income) : "—"}
-        {off && (
-          <span
-            title={`Chosen Δ ${row.cc_delta?.toFixed(2)} is outside target 0.05–0.13 band`}
-            style={{
-              display:       "inline-block",
-              width:         8,
-              height:        8,
-              borderRadius:  "50%",
-              background:    theme.amber,
-              marginLeft:    theme.space[2],
-              verticalAlign: "middle",
-            }}
-          />
-        )}
-      </td>
-      <td style={{ ...cellStyle, color: theme.text.muted, fontSize: theme.size.xs }}>
-        <BreachWatch row={row} />
-      </td>
-      <td style={cellStyle}>
-        <HealthChip band={row.health_band} />
-      </td>
-    </tr>
+    <>
+      <tr onClick={() => setExpanded(e => !e)} style={{ cursor: "pointer" }}>
+        <td style={{ ...cellStyle, color: theme.text.primary, fontWeight: 600 }}>
+          {row.ticker}
+          {row.has_active_cc && (
+            <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginLeft: theme.space[1] }}>·CC</span>
+          )}
+        </td>
+        <td style={{ ...cellStyle, color: row.distance_pct != null && row.distance_pct < 0 ? theme.red : theme.text.secondary }}>
+          {formatPct(row.distance_pct)}
+        </td>
+        <td style={cellStyle}>{row.iv_rank != null ? row.iv_rank : "—"}</td>
+        <td style={cellStyle}>{describeStrike(row)}</td>
+        <td style={{ ...cellStyle, color: theme.green, fontWeight: 500 }}>
+          {row.monthly_income != null ? formatDollars(row.monthly_income) : "—"}
+          {off && (
+            <span
+              title={`Chosen Δ ${row.cc_delta?.toFixed(2)} is outside target 0.05–0.13 band`}
+              style={{
+                display:       "inline-block",
+                width:         8,
+                height:        8,
+                borderRadius:  "50%",
+                background:    theme.amber,
+                marginLeft:    theme.space[2],
+                verticalAlign: "middle",
+              }}
+            />
+          )}
+        </td>
+        <td style={{ ...cellStyle, color: theme.text.muted, fontSize: theme.size.xs }}>
+          <BreachWatch row={row} showIndicator={!suppressed} />
+        </td>
+        <td style={cellStyle}>
+          <HealthChip band={row.health_band} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={7} style={{
+            padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+            borderBottom: `1px solid ${theme.border.default}`,
+            background:   theme.bg.elevated,
+            fontSize:     theme.size.xs,
+          }}>
+            <div style={{ display: "flex", gap: theme.space[4], alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ color: theme.text.muted }}>
+                <BreachWatch row={row} showIndicator={true} />
+              </span>
+              {row.cc_atm_iv != null && (
+                <span style={{ color: theme.text.subtle }}>
+                  ATM IV: {(row.cc_atm_iv * 100).toFixed(0)}%
+                </span>
+              )}
+              {row.cc_delta != null && (
+                <span style={{ color: theme.text.subtle }}>
+                  Δ {row.cc_delta.toFixed(2)}
+                </span>
+              )}
+              {suppressed && (
+                <span style={{ color: theme.text.faint }}>
+                  indicator fires at ≤{dteCutoff}d DTE
+                </span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
