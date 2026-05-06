@@ -303,7 +303,7 @@ function ruleNearWorthlessOption(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte:         daysToExpiry,
       urgency:     daysToExpiry,
-      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — close to free $${collateral}`,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — close to free $${collateral}, ${daysToExpiry}d left`,
       detail:   `${capturedPct}% captured · $${currentMid.toFixed(2)} mid · ${daysToExpiry}d left.`,
     });
   }
@@ -342,7 +342,7 @@ function ruleCushionBreach(positions, quoteMap) {
         detail = `$${underlying.toFixed(2)}, ${cushionPct}% from strike. Roll out/down or accept assignment.`;
       }
     } else {
-      title  = `${pos.ticker} $${pos.strike}p — approaching strike`;
+      title  = `${pos.ticker} $${pos.strike}p — approaching strike, ${dte}d left`;
       detail = `$${underlying.toFixed(2)}, ${cushionPct}% from strike. Monitor; ${dte}d to expiry.`;
     }
 
@@ -408,7 +408,7 @@ function rule6060(positions, quoteMap) {
       expiry_date: pos.expiry_date,
       dte:         remainingDTE,
       urgency:     remainingDTE,
-      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 hit`,
+      title:    `${pos.ticker} ${typeLabel} $${pos.strike} — 60/60 hit, ${remainingDTE}d left`,
       detail:   `${profitDisplay}% captured, ${dteDisplay}% DTE left. Close at $${currentMid.toFixed(2)} to redeploy $${collateral}.`,
     });
   }
@@ -586,7 +586,7 @@ function ruleLeapsProfitTarget(positions, quoteMap) {
       ticker:   leap.ticker,
       dte,
       urgency:  -glPct,
-      title:    `${leap.ticker} LEAP $${leap.strike} — +${glPct.toFixed(1)}% (+$${Math.round(glDollars).toLocaleString()})`,
+      title:    `${leap.ticker} LEAP $${leap.strike} — +${glPct.toFixed(1)}% (+$${Math.round(glDollars).toLocaleString()})${dte != null ? `, ${dte}d left` : ""}`,
       detail:   `Target hit. Take profits at $${mid.toFixed(2)}?`,
     });
   }
@@ -658,7 +658,7 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
       strike:   p.cc_strike,
       dte,
       urgency:  sigmas, // lower σ → more urgent within priority bucket
-      title:    `${p.ticker} CC $${p.cc_strike} — breach risk`,
+      title:    `${p.ticker} CC $${p.cc_strike} — breach risk, ${dte}d left`,
       detail:   `Strike ${ccBelowPct.toFixed(1)}% below basis $${p.assignment_price.toFixed(2)}. Roll up before assignment.`,
     });
   }
