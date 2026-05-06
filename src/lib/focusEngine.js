@@ -329,6 +329,9 @@ function ruleCushionBreach(positions, quoteMap) {
     if (cushion.cushion_state === "safe" || cushion.cushion_state == null) continue;
 
     const state         = cushion.cushion_state;
+    // DTE gates: red fires at ≤21 DTE, amber fires at ≤14 DTE.
+    const dteCutoff     = state === "assignment_risk" ? 21 : 14;
+    if (dte > dteCutoff) continue;
     const dailyMovePct  = (iv / Math.sqrt(252) * 100).toFixed(1);
     const cushionPct    = (cushion.cushion_pct * 100).toFixed(1);
 

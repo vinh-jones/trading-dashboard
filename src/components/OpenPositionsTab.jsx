@@ -574,8 +574,8 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
               else if (dte != null && dte < 90)      rowHighlightColor = theme.red;
             }
 
-            if (pos.cushion_state === "assignment_risk") rowHighlightColor = theme.red;
-            else if (pos.cushion_state === "approaching" && rowHighlightColor !== theme.red) rowHighlightColor = theme.amber;
+            if (pos.cushion_state === "assignment_risk" && (dte == null || dte <= 21)) rowHighlightColor = theme.red;
+            else if (pos.cushion_state === "approaching" && rowHighlightColor !== theme.red && (dte == null || dte <= 14)) rowHighlightColor = theme.amber;
 
             const td = (content, style = {}) => (
               <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, ...style }}>{content}</td>
@@ -612,10 +612,10 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                       <span style={{ display: "inline-block", width: 38, fontWeight: 700, color: theme.text.primary }}>
                         {pos.ticker}
                       </span>
-                      {pos.cushion_state === "assignment_risk" && (
+                      {pos.cushion_state === "assignment_risk" && (dte == null || dte <= 21) && (
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: theme.red, display: "inline-block", flexShrink: 0 }} />
                       )}
-                      {pos.cushion_state === "approaching" && (
+                      {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
                     </span>
