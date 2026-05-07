@@ -415,7 +415,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker }) {
+function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -609,9 +609,23 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                 >
                   {td(
                     <span style={{ display: "flex", alignItems: "center" }}>
-                      <span style={{ display: "inline-block", width: 38, fontWeight: 700, color: theme.text.primary }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenTickerDetail?.(pos.ticker);
+                        }}
+                        style={{
+                          background: "transparent", border: "none", padding: 0,
+                          display: "inline-block", width: 38, fontWeight: 700,
+                          color: theme.text.primary, fontFamily: "inherit",
+                          fontSize: "inherit", cursor: onOpenTickerDetail ? "pointer" : "default",
+                          textAlign: "left",
+                        }}
+                        onMouseEnter={(e) => { if (onOpenTickerDetail) e.currentTarget.style.color = theme.blue; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = theme.text.primary; }}
+                      >
                         {pos.ticker}
-                      </span>
+                      </button>
                       {pos.cushion_state === "assignment_risk" && (dte == null || dte <= 21) && (
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: theme.red, display: "inline-block", flexShrink: 0 }} />
                       )}
@@ -662,7 +676,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
 
 const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 
-export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
+export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail }) {
   const { positions, account } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
@@ -846,6 +860,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed }) {
             quoteMap={quoteMap}
             isMobile={isMobile}
             highlightedTicker={highlightedTicker}
+            onOpenTickerDetail={onOpenTickerDetail}
           />
         </>
       )}

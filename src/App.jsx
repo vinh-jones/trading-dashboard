@@ -66,6 +66,21 @@ export default function TradeDashboard() {
       .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
   }, []);
 
+  useEffect(() => {
+    function applyHash() {
+      const m = window.location.hash.match(/^#\/ticker\/([A-Za-z0-9.\-]+)/);
+      if (m) {
+        const sym = m[1].toUpperCase();
+        setModeRaw("explore");
+        setSubViewRaw("ticker-detail");
+        setDetailTicker(sym);
+      }
+    }
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
   // ── Focus pipeline — hoisted so header / nav / tab all read from one source ──
   const focus = useFocusItems({ positions, account });
 
@@ -255,10 +270,12 @@ export default function TradeDashboard() {
                 onOpenTickerDetail={(ticker) => {
                   setDetailTicker(ticker);
                   setSubViewRaw("ticker-detail");
+                  window.history.replaceState(null, "", `#/ticker/${ticker}`);
                 }}
                 onCloseTickerDetail={() => {
                   setDetailTicker(null);
                   setSubViewRaw("positions");
+                  window.history.replaceState(null, "", " ");
                 }}
               />
             )}
