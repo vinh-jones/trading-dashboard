@@ -31,50 +31,47 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    // 1. CSP baseline (for cut-and-redeploy verdict computation)
-    const baselineResult = await supabase
-      .from("trades")
-      .select("id, premium_collected, capital_fronted, days_held, close_date")
-      .eq("type", "CSP")
-      .eq("subtype", "Close")
-      .gt("days_held", 0)
-      .gt("capital_fronted", 0)
-      .order("close_date", { ascending: false })
-      .limit(60);
-    if (baselineResult.error) throw new Error(`baseline: ${baselineResult.error.message}`);
-    const cspBaseline = computeCspBaseline(baselineResult.data ?? []);
+    const [baselineResult, tradesResult, positionsResult, quoteResult] = await Promise.all([
+      supabase
+        .from("trades")
+        .select("id, premium_collected, capital_fronted, days_held, close_date")
+        .eq("type", "CSP")
+        .eq("subtype", "Close")
+        .gt("days_held", 0)
+        .gt("capital_fronted", 0)
+        .order("close_date", { ascending: false })
+        .limit(60),
+      supabase
+        .from("trades")
+        .select("*")
+        .eq("ticker", ticker)
+        .order("close_date", { ascending: true }),
+      supabase
+        .from("positions")
+        .select("*")
+        .eq("ticker", ticker),
+      supabase
+        .from("quotes")
+        .select("symbol, last, mid, prev_close, earnings_date, refreshed_at, instrument_type")
+        .eq("symbol", ticker)
+        .eq("instrument_type", "EQUITY")
+        .maybeSingle(),
+    ]);
 
-    // 2. All trades for ticker
-    const tradesResult = await supabase
-      .from("trades")
-      .select("*")
-      .eq("ticker", ticker)
-      .order("close_date", { ascending: true });
-    if (tradesResult.error) throw new Error(`trades: ${tradesResult.error.message}`);
-    const trades = tradesResult.data ?? [];
-
-    // 3. Open positions for ticker
-    const positionsResult = await supabase
-      .from("positions")
-      .select("*")
-      .eq("ticker", ticker);
+    if (baselineResult.error)  throw new Error(`baseline: ${baselineResult.error.message}`);
+    if (tradesResult.error)    throw new Error(`trades: ${tradesResult.error.message}`);
     if (positionsResult.error) throw new Error(`positions: ${positionsResult.error.message}`);
-    const reshaped = reshapePositions(positionsResult.data ?? []);
-    const openPositions = {
-      csps:    reshaped.open_csps        ?? [],
-      shares:  reshaped.assigned_shares  ?? [],
-      leaps:   reshaped.open_leaps       ?? [],
-      spreads: reshaped.open_spreads     ?? [],
-    };
-
-    // 4. Quote (most recent equity quote for the ticker)
-    const quoteResult = await supabase
-      .from("quotes")
-      .select("symbol, last, mid, prev_close, earnings_date, refreshed_at, instrument_type")
-      .eq("symbol", ticker)
-      .eq("instrument_type", "EQUITY")
-      .maybeSingle();
+    // quote may not exist; treat error as null quote (not fatal)
     const quote = quoteResult.error ? null : quoteResult.data;
+
+    const cspBaseline = computeCspBaseline(baselineResult.data ?? []);
+    const trades      = tradesResult.data ?? [];
+    const reshaped    = reshapePositions(positionsResult.data ?? []);
+    const openPositions = {
+      csps:   reshaped.open_csps      ?? [],
+      shares: reshaped.assigned_shares ?? [],
+      leaps:  reshaped.open_leaps     ?? [],
+    };
 
     // 5. Build lifespans (with full benchmarks + cc_history intact)
     const rawLifespans = detectLifespans(ticker, trades);
