@@ -103,7 +103,7 @@ describe("computeTickerStats — assignments and called away counts exclude susp
       ],
     });
     expect(r.assignmentsTaken).toBe(2);
-    expect(r.timesCalledAway).toBe(1); // only the trusted called_away lifespan
+    expect(r.timesCalledAway).toBe(1); // trusted lifespan: 0 partials + 1 final exit
   });
 });
 
@@ -205,5 +205,38 @@ describe("computeTickerStats — avg kept_pct", () => {
       lifespans: [],
     });
     expect(r.avgKeptPct).toBe(70);
+  });
+});
+
+describe("computeTickerStats — avg days includes suspect", () => {
+  it("includes suspect-flagged closed CSPs in avgDaysCsp", () => {
+    const r = computeTickerStats({
+      trades: [
+        trade({ type: "CSP", subtype: "Close", days_held: 10, data_quality: "trusted" }),
+        trade({ type: "CSP", subtype: "Close", days_held: 100, data_quality: "suspect" }),
+      ],
+      lifespans: [],
+    });
+    expect(r.avgDaysCsp).toBe(55); // (10 + 100) / 2 — suspect included
+  });
+});
+
+describe("computeTickerStats — timesCalledAway counts events not lifespans", () => {
+  it("counts each CC-driven exit including partial dispositions", () => {
+    const r = computeTickerStats({
+      trades: [],
+      lifespans: [
+        lifespan({
+          data_quality: "trusted",
+          partial_dispositions: [
+            { type: "called_away", date: "2026-02-01" },
+            { type: "called_away", date: "2026-02-15" },
+          ],
+          exit_event: { exit_type: "called_away" },
+        }),
+      ],
+    });
+    expect(r.wheelsCompleted).toBe(1);   // one closed lifespan ending in called_away
+    expect(r.timesCalledAway).toBe(3);   // 2 partials + 1 final exit
   });
 });

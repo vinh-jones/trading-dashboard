@@ -21,7 +21,11 @@ export function computeTickerStats({ trades = [], lifespans = [] }) {
     0
   );
 
-  const timesCalledAway = wheelsCompleted;
+  const timesCalledAway = trustedLifespans.reduce((sum, l) => {
+    const partials = (l.partial_dispositions ?? []).filter((d) => d.type === "called_away").length;
+    const finalExit = l.exit_event?.exit_type === "called_away" ? 1 : 0;
+    return sum + partials + finalExit;
+  }, 0);
 
   const closedCsps = closedTrades.filter((t) => t.type === "CSP" && t.subtype === "Close");
   const closedCcs  = closedTrades.filter((t) => t.type === "CC"  && t.subtype === "Close");
