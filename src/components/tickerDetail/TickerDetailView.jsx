@@ -1,5 +1,11 @@
 import { theme } from "../../lib/theme";
 import { useTickerDetail } from "../../hooks/useTickerDetail";
+import { useData } from "../../hooks/useData";
+import { TickerHeader } from "./TickerHeader";
+import { TickerOpenPositions } from "./TickerOpenPositions";
+import { TickerLifespanHistory } from "./TickerLifespanHistory";
+import { TickerAllTimeStats } from "./TickerAllTimeStats";
+import { TickerTradeTimeline } from "./TickerTradeTimeline";
 
 function Breadcrumb({ ticker, onClose }) {
   return (
@@ -24,6 +30,7 @@ function Breadcrumb({ ticker, onClose }) {
 
 export function TickerDetailView({ ticker, onClose }) {
   const { data, loading, error } = useTickerDetail(ticker);
+  const { account } = useData();
 
   if (loading && !data) {
     return (
@@ -56,7 +63,11 @@ export function TickerDetailView({ ticker, onClose }) {
   return (
     <div>
       <Breadcrumb ticker={ticker} onClose={onClose} />
-      {/* TickerHeader, TickerOpenPositions, TickerLifespanHistory, TickerAllTimeStats, TickerTradeTimeline added in Tasks 7-11 */}
+      <TickerHeader data={data} accountValue={account?.account_value || 0} />
+      <TickerOpenPositions data={data} />
+      <TickerLifespanHistory data={data} />
+      <TickerAllTimeStats data={data} />
+      <TickerTradeTimeline data={data} />
     </div>
   );
 }
