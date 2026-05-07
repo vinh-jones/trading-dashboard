@@ -8,6 +8,7 @@ const OpenPositionsTab = lazyNamed(() => import("./OpenPositionsTab"), "OpenPosi
 const RadarTab         = lazyNamed(() => import("./RadarTab"),         "RadarTab");
 const MacroTab         = lazyNamed(() => import("./MacroTab"),         "MacroTab");
 const EarningsTab      = lazyNamed(() => import("./EarningsTab"),      "EarningsTab");
+const TickersTab       = lazyNamed(() => import("./TickersTab"),       "TickersTab");
 const TickerDetailView = lazyNamed(() => import("./tickerDetail"),     "TickerDetailView");
 
 function TabLoading() {
@@ -93,6 +94,7 @@ export function ExploreView({
             onOpenTickerDetail={onOpenTickerDetail}
           />
         )}
+        {active === "tickers"   && <TickersTab onOpenTickerDetail={onOpenTickerDetail} />}
         {active === "radar"     && <RadarTab positions={positions} account={account} />}
         {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
         {active === "macro"     && <MacroTab />}
