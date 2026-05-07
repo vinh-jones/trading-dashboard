@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../hooks/useData";
 import { useQuotes } from "../hooks/useQuotes";
+import { useWindowWidth } from "../hooks/useWindowWidth";
 import { theme } from "../lib/theme";
 import { formatDollars, formatExpiry } from "../lib/format";
 import { buildTickerDirectory } from "../lib/tickerDirectory";
@@ -117,6 +118,10 @@ function CyclesCell({ row, lifespanLoading, lifespanError }) {
 export function TickersTab({ onOpenTickerDetail }) {
   const { trades, positions } = useData();
   const { quoteMap } = useQuotes();
+  const isMobile = useWindowWidth() < 600;
+
+  const HIDDEN_ON_MOBILE = new Set(["lastActivity", "cycles", "health"]);
+  const visibleCols = isMobile ? COL_DEFS.filter((c) => !HIDDEN_ON_MOBILE.has(c.key)) : COL_DEFS;
 
   const [lifespans, setLifespans] = useState([]);
   const [lifespanLoading, setLifespanLoading] = useState(true);
@@ -195,7 +200,7 @@ export function TickersTab({ onOpenTickerDetail }) {
         </div>
       </div>
 
-      {lifespanError && (
+      {!isMobile && lifespanError && (
         <div style={{
           padding: theme.space[2], marginBottom: theme.space[3],
           fontSize: theme.size.xs, color: theme.amber,
@@ -214,7 +219,7 @@ export function TickersTab({ onOpenTickerDetail }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
-              {COL_DEFS.map((c) => {
+              {visibleCols.map((c) => {
                 const isActive = sortKey === c.key;
                 return (
                   <th
@@ -263,21 +268,27 @@ export function TickersTab({ onOpenTickerDetail }) {
                 <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm }}>
                   <StatusCell status={row.status} />
                 </td>
-                <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, color: theme.text.muted }}>
-                  {row.lastActivity ? formatExpiry(row.lastActivity) : "—"}
-                </td>
-                <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, textAlign: "right", color: theme.text.primary }}>
-                  <CyclesCell row={row} lifespanLoading={lifespanLoading} lifespanError={lifespanError} />
-                </td>
+                {!isMobile && (
+                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, color: theme.text.muted }}>
+                    {row.lastActivity ? formatExpiry(row.lastActivity) : "—"}
+                  </td>
+                )}
+                {!isMobile && (
+                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, textAlign: "right", color: theme.text.primary }}>
+                    <CyclesCell row={row} lifespanLoading={lifespanLoading} lifespanError={lifespanError} />
+                  </td>
+                )}
                 <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, textAlign: "right" }}>
                   <PnlCell value={row.lifetimePnl} includesSuspect={row.includesSuspect} />
                 </td>
                 <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm, textAlign: "right", color: row.capital === 0 ? theme.text.muted : theme.text.primary }}>
                   {row.capital === 0 ? "$0" : formatDollars(row.capital)}
                 </td>
-                <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm }}>
-                  <HealthCell ticker={row.ticker} positions={positions} quoteMap={quoteMap} hasOpenPositions={row.hasOpenPositions} />
-                </td>
+                {!isMobile && (
+                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.sm }}>
+                    <HealthCell ticker={row.ticker} positions={positions} quoteMap={quoteMap} hasOpenPositions={row.hasOpenPositions} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
