@@ -73,6 +73,7 @@ export default function TradeDashboard() {
   const [paletteOpen,     setPaletteOpen]     = useState(false);
   const [journalIntent,   setJournalIntent]   = useState(null);
   const [positionIntent,  setPositionIntent]  = useState(null);
+  const [detailTicker,    setDetailTicker]    = useState(null);
 
   useHotkey("mod+k", (e) => {
     e.preventDefault();
@@ -250,6 +251,15 @@ export default function TradeDashboard() {
                 onSubViewChange={setSubView}
                 positionIntent={positionIntent}
                 onPositionIntentConsumed={() => setPositionIntent(null)}
+                detailTicker={detailTicker}
+                onOpenTickerDetail={(ticker) => {
+                  setDetailTicker(ticker);
+                  setSubViewRaw("ticker-detail");
+                }}
+                onCloseTickerDetail={() => {
+                  setDetailTicker(null);
+                  setSubViewRaw("positions");
+                }}
               />
             )}
             {mode === "review" && (
