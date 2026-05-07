@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeLifespanVerdict, verdictThreshold } from "../tickerVerdict.js";
+import { computeLifespanVerdict, verdictThreshold } from "../tickerVerdict";
 
 describe("verdictThreshold", () => {
   it("returns $100 when 0.5% of capital is below $100", () => {
