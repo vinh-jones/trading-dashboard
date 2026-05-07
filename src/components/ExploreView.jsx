@@ -8,6 +8,7 @@ const OpenPositionsTab = lazyNamed(() => import("./OpenPositionsTab"), "OpenPosi
 const RadarTab         = lazyNamed(() => import("./RadarTab"),         "RadarTab");
 const MacroTab         = lazyNamed(() => import("./MacroTab"),         "MacroTab");
 const EarningsTab      = lazyNamed(() => import("./EarningsTab"),      "EarningsTab");
+const TickerDetailView = lazyNamed(() => import("./tickerDetail"),     "TickerDetailView");
 
 function TabLoading() {
   return (
@@ -22,7 +23,6 @@ function TabLoading() {
   );
 }
 
-// Chip-nav button. Active chip gets the blue accent.
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -47,9 +47,27 @@ function Chip({ active, onClick, children }) {
   );
 }
 
-export function ExploreView({ subView, onSubViewChange, positionIntent, onPositionIntentConsumed }) {
+export function ExploreView({
+  subView,
+  onSubViewChange,
+  positionIntent,
+  onPositionIntentConsumed,
+  detailTicker,
+  onOpenTickerDetail,
+  onCloseTickerDetail,
+}) {
   const { positions, account, trades } = useData();
-  const active = isValidSubView("explore", subView) ? subView : "positions";
+  const isDetail = subView === "ticker-detail";
+
+  if (isDetail && detailTicker) {
+    return (
+      <Suspense fallback={<TabLoading />}>
+        <TickerDetailView ticker={detailTicker} onClose={onCloseTickerDetail} />
+      </Suspense>
+    );
+  }
+
+  const active = isValidSubView("explore", subView) && subView !== "ticker-detail" ? subView : "positions";
 
   return (
     <div>
@@ -72,6 +90,7 @@ export function ExploreView({ subView, onSubViewChange, positionIntent, onPositi
           <OpenPositionsTab
             positionIntent={positionIntent}
             onPositionIntentConsumed={onPositionIntentConsumed}
+            onOpenTickerDetail={onOpenTickerDetail}
           />
         )}
         {active === "radar"     && <RadarTab positions={positions} account={account} />}

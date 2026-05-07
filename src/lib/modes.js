@@ -5,6 +5,9 @@ export const MODES = ["focus", "explore", "review"];
 export const EXPLORE_SUBVIEWS = ["positions", "radar", "earnings", "macro"];
 export const REVIEW_SUBVIEWS  = ["journal", "monthly", "history"];
 
+// Hidden subviews — valid state but not shown in chip nav (drill-down views)
+const EXPLORE_HIDDEN_SUBVIEWS = ["ticker-detail"];
+
 export const SUBVIEW_LABELS = {
   positions: "Positions",
   radar:     "Radar",
@@ -33,7 +36,7 @@ export function isValidMode(mode) {
 
 export function isValidSubView(mode, subView) {
   if (mode === "focus")   return subView === null;
-  if (mode === "explore") return EXPLORE_SUBVIEWS.includes(subView);
+  if (mode === "explore") return EXPLORE_SUBVIEWS.includes(subView) || EXPLORE_HIDDEN_SUBVIEWS.includes(subView);
   if (mode === "review")  return REVIEW_SUBVIEWS.includes(subView);
   return false;
 }

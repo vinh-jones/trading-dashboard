@@ -66,6 +66,21 @@ export default function TradeDashboard() {
       .catch(err => console.warn("[TradeDashboard] /api/data fetch failed:", err.message));
   }, []);
 
+  useEffect(() => {
+    function applyHash() {
+      const m = window.location.hash.match(/^#\/ticker\/([A-Za-z0-9.\-]+)/);
+      if (m) {
+        const sym = m[1].toUpperCase();
+        setModeRaw("explore");
+        setSubViewRaw("ticker-detail");
+        setDetailTicker(sym);
+      }
+    }
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
+
   // ── Focus pipeline — hoisted so header / nav / tab all read from one source ──
   const focus = useFocusItems({ positions, account });
 
@@ -73,6 +88,7 @@ export default function TradeDashboard() {
   const [paletteOpen,     setPaletteOpen]     = useState(false);
   const [journalIntent,   setJournalIntent]   = useState(null);
   const [positionIntent,  setPositionIntent]  = useState(null);
+  const [detailTicker,    setDetailTicker]    = useState(null);
 
   useHotkey("mod+k", (e) => {
     e.preventDefault();
@@ -250,6 +266,17 @@ export default function TradeDashboard() {
                 onSubViewChange={setSubView}
                 positionIntent={positionIntent}
                 onPositionIntentConsumed={() => setPositionIntent(null)}
+                detailTicker={detailTicker}
+                onOpenTickerDetail={(ticker) => {
+                  setDetailTicker(ticker);
+                  setSubViewRaw("ticker-detail");
+                  window.history.replaceState(null, "", `#/ticker/${ticker}`);
+                }}
+                onCloseTickerDetail={() => {
+                  setDetailTicker(null);
+                  setSubViewRaw("positions");
+                  window.history.replaceState(null, "", " ");
+                }}
               />
             )}
             {mode === "review" && (
