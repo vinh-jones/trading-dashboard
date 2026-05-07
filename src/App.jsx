@@ -176,6 +176,7 @@ export default function TradeDashboard() {
         color:      theme.text.secondary,
         minHeight:  "100vh",
         padding:    theme.space[5],
+        paddingTop: `max(${theme.space[5]}px, env(safe-area-inset-top))`,
       }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: theme.text.primary, marginBottom: 4, letterSpacing: "0.5px" }}>
