@@ -1,6 +1,6 @@
 import { theme } from "../../lib/theme";
 import { formatDollarsFull, formatExpiry } from "../../lib/format";
-import { computeCushion } from "../../lib/cushionBreach";
+import { computePositionHealth } from "../../lib/tickerHealth";
 
 const ALLOC_CAP_PCT = 15;
 
@@ -27,23 +27,6 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function computeHealth(openPositions, quote) {
-  const csps = openPositions?.csps ?? [];
-  const last = quote?.last ?? quote?.mid ?? null;
-  let worst = "safe";
-  for (const p of csps) {
-    const c = computeCushion(p.strike, last, p.iv ?? null);
-    if (c.cushion_state === "assignment_risk") { worst = "assignment_risk"; break; }
-    if (c.cushion_state === "approaching") worst = "approaching";
-  }
-  const totalOpen = (openPositions?.csps?.length   ?? 0)
-                  + (openPositions?.shares?.length ?? 0)
-                  + (openPositions?.leaps?.length  ?? 0);
-  if (totalOpen === 0) return { color: theme.text.muted, label: "Idle" };
-  if (worst === "assignment_risk") return { color: theme.red,   label: "Risk"  };
-  if (worst === "approaching")     return { color: theme.amber, label: "Watch" };
-  return { color: theme.green, label: "Healthy" };
-}
 
 function buildStatusSummary({ openPositions, lifespans, ticker, shareCount, ccCount, cspCount, leapCount }) {
   if (shareCount > 0 && ccCount > 0) {
@@ -96,7 +79,7 @@ export function TickerHeader({ data, accountValue }) {
     return days != null && days >= 0 && days <= 30 ? days : null;
   })();
 
-  const health = computeHealth(openPositions, quote);
+  const health = computePositionHealth({ openPositions, quote });
   const statusSummary = buildStatusSummary({
     openPositions, lifespans, ticker, shareCount, ccCount, cspCount, leapCount,
   });
