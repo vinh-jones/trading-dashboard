@@ -7,7 +7,7 @@ describe("modes", () => {
   });
 
   it("exposes Explore sub-views in order", () => {
-    expect(EXPLORE_SUBVIEWS).toEqual(["positions", "radar", "earnings", "macro"]);
+    expect(EXPLORE_SUBVIEWS).toEqual(["positions", "tickers", "radar", "earnings", "macro"]);
   });
 
   it("exposes Review sub-views in order with Journal first", () => {
