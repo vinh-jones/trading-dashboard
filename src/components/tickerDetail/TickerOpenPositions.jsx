@@ -175,7 +175,7 @@ export function TickerOpenPositions({ data }) {
         <thead>
           <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
             {(isMobile
-              ? ["TYPE", "STRIKE", "EXPIRY", "DTE", "QTY", "PREMIUM", "P&L"]
+              ? ["TYPE", "STRIKE", "DTE", "P&L"]
               : ["TYPE", "STRIKE", "EXPIRY", "DTE", "QTY", "% OTM", "NOTE", "PREMIUM", "P&L"]
             ).map((h) => (
               <th key={h} style={{
@@ -189,8 +189,9 @@ export function TickerOpenPositions({ data }) {
         </thead>
         <tbody>
           {rows.map((r, i) => {
+            const MOBILE_KEEP = new Set([0, 1, 3, 8]); // TYPE, STRIKE, DTE, P&L
             const visibleCells = isMobile
-              ? r.cells.filter((_, idx) => idx !== 5 && idx !== 6)
+              ? r.cells.filter((_, idx) => MOBILE_KEEP.has(idx))
               : r.cells;
             return <Row key={i} cells={visibleCells} />;
           })}

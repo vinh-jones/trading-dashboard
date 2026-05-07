@@ -131,8 +131,8 @@ export function TickerTradeTimeline({ data }) {
               {[
                 { label: "DATE",    align: "left"  },
                 { label: "TYPE",    align: "left"  },
-                { label: "ACTION",  align: "left"  },
-                { label: "STRIKE",  align: "right" },
+                ...(isMobile ? [] : [{ label: "ACTION",  align: "left"  }]),
+                ...(isMobile ? [] : [{ label: "STRIKE",  align: "right" }]),
                 { label: "DETAIL",  align: "left"  },
                 ...(isMobile ? [] : [{ label: "DAYS",  align: "right" }]),
                 ...(isMobile ? [] : [{ label: "CYCLE", align: "left"  }]),
@@ -158,11 +158,16 @@ export function TickerTradeTimeline({ data }) {
                 <tr key={t.id} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                   <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted, fontSize: theme.size.sm }}>{formatExpiry(t.close_date)}</td>
                   <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}><TypeBadge type={t.type} /></td>
-                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.secondary, fontSize: theme.size.sm }}>{action}</td>
-                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, textAlign: "right", color: theme.text.primary, fontSize: theme.size.sm }}>
-                    {t.strike != null ? `$${t.strike}` : "—"}
-                  </td>
+                  {!isMobile && (
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.secondary, fontSize: theme.size.sm }}>{action}</td>
+                  )}
+                  {!isMobile && (
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, textAlign: "right", color: theme.text.primary, fontSize: theme.size.sm }}>
+                      {t.strike != null ? `$${t.strike}` : "—"}
+                    </td>
+                  )}
                   <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted, fontSize: theme.size.sm }}>
+                    {isMobile && t.strike != null && `$${t.strike} · `}
                     {t.contracts != null ? `${t.contracts} ct` : ""}
                     {t.kept_pct != null && ` · ${Math.round(t.kept_pct * 100)}% kept`}
                     {isBest  && <span style={{ marginLeft: theme.space[1] }}><Marker kind="BEST"  /></span>}
