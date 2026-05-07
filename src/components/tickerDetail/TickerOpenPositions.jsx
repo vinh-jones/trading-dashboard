@@ -1,5 +1,6 @@
 import { theme } from "../../lib/theme";
 import { TYPE_COLORS } from "../../lib/constants";
+import { useWindowWidth } from "../../hooks/useWindowWidth";
 import { calcDTE } from "../../lib/trading";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../../lib/format";
 
@@ -54,6 +55,7 @@ function pnlColor(pnl) {
 }
 
 export function TickerOpenPositions({ data }) {
+  const isMobile = useWindowWidth() < 600;
   const { openPositions, lifespans, ticker } = data;
   const csps   = openPositions?.csps   ?? [];
   const shares = openPositions?.shares ?? [];
@@ -172,7 +174,10 @@ export function TickerOpenPositions({ data }) {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
-            {["TYPE", "STRIKE", "EXPIRY", "DTE", "QTY", "% OTM", "NOTE", "PREMIUM", "P&L"].map((h) => (
+            {(isMobile
+              ? ["TYPE", "STRIKE", "EXPIRY", "DTE", "QTY", "PREMIUM", "P&L"]
+              : ["TYPE", "STRIKE", "EXPIRY", "DTE", "QTY", "% OTM", "NOTE", "PREMIUM", "P&L"]
+            ).map((h) => (
               <th key={h} style={{
                 padding: `${theme.space[2]}px ${theme.space[2]}px`,
                 textAlign: ["STRIKE", "DTE", "QTY", "% OTM", "PREMIUM", "P&L"].includes(h) ? "right" : "left",
@@ -183,7 +188,12 @@ export function TickerOpenPositions({ data }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => <Row key={i} cells={r.cells} />)}
+          {rows.map((r, i) => {
+            const visibleCells = isMobile
+              ? r.cells.filter((_, idx) => idx !== 5 && idx !== 6)
+              : r.cells;
+            return <Row key={i} cells={visibleCells} />;
+          })}
         </tbody>
       </table>
     </div>

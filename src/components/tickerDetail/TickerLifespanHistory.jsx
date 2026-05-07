@@ -47,7 +47,7 @@ function CycleEvents({ lifespan }) {
     const action = cc.is_winning ? "closed" : "rolled";
     events.push({
       date: cc.close_date,
-      label: `CC $${cc.strike} ${action} · ${cc.contracts ?? 1} ct · ${formatDollars(cc.premium_collected)}${cc.kept_pct != null ? ` (${cc.kept_pct}% kept)` : ""}`,
+      label: `CC $${cc.strike} ${action} · ${cc.contracts ?? 1} ct · ${formatDollars(cc.premium_collected)}${cc.kept_pct != null ? ` (${Math.round(cc.kept_pct * 100)}% kept)` : ""}`,
       color: cc.premium_collected >= 0 ? theme.green : theme.red,
     });
   }

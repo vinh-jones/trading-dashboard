@@ -4,6 +4,12 @@ import { formatDollars, formatDollarsFull, formatExpiry } from "../../lib/format
 
 const PORTFOLIO_AVG_KEPT_PCT = 60;
 
+function bestWorstSubtitle(t) {
+  if (!t) return null;
+  const strikePart = t.strike != null ? ` $${t.strike}` : "";
+  return `${t.type}${strikePart} · ${formatExpiry(t.close_date)}`;
+}
+
 function Card({ label, value, sub, color, accent, large }) {
   return (
     <div style={{
@@ -100,13 +106,13 @@ export function TickerAllTimeStats({ data }) {
         <Card
           label="Best trade"
           value={stats.bestTrade ? `${stats.bestTrade.premium_collected >= 0 ? "+" : ""}${formatDollars(stats.bestTrade.premium_collected)}` : "—"}
-          sub={stats.bestTrade ? `${stats.bestTrade.type} $${stats.bestTrade.strike} · ${formatExpiry(stats.bestTrade.close_date)}` : null}
+          sub={bestWorstSubtitle(stats.bestTrade)}
           color={stats.bestTrade ? theme.green : theme.text.muted}
         />
         <Card
           label="Worst trade"
           value={stats.worstTrade ? `${stats.worstTrade.premium_collected >= 0 ? "+" : ""}${formatDollars(stats.worstTrade.premium_collected)}` : "—"}
-          sub={stats.worstTrade ? `${stats.worstTrade.type} $${stats.worstTrade.strike} · ${formatExpiry(stats.worstTrade.close_date)}` : null}
+          sub={bestWorstSubtitle(stats.worstTrade)}
           color={stats.worstTrade && stats.worstTrade.premium_collected < 0 ? theme.red : theme.text.muted}
         />
       </div>
@@ -126,7 +132,7 @@ export function TickerAllTimeStats({ data }) {
           <Card label="Times called away" value={String(stats.timesCalledAway)} />
           <Card
             label="Avg kept_pct"
-            value={stats.avgKeptPct != null ? `${stats.avgKeptPct.toFixed(0)}%` : "—"}
+            value={stats.avgKeptPct != null ? `${Math.round(stats.avgKeptPct * 100)}%` : "—"}
             sub={stats.avgKeptPct != null ? `port ${PORTFOLIO_AVG_KEPT_PCT}%` : null}
           />
         </div>

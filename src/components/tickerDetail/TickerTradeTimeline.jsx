@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { theme } from "../../lib/theme";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../../lib/constants";
+import { useWindowWidth } from "../../hooks/useWindowWidth";
 import { formatDollars, formatExpiry } from "../../lib/format";
 import { computeTickerStats } from "../../lib/tickerStats";
 
@@ -58,6 +59,7 @@ function Marker({ kind }) {
 }
 
 export function TickerTradeTimeline({ data }) {
+  const isMobile = useWindowWidth() < 600;
   const trades = data.trades ?? [];
   const lifespans = data.lifespans ?? [];
 
@@ -132,8 +134,8 @@ export function TickerTradeTimeline({ data }) {
                 { label: "ACTION",  align: "left"  },
                 { label: "STRIKE",  align: "right" },
                 { label: "DETAIL",  align: "left"  },
-                { label: "DAYS",    align: "right" },
-                { label: "CYCLE",   align: "left"  },
+                ...(isMobile ? [] : [{ label: "DAYS",  align: "right" }]),
+                ...(isMobile ? [] : [{ label: "CYCLE", align: "left"  }]),
                 { label: "P&L",     align: "right" },
               ].map((h) => (
                 <th key={h.label} style={{
@@ -162,14 +164,18 @@ export function TickerTradeTimeline({ data }) {
                   </td>
                   <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, color: theme.text.muted, fontSize: theme.size.sm }}>
                     {t.contracts != null ? `${t.contracts} ct` : ""}
-                    {t.kept_pct != null && ` · ${t.kept_pct}% kept`}
+                    {t.kept_pct != null && ` · ${Math.round(t.kept_pct * 100)}% kept`}
                     {isBest  && <span style={{ marginLeft: theme.space[1] }}><Marker kind="BEST"  /></span>}
                     {isWorst && <span style={{ marginLeft: theme.space[1] }}><Marker kind="WORST" /></span>}
                   </td>
-                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, textAlign: "right", color: theme.text.muted, fontSize: theme.size.sm }}>
-                    {t.days_held != null ? `${t.days_held}d` : "—"}
-                  </td>
-                  <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}><CycleRef index={cycle} /></td>
+                  {!isMobile && (
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, textAlign: "right", color: theme.text.muted, fontSize: theme.size.sm }}>
+                      {t.days_held != null ? `${t.days_held}d` : "—"}
+                    </td>
+                  )}
+                  {!isMobile && (
+                    <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}><CycleRef index={cycle} /></td>
+                  )}
                   <td style={{
                     padding: `${theme.space[2]}px ${theme.space[2]}px`, textAlign: "right",
                     color: pnlColor, fontWeight: 600, fontSize: theme.size.sm,
