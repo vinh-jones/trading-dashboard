@@ -340,6 +340,17 @@ export function buildLifespan(raw, cspBaseline, today) {
       `CSP baseline uses only ${sample_size} sample${sample_size === 1 ? "" : "s"} (< 10); ` +
       "cut-and-redeploy estimate is low-confidence"
     );
+  if (cspBaseline.dropped_assigned_no_spot > 0)
+    warnings.push(
+      `CSP baseline dropped ${cspBaseline.dropped_assigned_no_spot} assigned CSP(s) ` +
+      `with missing spot_at_assignment data; baseline may slightly understate downside`
+    );
+  if (cspBaseline.data_integrity_flag > 0)
+    warnings.push(
+      `CSP baseline saw ${cspBaseline.data_integrity_flag} assigned CSP(s) ` +
+      `with spot_at_assignment > strike; this should not happen and likely indicates ` +
+      `a data issue (wrong spot logged, or trade miscategorized as Assigned)`
+    );
 
   const ccHistoryFormatted = cc_history.map((t) => ({
     trade_id:              t.id,
