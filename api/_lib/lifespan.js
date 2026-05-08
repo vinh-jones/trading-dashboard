@@ -340,6 +340,17 @@ export function buildLifespan(raw, cspBaseline, today) {
       `CSP baseline uses only ${sample_size} sample${sample_size === 1 ? "" : "s"} (< 10); ` +
       "cut-and-redeploy estimate is low-confidence"
     );
+  if (cspBaseline.dropped_assigned_no_spot > 0)
+    warnings.push(
+      `CSP baseline dropped ${cspBaseline.dropped_assigned_no_spot} assigned CSP(s) ` +
+      `with missing spot_at_assignment data; baseline may slightly understate downside`
+    );
+  if (cspBaseline.data_integrity_flag > 0)
+    warnings.push(
+      `CSP baseline saw ${cspBaseline.data_integrity_flag} assigned CSP(s) ` +
+      `with spot_at_assignment > strike; this should not happen and likely indicates ` +
+      `a data issue (wrong spot logged, or trade miscategorized as Assigned)`
+    );
 
   const ccHistoryFormatted = cc_history.map((t) => ({
     trade_id:              t.id,
@@ -525,21 +536,47 @@ function clusterLifespanDecisions(trades, ticker) {
 // ---------------------------------------------------------------------------
 
 export function computeCspBaseline(cspTrades) {
-  const returns = cspTrades
-    .map((t) => {
-      const premium = parseFloat(t.premium_collected) || 0;
-      const capital = parseFloat(t.capital_fronted) || 0;
-      const days    = parseFloat(t.days_held) || 0;
-      if (capital <= 0 || days <= 0) return null;
-      return premium / (capital * days);
-    })
-    .filter((r) => r != null);
+  let totalPnl = 0;
+  let totalCapDays = 0;
+  let included = 0;
+  let droppedAssignedNoSpot = 0;
+  let dataIntegrityFlag = 0;
 
-  const avg = returns.length > 0
-    ? returns.reduce((s, r) => s + r, 0) / returns.length
-    : 0;
+  for (const t of cspTrades) {
+    const premium = parseFloat(t.premium_collected) || 0;
+    const capital = parseFloat(t.capital_fronted)   || 0;
+    const days    = parseFloat(t.days_held)         || 0;
+    if (capital <= 0 || days <= 0) continue;
 
-  return { avg_return_per_capital_day: avg, sample_size: returns.length };
+    let pnl;
+    if (t.subtype === "Assigned") {
+      const spot      = parseFloat(t.spot_at_assignment);
+      const strike    = parseFloat(t.strike) || 0;
+      const contracts = parseFloat(t.contracts) || 0;
+      if (!Number.isFinite(spot)) {
+        droppedAssignedNoSpot++;
+        continue;
+      }
+      const realizedLoss = (strike - spot) * contracts * 100;
+      if (realizedLoss < 0) dataIntegrityFlag++;
+      pnl = premium - realizedLoss;
+    } else {
+      pnl = premium;
+    }
+
+    totalPnl     += pnl;
+    totalCapDays += capital * days;
+    included++;
+  }
+
+  const avg = totalCapDays > 0 ? totalPnl / totalCapDays : 0;
+
+  return {
+    avg_return_per_capital_day: avg,
+    sample_size: included,
+    dropped_assigned_no_spot: droppedAssignedNoSpot,
+    data_integrity_flag: dataIntegrityFlag,
+  };
 }
 
 // ---------------------------------------------------------------------------
