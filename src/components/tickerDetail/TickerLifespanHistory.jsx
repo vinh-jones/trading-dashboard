@@ -33,6 +33,20 @@ function FilterButton({ active, onClick, children }) {
   );
 }
 
+// CC strike position vs blended cost basis. Below = absorption risk, At = breakeven, Above = profitable wheel.
+const CC_REL_PREFIX = {
+  below: { glyph: "▼", title: "below cost — absorption risk if called" },
+  at:    { glyph: "■", title: "at cost — break-even if called" },
+  above: { glyph: "▲", title: "above cost — profit if called" },
+};
+
+function ccRelStyle(rel) {
+  if (rel === "below") return { color: theme.amber, ...CC_REL_PREFIX.below };
+  if (rel === "at")    return { color: theme.text.muted, ...CC_REL_PREFIX.at };
+  if (rel === "above") return { color: theme.green, ...CC_REL_PREFIX.above };
+  return null;
+}
+
 function CycleEvents({ lifespan }) {
   const events = [];
 
@@ -45,8 +59,10 @@ function CycleEvents({ lifespan }) {
   }
   for (const cc of lifespan.cc_history ?? []) {
     const action = cc.is_winning ? "closed" : "rolled";
+    const rel = ccRelStyle(cc.relative_to_assignment);
     events.push({
       date: cc.close_date,
+      prefix: rel,
       label: `CC $${cc.strike} ${action} · ${cc.contracts ?? 1} ct · ${formatDollars(cc.premium_collected)}${cc.kept_pct != null ? ` (${Math.round(cc.kept_pct * 100)}% kept)` : ""}`,
       color: cc.premium_collected >= 0 ? theme.green : theme.red,
     });
@@ -70,9 +86,61 @@ function CycleEvents({ lifespan }) {
         {events.map((e, i) => (
           <div key={i} style={{ display: "contents" }}>
             <div style={{ color: theme.text.muted, fontFamily: theme.font.mono }}>{e.date && formatExpiry(e.date)}</div>
-            <div style={{ color: e.color }}>{e.label}</div>
+            <div style={{ color: e.color }}>
+              {e.prefix && (
+                <span title={e.prefix.title} style={{ color: e.prefix.color, marginRight: 6, fontFamily: theme.font.mono }}>
+                  {e.prefix.glyph}
+                </span>
+              )}
+              {e.label}
+            </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function computeRunningPnl(lifespan, currentPrice) {
+  const cspIncome = lifespan.lifespan_metrics?.csp_premium_collected ?? 0;
+  const ccIncome  = lifespan.lifespan_metrics?.cc_premium_total ?? 0;
+  const shares    = lifespan.total_shares_at_peak ?? 0;
+  const basis     = lifespan.blended_cost_basis ?? null;
+  const unrealizedShares = (currentPrice != null && basis != null && shares > 0)
+    ? (currentPrice - basis) * shares
+    : null;
+  const total = cspIncome + ccIncome + (unrealizedShares ?? 0);
+  return { cspIncome, ccIncome, unrealizedShares, total };
+}
+
+function signed(n) {
+  if (n == null) return "—";
+  return `${n >= 0 ? "+" : ""}${formatDollars(n)}`;
+}
+
+function RunningPnlPanel({ running }) {
+  const totalColor = running.total >= 0 ? theme.green : theme.red;
+  const ccColor    = running.ccIncome >= 0 ? theme.green : theme.red;
+  const unrealColor = running.unrealizedShares == null
+    ? theme.text.muted
+    : running.unrealizedShares >= 0 ? theme.green : theme.red;
+  return (
+    <div style={{
+      marginTop: theme.space[3], padding: theme.space[3],
+      background: theme.bg.surface,
+      border: `1px solid ${theme.border.default}`,
+      borderLeft: `3px solid ${totalColor}`,
+      borderRadius: theme.radius.sm,
+    }}>
+      <div style={{
+        fontSize: theme.size.xs, color: theme.text.muted,
+        textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
+      }}>Running P&amp;L</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>
+        <Stat label="CSP income"        value={signed(running.cspIncome)}         color={theme.blue} />
+        <Stat label="CC income (net)"   value={signed(running.ccIncome)}          color={ccColor} />
+        <Stat label="Unrealized shares" value={signed(running.unrealizedShares)} color={unrealColor} />
+        <Stat label="Running total"     value={signed(running.total)}              color={totalColor} />
       </div>
     </div>
   );
@@ -100,12 +168,21 @@ function Stat({ label, value, color }) {
   );
 }
 
-function LifespanRow({ lifespan, n, expanded, onToggle, accentColor }) {
+function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPrice }) {
   const verdict = computeLifespanVerdict(lifespan);
-  const pnl     = lifespan.lifespan_metrics?.total_lifespan_pnl;
-  const pnlPct  = lifespan.lifespan_metrics?.return_pct_on_capital;
-  const pnlColor = pnl == null ? theme.text.muted : pnl >= 0 ? theme.green : theme.red;
-  const status   = lifespan.lifespan_status;
+  const status  = lifespan.lifespan_status;
+  const isActive = status === "active";
+
+  const closedPnl    = lifespan.lifespan_metrics?.total_lifespan_pnl;
+  const closedPnlPct = lifespan.lifespan_metrics?.return_pct_on_capital;
+  const running = isActive ? computeRunningPnl(lifespan, currentPrice) : null;
+
+  const displayPnl = isActive ? running.total : closedPnl;
+  const capital = lifespan.total_capital_committed;
+  const displayPct = isActive
+    ? (capital > 0 ? displayPnl / capital : null)
+    : closedPnlPct;
+  const pnlColor = displayPnl == null ? theme.text.muted : displayPnl >= 0 ? theme.green : theme.red;
 
   return (
     <div style={{
@@ -141,11 +218,11 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor }) {
           <VerdictBadge verdict={verdict} />
           <div style={{ textAlign: "right", minWidth: 100 }}>
             <div style={{ color: pnlColor, fontWeight: 600 }}>
-              {pnl == null ? "—" : `${pnl >= 0 ? "+" : ""}${formatDollars(pnl)}`}
-              {status === "active" && <span style={{ fontSize: theme.size.xs, color: theme.text.muted, marginLeft: 4 }}>running</span>}
+              {displayPnl == null ? "—" : `${displayPnl >= 0 ? "+" : ""}${formatDollars(displayPnl)}`}
+              {isActive && <span style={{ fontSize: theme.size.xs, color: theme.text.muted, marginLeft: 4 }}>running</span>}
             </div>
             <div style={{ fontSize: theme.size.xs, color: theme.text.muted }}>
-              {pnlPct == null ? "" : `${(pnlPct * 100).toFixed(2)}%`}
+              {displayPct == null ? "" : `${(displayPct * 100).toFixed(2)}%`}
             </div>
           </div>
         </div>
@@ -159,11 +236,12 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor }) {
           <div style={{ marginTop: theme.space[3], fontSize: theme.size.sm, color: theme.text.secondary }}>
             <VerdictLine lifespan={lifespan} />
           </div>
+          {isActive && <RunningPnlPanel running={running} />}
           <div style={{ marginTop: theme.space[3], display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>
             <Stat label="Peak shares" value={lifespan.total_shares_at_peak} />
             <Stat label="Capital" value={formatDollars(lifespan.total_capital_committed)} />
             <Stat label="Days held" value={`${lifespan.lifespan_metrics?.days_active}d`} />
-            <Stat label="Return" value={pnlPct != null ? `${(pnlPct * 100).toFixed(2)}%` : "—"} color={pnlColor} />
+            <Stat label="Return" value={displayPct != null ? `${(displayPct * 100).toFixed(2)}%${isActive ? " (running)" : ""}` : "—"} color={pnlColor} />
           </div>
           <CycleEvents lifespan={lifespan} />
         </div>
@@ -174,6 +252,7 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor }) {
 
 export function TickerLifespanHistory({ data }) {
   const lifespans = data.lifespans ?? [];
+  const currentPrice = data.quote?.last ?? data.quote?.mid ?? null;
   const sorted = useMemo(() =>
     [...lifespans].sort((a, b) => (b.assignment_events?.[0]?.date ?? "").localeCompare(a.assignment_events?.[0]?.date ?? "")),
     [lifespans]
@@ -248,6 +327,7 @@ export function TickerLifespanHistory({ data }) {
             expanded={expandedIds.has(id)}
             onToggle={() => toggle(id)}
             accentColor={accent}
+            currentPrice={currentPrice}
           />
         );
       })}
