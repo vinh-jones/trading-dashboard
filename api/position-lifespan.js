@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 
     const cspBaselineResult = await supabase
       .from("trades")
-      .select("id, subtype, premium_collected, capital_fronted, days_held, close_date, strike, contracts, spot_at_assignment")
+      .select("id, premium_collected, capital_fronted, days_held, close_date")
       .eq("type", "CSP")
       .in("subtype", ["Close", "Roll Loss", "Assigned"])
       .gt("days_held", 0)

@@ -308,6 +308,12 @@ export function buildLifespan(raw, cspBaseline, today) {
     const sellRecovery   = round2(fa.spot_at_assignment * fa.shares_added);
     const realizedLoss   = round2(fa.capital_added - sellRecovery);
     const toRedeploy     = sellRecovery;
+    // estCspPnl uses the gross-premium baseline rate (see computeCspBaseline
+    // doc-block). It models forward income on redeployed capital but does NOT
+    // model future-assignment risk on that capital — a known framing limitation.
+    // The deterministic realizedLoss below is for THIS lifespan's first
+    // assignment only; hypothetical future cuts during the redeployment window
+    // are not subtracted.
     const estCspPnl      = avg_return_per_capital_day > 0
       ? round2(toRedeploy * avg_return_per_capital_day * daysActive)
       : 0;
@@ -339,17 +345,6 @@ export function buildLifespan(raw, cspBaseline, today) {
     warnings.push(
       `CSP baseline uses only ${sample_size} sample${sample_size === 1 ? "" : "s"} (< 10); ` +
       "cut-and-redeploy estimate is low-confidence"
-    );
-  if (cspBaseline.dropped_assigned_no_spot > 0)
-    warnings.push(
-      `CSP baseline dropped ${cspBaseline.dropped_assigned_no_spot} assigned CSP(s) ` +
-      `with missing spot_at_assignment data; baseline may slightly understate downside`
-    );
-  if (cspBaseline.data_integrity_flag > 0)
-    warnings.push(
-      `CSP baseline saw ${cspBaseline.data_integrity_flag} assigned CSP(s) ` +
-      `with spot_at_assignment > strike; this should not happen and likely indicates ` +
-      `a data issue (wrong spot logged, or trade miscategorized as Assigned)`
     );
 
   const ccHistoryFormatted = cc_history.map((t) => ({
@@ -535,12 +530,22 @@ function clusterLifespanDecisions(trades, ticker) {
 // CSP performance baseline
 // ---------------------------------------------------------------------------
 
+// Capital-day-weighted gross premium rate across all CSP holding periods
+// (Close, Roll Loss, Assigned). Each CSP contributes premium / cap-days
+// regardless of subtype — the realized loss on assignment is a discrete
+// post-CSP event, not a flow that belongs in a per-cap-day rate.
+//
+// FRAMING LIMITATION the consuming code must respect: this rate models
+// gross income only. The cut-and-redeploy benchmark that uses it
+// (buildLifespan.estCspPnl) implicitly assumes redeployed capital faces
+// zero modeled future-assignment risk. We deduct the deterministic
+// realized loss for the lifespan being benchmarked at the consuming
+// layer, but we do not statistically model losses on hypothetical
+// redeployment-period CSPs. Verdicts should be read with that caveat.
 export function computeCspBaseline(cspTrades) {
-  let totalPnl = 0;
+  let totalPremium = 0;
   let totalCapDays = 0;
   let included = 0;
-  let droppedAssignedNoSpot = 0;
-  let dataIntegrityFlag = 0;
 
   for (const t of cspTrades) {
     const premium = parseFloat(t.premium_collected) || 0;
@@ -548,34 +553,16 @@ export function computeCspBaseline(cspTrades) {
     const days    = parseFloat(t.days_held)         || 0;
     if (capital <= 0 || days <= 0) continue;
 
-    let pnl;
-    if (t.subtype === "Assigned") {
-      const spot      = parseFloat(t.spot_at_assignment);
-      const strike    = parseFloat(t.strike) || 0;
-      const contracts = parseFloat(t.contracts) || 0;
-      if (!Number.isFinite(spot)) {
-        droppedAssignedNoSpot++;
-        continue;
-      }
-      const realizedLoss = (strike - spot) * contracts * 100;
-      if (realizedLoss < 0) dataIntegrityFlag++;
-      pnl = premium - realizedLoss;
-    } else {
-      pnl = premium;
-    }
-
-    totalPnl     += pnl;
+    totalPremium += premium;
     totalCapDays += capital * days;
     included++;
   }
 
-  const avg = totalCapDays > 0 ? totalPnl / totalCapDays : 0;
+  const avg = totalCapDays > 0 ? totalPremium / totalCapDays : 0;
 
   return {
     avg_return_per_capital_day: avg,
     sample_size: included,
-    dropped_assigned_no_spot: droppedAssignedNoSpot,
-    data_integrity_flag: dataIntegrityFlag,
   };
 }
 
