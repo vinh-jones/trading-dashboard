@@ -139,11 +139,32 @@ function computeRunningPnl(lifespan, currentPrice, activeCc) {
   const ccIncome  = lifespan.lifespan_metrics?.cc_premium_total ?? 0;
   const totalShares = lifespan.total_shares_at_peak ?? 0;
   const basis       = lifespan.blended_cost_basis  ?? null;
+  const capital     = lifespan.total_capital_committed ?? 0;
+  const days        = lifespan.lifespan_metrics?.days_active ?? 0;
   const unrealizedShares = computeUnrealizedShares({
     currentPrice, basis, totalShares, activeCc,
   });
   const total = cspIncome + ccIncome + (unrealizedShares ?? 0);
-  return { cspIncome, ccIncome, unrealizedShares, total };
+
+  // Simple annualized return (non-compounded) — e.g. 1.8k income on 52.5k cap
+  // over 98 days → 12.8%/yr. Skip when we'd divide by zero.
+  const annualize = (amount) =>
+    capital > 0 && days > 0 ? (amount / capital) * (365 / days) * 100 : null;
+
+  return {
+    cspIncome,
+    ccIncome,
+    unrealizedShares,
+    total,
+    cspIncomeAnnPct: annualize(cspIncome),
+    ccIncomeAnnPct:  annualize(ccIncome),
+    totalAnnPct:     annualize(total),
+  };
+}
+
+function annPctSub(pct) {
+  if (pct == null) return null;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% / yr`;
 }
 
 function signed(n) {
@@ -170,10 +191,10 @@ function RunningPnlPanel({ running }) {
         textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
       }}>Running P&amp;L</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>
-        <Stat label="CSP income"        value={signed(running.cspIncome)}         color={theme.blue} />
-        <Stat label="CC income (net)"   value={signed(running.ccIncome)}          color={ccColor} />
-        <Stat label="Unrealized shares" value={signed(running.unrealizedShares)} color={unrealColor} />
-        <Stat label="Running total"     value={signed(running.total)}              color={totalColor} />
+        <Stat label="CSP income"        value={signed(running.cspIncome)}         color={theme.blue}   sub={annPctSub(running.cspIncomeAnnPct)} />
+        <Stat label="CC income (net)"   value={signed(running.ccIncome)}          color={ccColor}      sub={annPctSub(running.ccIncomeAnnPct)} />
+        <Stat label="Unrealized shares" value={signed(running.unrealizedShares)}  color={unrealColor} />
+        <Stat label="Running total"     value={signed(running.total)}             color={totalColor}   sub={annPctSub(running.totalAnnPct)} />
       </div>
     </div>
   );
@@ -192,11 +213,14 @@ function VerdictLine({ lifespan }) {
   return <span>{parts.join(" · ")}</span>;
 }
 
-function Stat({ label, value, color }) {
+function Stat({ label, value, color, sub }) {
   return (
     <div>
       <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
       <div style={{ fontSize: theme.size.md, color: color || theme.text.primary, fontWeight: 500 }}>{value}</div>
+      {sub && (
+        <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 2 }}>{sub}</div>
+      )}
     </div>
   );
 }
