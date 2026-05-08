@@ -311,7 +311,10 @@ export function buildLifespan(raw, cspBaseline, today) {
     const estCspPnl      = avg_return_per_capital_day > 0
       ? round2(toRedeploy * avg_return_per_capital_day * daysActive)
       : 0;
-    const netOutcome     = round2(-realizedLoss + estCspPnl);
+    // Apples-to-apples vs total_lifespan_pnl (which includes the assignment-trigger
+    // CSP premium): that premium was collected in BOTH scenarios before the cut
+    // decision was made, so it must be on both sides of the comparison.
+    const netOutcome     = round2(-realizedLoss + estCspPnl + fa.csp_premium_collected);
     const vsActual       = totalLifespanPnl !== null ? round2(totalLifespanPnl - netOutcome) : null;
     cutAndRedeploy = {
       requires_spot_at_first_assignment:  true,
