@@ -1,8 +1,10 @@
 import { theme } from "../../lib/theme";
 import { TYPE_COLORS } from "../../lib/constants";
 import { useWindowWidth } from "../../hooks/useWindowWidth";
-import { calcDTE } from "../../lib/trading";
+import { useQuotes } from "../../hooks/useQuotes";
+import { calcDTE, buildOccSymbol } from "../../lib/trading";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../../lib/format";
+import { shortOptionGlDollars, leapGlDollars } from "../../lib/positionMetrics";
 
 function TypeBadge({ type }) {
   const c = TYPE_COLORS[type] || { bg: theme.bg.elevated, border: theme.border.strong, text: theme.text.primary };
@@ -56,6 +58,7 @@ function pnlColor(pnl) {
 
 export function TickerOpenPositions({ data }) {
   const isMobile = useWindowWidth() < 600;
+  const { quoteMap } = useQuotes();
   const { openPositions, lifespans, ticker } = data;
   const csps   = openPositions?.csps   ?? [];
   const shares = openPositions?.shares ?? [];
@@ -112,7 +115,13 @@ export function TickerOpenPositions({ data }) {
     if (sh.active_cc) {
       const cc = sh.active_cc;
       const dte = calcDTE(cc.expiry_date);
-      const pnl = (cc.premium_collected ?? 0) - ((cc.current_mid ?? 0) * 100 * (cc.contracts ?? 1));
+      const sym = buildOccSymbol(cc.ticker ?? sh.ticker, cc.expiry_date, true, cc.strike);
+      const mid = quoteMap.get(sym)?.mid ?? null;
+      const pnl = shortOptionGlDollars({
+        premiumCollected: cc.premium_collected,
+        optionMid: mid,
+        contracts: cc.contracts,
+      });
       rows.push({
         cells: [
           { value: <TypeBadge type="CC" /> },
@@ -123,7 +132,7 @@ export function TickerOpenPositions({ data }) {
           otmCell(otmCcPct(cc.strike)),
           { value: cc.notes ?? "", color: theme.text.muted },
           { value: formatDollarsFull(cc.premium_collected), color: theme.green, align: "right" },
-          { value: formatDollars(pnl), color: pnlColor(pnl), bold: true, align: "right" },
+          { value: pnl == null ? "—" : formatDollars(pnl), color: pnlColor(pnl), bold: true, align: "right" },
         ],
       });
     }
@@ -131,7 +140,13 @@ export function TickerOpenPositions({ data }) {
 
   for (const csp of csps) {
     const dte = calcDTE(csp.expiry_date);
-    const pnl = (csp.premium_collected ?? 0) - ((csp.current_mid ?? 0) * 100 * (csp.contracts ?? 1));
+    const sym = buildOccSymbol(csp.ticker, csp.expiry_date, false, csp.strike);
+    const mid = quoteMap.get(sym)?.mid ?? null;
+    const pnl = shortOptionGlDollars({
+      premiumCollected: csp.premium_collected,
+      optionMid: mid,
+      contracts: csp.contracts,
+    });
     rows.push({
       cells: [
         { value: <TypeBadge type="CSP" /> },
@@ -142,13 +157,20 @@ export function TickerOpenPositions({ data }) {
         otmCell(otmCspPct(csp.strike)),
         { value: csp.notes ?? "", color: theme.text.muted },
         { value: formatDollarsFull(csp.premium_collected), color: theme.green, align: "right" },
-        { value: formatDollars(pnl), color: pnlColor(pnl), bold: true, align: "right" },
+        { value: pnl == null ? "—" : formatDollars(pnl), color: pnlColor(pnl), bold: true, align: "right" },
       ],
     });
   }
 
   for (const lp of leaps) {
     const dte = calcDTE(lp.expiry_date);
+    const sym = buildOccSymbol(lp.ticker, lp.expiry_date, true, lp.strike);
+    const mid = quoteMap.get(sym)?.mid ?? null;
+    const pnl = leapGlDollars({
+      capitalFronted: lp.capital_fronted,
+      optionMid: mid,
+      contracts: lp.contracts,
+    });
     rows.push({
       cells: [
         { value: <TypeBadge type="LEAPS" /> },
@@ -159,7 +181,7 @@ export function TickerOpenPositions({ data }) {
         { value: "—", align: "right" },
         { value: lp.notes ?? "", color: theme.text.muted },
         { value: formatDollarsFull(lp.capital_fronted), color: theme.chart.leaps, align: "right" },
-        { value: "—", align: "right", color: theme.text.muted },
+        { value: pnl == null ? "—" : formatDollars(pnl), color: pnlColor(pnl), bold: true, align: "right" },
       ],
     });
   }
