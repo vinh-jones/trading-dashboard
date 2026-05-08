@@ -47,7 +47,14 @@ function ccRelStyle(rel) {
   return null;
 }
 
-function CycleEvents({ lifespan }) {
+function relativeToBasis(strike, basis) {
+  if (strike == null || basis == null) return null;
+  if (strike > basis) return "above";
+  if (strike < basis) return "below";
+  return "at";
+}
+
+function CycleEvents({ lifespan, activeCc }) {
   const events = [];
 
   for (const a of lifespan.assignment_events ?? []) {
@@ -65,6 +72,15 @@ function CycleEvents({ lifespan }) {
       prefix: rel,
       label: `CC $${cc.strike} ${action} · ${cc.contracts ?? 1} ct · ${formatDollars(cc.premium_collected)}${cc.kept_pct != null ? ` (${Math.round(cc.kept_pct * 100)}% kept)` : ""}`,
       color: cc.premium_collected >= 0 ? theme.green : theme.red,
+    });
+  }
+  if (activeCc) {
+    const rel = ccRelStyle(relativeToBasis(activeCc.strike, lifespan.blended_cost_basis));
+    events.push({
+      date: activeCc.open_date,
+      prefix: rel,
+      label: `CC $${activeCc.strike} opened · ${activeCc.contracts ?? 1} ct · ${formatDollars(activeCc.premium_collected)} prem · expires ${formatExpiry(activeCc.expiry_date)} (open)`,
+      color: theme.text.secondary,
     });
   }
   if (lifespan.exit_event) {
@@ -168,7 +184,7 @@ function Stat({ label, value, color }) {
   );
 }
 
-function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPrice }) {
+function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPrice, activeCc }) {
   const verdict = computeLifespanVerdict(lifespan);
   const status  = lifespan.lifespan_status;
   const isActive = status === "active";
@@ -243,7 +259,7 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPric
             <Stat label="Days held" value={`${lifespan.lifespan_metrics?.days_active}d`} />
             <Stat label="Return" value={displayPct != null ? `${(displayPct * 100).toFixed(2)}%${isActive ? " (running)" : ""}` : "—"} color={pnlColor} />
           </div>
-          <CycleEvents lifespan={lifespan} />
+          <CycleEvents lifespan={lifespan} activeCc={isActive ? activeCc : null} />
         </div>
       )}
     </div>
@@ -253,6 +269,8 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPric
 export function TickerLifespanHistory({ data }) {
   const lifespans = data.lifespans ?? [];
   const currentPrice = data.quote?.last ?? data.quote?.mid ?? null;
+  // Active CC for the active lifespan: lives on the assigned-shares entry, not on the lifespan itself.
+  const activeCc = data.openPositions?.shares?.find((s) => s.active_cc)?.active_cc ?? null;
   const sorted = useMemo(() =>
     [...lifespans].sort((a, b) => (b.assignment_events?.[0]?.date ?? "").localeCompare(a.assignment_events?.[0]?.date ?? "")),
     [lifespans]
@@ -328,6 +346,7 @@ export function TickerLifespanHistory({ data }) {
             onToggle={() => toggle(id)}
             accentColor={accent}
             currentPrice={currentPrice}
+            activeCc={activeCc}
           />
         );
       })}
