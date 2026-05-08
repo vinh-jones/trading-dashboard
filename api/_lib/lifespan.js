@@ -77,9 +77,14 @@ function isRedundantSharesSold(trade, closedLifespans, currentLifespan) {
 // ---------------------------------------------------------------------------
 
 export function detectLifespans(ticker, allTickerTrades) {
+  // Pre-2026 bookkeeping was unreliable; treat anything before
+  // DATA_QUALITY_THRESHOLD as if it didn't happen for share-cycle math.
+  // Trades themselves remain visible in the Trade Timeline / All-Time Stats —
+  // this filter only governs lifespan detection.
   const relevant = allTickerTrades.filter(
     (t) =>
       t.close_date &&
+      t.close_date >= DATA_QUALITY_THRESHOLD &&
       ((t.type === "CSP" && t.subtype === "Assigned") ||
         (t.type === "CC" &&
           (t.subtype === "Close" ||

@@ -117,14 +117,31 @@ function CycleEvents({ lifespan, activeCc }) {
   );
 }
 
-function computeRunningPnl(lifespan, currentPrice) {
+// Active CC caps the upside on its covered share lot: if currentPrice > strike
+// the shares are effectively worth at most the strike (CC will be assigned).
+// Uncovered shares (when contracts × 100 < total shares) keep full mark-to-market.
+function computeUnrealizedShares({ currentPrice, basis, totalShares, activeCc }) {
+  if (currentPrice == null || basis == null || totalShares <= 0) return null;
+  const ccContracts = activeCc?.contracts ?? 0;
+  const ccStrike    = activeCc?.strike   ?? null;
+  const coveredShares   = Math.min(ccContracts * 100, totalShares);
+  const uncoveredShares = totalShares - coveredShares;
+  const cappedPrice = (ccStrike != null && coveredShares > 0)
+    ? Math.min(currentPrice, ccStrike)
+    : currentPrice;
+  const coveredUnrealized   = coveredShares   > 0 ? (cappedPrice  - basis) * coveredShares   : 0;
+  const uncoveredUnrealized = uncoveredShares > 0 ? (currentPrice - basis) * uncoveredShares : 0;
+  return coveredUnrealized + uncoveredUnrealized;
+}
+
+function computeRunningPnl(lifespan, currentPrice, activeCc) {
   const cspIncome = lifespan.lifespan_metrics?.csp_premium_collected ?? 0;
   const ccIncome  = lifespan.lifespan_metrics?.cc_premium_total ?? 0;
-  const shares    = lifespan.total_shares_at_peak ?? 0;
-  const basis     = lifespan.blended_cost_basis ?? null;
-  const unrealizedShares = (currentPrice != null && basis != null && shares > 0)
-    ? (currentPrice - basis) * shares
-    : null;
+  const totalShares = lifespan.total_shares_at_peak ?? 0;
+  const basis       = lifespan.blended_cost_basis  ?? null;
+  const unrealizedShares = computeUnrealizedShares({
+    currentPrice, basis, totalShares, activeCc,
+  });
   const total = cspIncome + ccIncome + (unrealizedShares ?? 0);
   return { cspIncome, ccIncome, unrealizedShares, total };
 }
@@ -191,7 +208,7 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPric
 
   const closedPnl    = lifespan.lifespan_metrics?.total_lifespan_pnl;
   const closedPnlPct = lifespan.lifespan_metrics?.return_pct_on_capital;
-  const running = isActive ? computeRunningPnl(lifespan, currentPrice) : null;
+  const running = isActive ? computeRunningPnl(lifespan, currentPrice, activeCc) : null;
 
   const displayPnl = isActive ? running.total : closedPnl;
   const capital = lifespan.total_capital_committed;

@@ -63,9 +63,10 @@ export function computeTickerStats({ trades = [], lifespans = [] }) {
       .reduce((s, cc) => s + cc.premium_collected, 0);
   }, 0);
 
+  const SUSPECT_BEFORE = "2026-01-01";
   const includesSuspectData =
     suspectLifespans.length > 0 ||
-    closedTrades.some((t) => t.data_quality === "suspect");
+    closedTrades.some((t) => t.data_quality === "suspect" || (t.close_date && t.close_date < SUSPECT_BEFORE));
 
   return {
     realizedPnl: round2(realizedPnl),
