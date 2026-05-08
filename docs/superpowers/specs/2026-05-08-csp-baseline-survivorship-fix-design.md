@@ -73,6 +73,7 @@ export function computeCspBaseline(cspTrades) {
   let totalCapDays = 0;
   let included = 0;
   let droppedAssignedNoSpot = 0;
+  let dataIntegrityFlag = 0; // assigned CSPs where spot > strike (shouldn't happen)
 
   for (const t of cspTrades) {
     const premium = parseFloat(t.premium_collected) || 0;
@@ -90,6 +91,12 @@ export function computeCspBaseline(cspTrades) {
         continue;
       }
       const realizedLoss = (strike - spot) * contracts * 100; // positive when ITM
+      // Soft assertion: an assigned CSP should always have spot ≤ strike (the put
+      // was ITM at expiry — that's why it assigned). spot > strike implies data
+      // corruption (wrong spot logged, or a non-Assigned trade miscategorized).
+      // Don't drop the row, but surface the count via dataIntegrityFlag so we
+      // notice if it ever fires.
+      if (realizedLoss < 0) dataIntegrityFlag++;
       pnl = premium - realizedLoss;
     } else {
       pnl = premium; // Close / Roll Loss
@@ -106,13 +113,14 @@ export function computeCspBaseline(cspTrades) {
     avg_return_per_capital_day: avg,
     sample_size: included,
     dropped_assigned_no_spot: droppedAssignedNoSpot,
+    data_integrity_flag: dataIntegrityFlag,
   };
 }
 ```
 
 **Key invariants:**
 - For an assigned CSP whose spot equals strike (assigned at-the-money), `realizedLoss = 0` and `pnl = premium` — degenerates correctly to the closed-CSP case.
-- For an assigned CSP whose spot is above strike (assigned but ITM for the put writer — rare), `realizedLoss` is negative, `pnl > premium`. Correctly counts the bonus.
+- For an assigned CSP whose spot is *above* strike, `realizedLoss < 0`. This case shouldn't exist: a put assigns because it's ITM at expiry, which means spot < strike. If it fires, it's almost certainly data corruption (wrong spot logged, or a non-Assigned trade miscategorized as Assigned). The math handles it gracefully, but `data_integrity_flag` increments so a warning surfaces.
 - The aggregator is `Σ pnl / Σ (capital × days)`, the portfolio-realized rate.
 
 ### Layer 3 — Warning surface
@@ -125,9 +133,15 @@ if (cspBaseline.dropped_assigned_no_spot > 0)
     `CSP baseline dropped ${cspBaseline.dropped_assigned_no_spot} assigned CSP(s) ` +
     `with missing spot_at_assignment data; baseline may slightly understate downside`
   );
+if (cspBaseline.data_integrity_flag > 0)
+  warnings.push(
+    `CSP baseline saw ${cspBaseline.data_integrity_flag} assigned CSP(s) ` +
+    `with spot_at_assignment > strike; this should not happen and likely indicates ` +
+    `a data issue (wrong spot logged, or trade miscategorized as Assigned)`
+  );
 ```
 
-This surfaces in the existing `data_completeness.warnings` array so users see when data gaps are pulling the rate up.
+These surface in the existing `data_completeness.warnings` array so users see when data gaps or anomalies are affecting the rate.
 
 ### Layer 4 — Tests
 
@@ -140,13 +154,14 @@ Cases:
 | 1 | Single closed CSP: $500 premium, $50,000 capital, 30 days | rate = 500 / 1,500,000 = 0.000333 |
 | 2 | Single assigned CSP: strike $50, spot $48, 10 contracts, $300 premium, $50,000 capital, 30 days | realizedLoss = (50−48) × 10 × 100 = $2,000; pnl = 300 − 2,000 = −$1,700; rate = −1,700 / 1,500,000 = −0.001133 |
 | 3 | Assigned CSP with spot equal to strike | rate equals premium / capital_days (degenerate case) |
-| 4 | Mixed sample: 2 closed + 1 assigned-with-loss | matches `Σ pnl / Σ cap_days`, NOT the mean of per-trade rates |
-| 5 | Roll Loss with negative premium | included; pulls rate down |
+| 4 | **Divergent mixed sample (load-bearing for the weighting fix):** position A: $50 premium, $5,000 capital, 5 days (rate = 0.002/cap-day, 25,000 cap-days). Position B: $750 premium, $50,000 capital, 30 days (rate = 0.0005/cap-day, 1,500,000 cap-days). | Capital-day-weighted: (50 + 750) / (25,000 + 1,500,000) = **0.000525**. Mean-of-rates would give (0.002 + 0.0005)/2 = 0.00125 — **2.4× different**. Test asserts the capital-day-weighted answer specifically, so it would fail under the old aggregation. |
+| 5 | Roll Loss with negative premium (e.g., $-500 on $20k × 7d) | included; pulls rate down; appears in `Σ pnl` and `Σ cap_days` |
 | 6 | Assigned CSP with NULL `spot_at_assignment` | skipped; `dropped_assigned_no_spot = 1`; `sample_size` excludes it |
 | 7 | All rows have `capital ≤ 0` or `days ≤ 0` | sample_size = 0, rate = 0 |
 | 8 | Empty array | rate = 0, sample_size = 0 |
+| 9 | Assigned CSP with `spot_at_assignment > strike` (e.g., strike $50, spot $52) | included with negative `realizedLoss`; `data_integrity_flag = 1` |
 
-Test 4 is the load-bearing one — it proves we switched from mean-of-rates to capital-day-weighting.
+Test 4 is the load-bearing one — it uses divergent capital-days specifically so mean-of-rates and capital-day-weighted produce a measurably different result. If the test passed under both formulas, it wouldn't actually be testing the change.
 
 ## Expected behavior change
 
