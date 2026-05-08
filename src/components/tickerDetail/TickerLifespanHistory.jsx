@@ -146,20 +146,15 @@ function computeRunningPnl(lifespan, currentPrice, activeCc) {
   });
   const total = cspIncome + ccIncome + (unrealizedShares ?? 0);
 
-  // Simple annualized return (non-compounded) — e.g. 1.8k income on 52.5k cap
-  // over 98 days → 12.8%/yr. Skip when we'd divide by zero.
-  const annualize = (amount) =>
-    capital > 0 && days > 0 ? (amount / capital) * (365 / days) * 100 : null;
+  // Simple annualized return for CC income only — that's the metric the user
+  // runs continuously while shares are assigned. CSP income is a one-time event
+  // at lifespan start; running total mixes income with mark-to-market — neither
+  // annualizes meaningfully.
+  const ccIncomeAnnPct = capital > 0 && days > 0
+    ? (ccIncome / capital) * (365 / days) * 100
+    : null;
 
-  return {
-    cspIncome,
-    ccIncome,
-    unrealizedShares,
-    total,
-    cspIncomeAnnPct: annualize(cspIncome),
-    ccIncomeAnnPct:  annualize(ccIncome),
-    totalAnnPct:     annualize(total),
-  };
+  return { cspIncome, ccIncome, unrealizedShares, total, ccIncomeAnnPct };
 }
 
 function annPctSub(pct) {
@@ -191,10 +186,10 @@ function RunningPnlPanel({ running }) {
         textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
       }}>Running P&amp;L</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>
-        <Stat label="CSP income"        value={signed(running.cspIncome)}         color={theme.blue}   sub={annPctSub(running.cspIncomeAnnPct)} />
+        <Stat label="CSP income"        value={signed(running.cspIncome)}         color={theme.blue} />
         <Stat label="CC income (net)"   value={signed(running.ccIncome)}          color={ccColor}      sub={annPctSub(running.ccIncomeAnnPct)} />
         <Stat label="Unrealized shares" value={signed(running.unrealizedShares)}  color={unrealColor} />
-        <Stat label="Running total"     value={signed(running.total)}             color={totalColor}   sub={annPctSub(running.totalAnnPct)} />
+        <Stat label="Running total"     value={signed(running.total)}             color={totalColor} />
       </div>
     </div>
   );
