@@ -4,12 +4,16 @@
  * Shared lifespan helpers used by:
  *   - api/position-lifespan.js
  *   - api/ticker-detail.js
+ *   - api/eod-snapshot.js
  *
  * Exports: DATA_QUALITY_THRESHOLD, detectLifespans, buildLifespan,
- *          computeCspBaseline, lifespanSummary
+ *          computeCspBaseline, lifespanSummary, computeDecisionFraming,
+ *          and decision-framing helpers (classifyDrawdown, classifyBreakeven,
+ *          getRecentCcStrike, addCalendarDays, subtractCalendarDays,
+ *          humanizeDuration, computeTrailingCcRate)
  *
  * Private (not exported): tradeSortPriority, isRedundantSharesSold,
- *   computeBlendedBasis, computeVerdict, round2, round6, daysBetween,
+ *   computeBlendedBasis, computeVerdict, round2, round4, round6, daysBetween,
  *   daysBetweenDates, clusterLifespanDecisions
  */
 
