@@ -238,6 +238,202 @@ function BaselineDiagnosticsCaption({ lifespan }) {
   );
 }
 
+// Color tokens for the paired badges in DecisionFramingPanel.
+const DRAWDOWN_COLORS = {
+  shallow:  { fg: theme.green, bg: theme.alert.successBg },
+  moderate: { fg: theme.amber, bg: theme.alert.dangerBg  },
+  deep:     { fg: theme.amber, bg: theme.alert.dangerBg  },
+  severe:   { fg: theme.red,   bg: theme.alert.dangerBg  },
+};
+
+const BREAKEVEN_COLORS = {
+  wheel_ahead_perpetually: { fg: theme.green,        bg: theme.alert.successBg },
+  quick_recovery:          { fg: theme.green,        bg: theme.alert.successBg },
+  decision_zone:           { fg: theme.amber,        bg: theme.alert.dangerBg  },
+  long_horizon:            { fg: theme.text.muted,   bg: theme.bg.elevated     },
+  effectively_stuck:       { fg: theme.red,          bg: theme.alert.dangerBg  },
+};
+
+const BREAKEVEN_LABELS = {
+  wheel_ahead_perpetually: "Wheel ahead",
+  quick_recovery:          "Quick recovery",
+  decision_zone:           "Decision zone",
+  long_horizon:            "Long horizon",
+  effectively_stuck:       "Effectively stuck",
+};
+
+function Badge({ label, color, title }) {
+  return (
+    <span title={title} style={{
+      fontSize: theme.size.xs, padding: "2px 8px",
+      color: color.fg, background: color.bg,
+      border: `1px solid ${color.fg}`,
+      borderRadius: theme.radius.pill,
+      letterSpacing: "0.05em", textTransform: "uppercase", fontWeight: 600,
+    }}>{label}</span>
+  );
+}
+
+function BreakdownRow({ label, value, color }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: theme.space[3], padding: "2px 0" }}>
+      <span style={{ color: theme.text.muted }}>{label}</span>
+      <span style={{ color: color || theme.text.primary, fontFamily: theme.font.mono }}>{value}</span>
+    </div>
+  );
+}
+
+function DecisionFramingPanel({ framing, ticker }) {
+  const drawdownColor  = DRAWDOWN_COLORS[framing.drawdown_zone]   ?? DRAWDOWN_COLORS.moderate;
+  const breakevenColor = BREAKEVEN_COLORS[framing.breakeven_zone] ?? BREAKEVEN_COLORS.long_horizon;
+  const breakevenLabel = BREAKEVEN_LABELS[framing.breakeven_zone] ?? framing.breakeven_zone;
+  const drawdownLabel  = framing.drawdown_zone[0].toUpperCase() + framing.drawdown_zone.slice(1);
+
+  // Default collapsed for shallow + wheel-ahead; expanded for moderate/deep/severe.
+  const startExpanded =
+    framing.drawdown_zone === "moderate" ||
+    framing.drawdown_zone === "deep" ||
+    framing.drawdown_zone === "severe";
+  const [showDetails, setShowDetails] = useState(startExpanded);
+
+  const d = framing.detailed_breakdown ?? {};
+  const isPerpetual = framing.breakeven_zone === "wheel_ahead_perpetually";
+
+  // Accent border color: severity-driven so the panel reads at a glance.
+  const accent =
+    framing.drawdown_zone === "severe" ? theme.red :
+    framing.drawdown_zone === "deep"   ? theme.amber :
+    framing.drawdown_zone === "moderate" ? theme.amber :
+    theme.green;
+
+  return (
+    <div style={{
+      marginTop: theme.space[3], padding: theme.space[3],
+      background: theme.bg.surface,
+      border: `1px solid ${theme.border.default}`,
+      borderLeft: `3px solid ${accent}`,
+      borderRadius: theme.radius.sm,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: theme.space[2] }}>
+        <div style={{
+          fontSize: theme.size.xs, color: theme.text.muted,
+          textTransform: "uppercase", letterSpacing: "0.5px",
+        }}>Decision Framing</div>
+        <div style={{ display: "flex", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
+          <Badge label={`Drawdown: ${drawdownLabel} (${(framing.drawdown_pct * 100).toFixed(1)}%)`}
+                 color={drawdownColor}
+                 title="Severity of underwater position vs blended cost basis" />
+          <Badge label={`Breakeven: ${breakevenLabel}`}
+                 color={breakevenColor}
+                 title={isPerpetual
+                   ? "Wheel-side daily rate exceeds cut-and-redeploy daily rate; no convergence at current spot"
+                   : `Days until cut-and-redeploy alternative would catch up to current wheel state`} />
+          {d.trailing_rate_immature && (
+            <Badge
+              label="Preliminary"
+              color={{ fg: theme.text.muted, bg: theme.bg.elevated }}
+              title="Days held < 30 — trailing 60-day rate is essentially the lifetime rate; verdict is preliminary" />
+          )}
+        </div>
+      </div>
+
+      {/* Question block */}
+      <div style={{ marginTop: theme.space[3] }}>
+        {isPerpetual ? (
+          <div style={{ color: theme.green, fontSize: theme.size.sm }}>
+            {framing.framing_question}
+          </div>
+        ) : (
+          <>
+            <div style={{ color: theme.text.primary, fontSize: theme.size.md, fontFamily: theme.font.mono, lineHeight: 1.4 }}>
+              {framing.framing_question}
+            </div>
+            <div style={{ marginTop: 4, fontSize: theme.size.xs, color: theme.text.muted }}>
+              {framing.framing_duration} · recovery date {framing.recovery_date}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Toggle for breakdown */}
+      <button
+        onClick={() => setShowDetails((v) => !v)}
+        style={{
+          marginTop: theme.space[3],
+          padding: "3px 0", fontSize: theme.size.xs,
+          color: theme.text.muted, fontFamily: "inherit",
+          background: "none", border: "none", cursor: "pointer",
+          letterSpacing: "0.05em", textTransform: "uppercase", fontWeight: 600,
+        }}
+      >
+        {showDetails ? "▾ Hide breakdown" : "▸ Show breakdown"}
+      </button>
+
+      {showDetails && (
+        <div style={{
+          marginTop: theme.space[2], paddingTop: theme.space[3],
+          borderTop: `1px solid ${theme.border.default}`,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: theme.space[4],
+          fontSize: theme.size.sm,
+        }}>
+          <div>
+            <div style={{
+              fontSize: theme.size.xs, color: theme.text.muted,
+              textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
+            }}>Wheel state</div>
+            <BreakdownRow label="Cumulative wheel P&L" value={signed(d.cumulative_wheel_pnl)}
+                          color={d.cumulative_wheel_pnl >= 0 ? theme.green : theme.red} />
+            <BreakdownRow label="CSP premiums"         value={signed(d.csp_premium_collected)} />
+            <BreakdownRow label="CC premiums (net)"     value={signed(d.cc_premium_total)}
+                          color={d.cc_premium_total >= 0 ? theme.green : theme.red} />
+            {d.partial_disposal_pnl !== 0 && (
+              <BreakdownRow label="Partial disposal P&L" value={signed(d.partial_disposal_pnl)}
+                            color={d.partial_disposal_pnl >= 0 ? theme.green : theme.red} />
+            )}
+            {d.cc_count_winning != null && (
+              <BreakdownRow label="CC win/loss count" value={`${d.cc_count_winning}W / ${d.cc_count_losing}L`} />
+            )}
+          </div>
+
+          <div>
+            <div style={{
+              fontSize: theme.size.xs, color: theme.text.muted,
+              textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
+            }}>Cut alternative (today)</div>
+            <BreakdownRow label="Realized loss if cut"  value={signed(-d.realized_loss_if_cut_today)}
+                          color={theme.red} />
+            <BreakdownRow label="Freed capital"         value={formatDollars(d.freed_capital_if_cut)} />
+            <BreakdownRow label="Cut-side state"        value={signed(d.cut_alternative_state)}
+                          color={d.cut_alternative_state >= 0 ? theme.green : theme.red} />
+            <BreakdownRow label="Gap (wheel − cut)"     value={signed(d.gap)}
+                          color={d.gap >= 0 ? theme.green : theme.red} />
+            <BreakdownRow label="Current shares"        value={d.current_shares} />
+          </div>
+
+          <div>
+            <div style={{
+              fontSize: theme.size.xs, color: theme.text.muted,
+              textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: theme.space[2],
+            }}>Forward rates ($/day)</div>
+            <BreakdownRow
+              label={d.using_trailing_rate ? "Wheel rate (trailing 60d)" : "Wheel rate (lifetime)"}
+              value={`$${d.wheel_daily_rate?.toFixed(2)}`} />
+            <BreakdownRow label="Cut-redeploy rate" value={`$${d.cut_daily_rate?.toFixed(2)}`} />
+            <BreakdownRow label="Daily differential"
+                          value={`$${d.daily_differential?.toFixed(2)}`}
+                          color={d.daily_differential > 0 ? theme.amber : theme.green} />
+            {d.recent_cc_strike != null && (
+              <BreakdownRow label="Most recent CC strike" value={`$${d.recent_cc_strike}`} />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Stat({ label, value, color, sub }) {
   return (
     <div>
@@ -320,6 +516,9 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPric
             <BaselineDiagnosticsCaption lifespan={lifespan} />
           </div>
           {isActive && <RunningPnlPanel running={running} />}
+          {isActive && lifespan.decision_framing && (
+            <DecisionFramingPanel framing={lifespan.decision_framing} ticker={lifespan.ticker} />
+          )}
           <div style={{ marginTop: theme.space[3], display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>
             <Stat label="Peak shares" value={lifespan.total_shares_at_peak} />
             <Stat label="Capital" value={formatDollars(lifespan.total_capital_committed)} />
