@@ -16,6 +16,7 @@ import {
   detectLifespans,
   buildLifespan,
   computeCspBaseline,
+  computeDecisionFraming,
   lifespanSummary,
 } from "./_lib/lifespan.js";
 
@@ -27,6 +28,25 @@ function getSupabase() {
     process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
+}
+
+// Fetch last-trade prices from the cached quotes table.
+// Returns { ticker: lastPrice }. Missing tickers are absent from the map.
+async function fetchLastPrices(supabase, tickers) {
+  if (!tickers || tickers.length === 0) return {};
+  const { data, error } = await supabase
+    .from("quotes")
+    .select("symbol, last")
+    .in("symbol", tickers);
+  if (error) {
+    console.warn("[api/position-lifespan] quotes fetch failed:", error.message);
+    return {};
+  }
+  const map = {};
+  for (const q of data ?? []) {
+    if (q?.symbol && q.last != null) map[q.symbol] = parseFloat(q.last);
+  }
+  return map;
 }
 
 export default async function handler(req, res) {
@@ -71,12 +91,33 @@ export default async function handler(req, res) {
         tradesByTicker[t.ticker].push(t);
       }
 
-      const allSummaries = [];
+      const built = [];
       for (const [tk, tickerTrades] of Object.entries(tradesByTicker)) {
         for (const raw of detectLifespans(tk, tickerTrades)) {
-          allSummaries.push(lifespanSummary(buildLifespan(raw, cspBaseline, today)));
+          built.push({ ticker: tk, lifespan: buildLifespan(raw, cspBaseline, today) });
         }
       }
+
+      // Fetch quotes once for all active-lifespan tickers
+      const activeTickers = [...new Set(
+        built.filter(({ lifespan }) => lifespan.lifespan_status === "active").map((b) => b.ticker)
+      )];
+      const prices = await fetchLastPrices(supabase, activeTickers);
+
+      const allSummaries = built.map(({ ticker: tk, lifespan }) => {
+        const summary = lifespanSummary(lifespan);
+        if (lifespan.lifespan_status === "active") {
+          const framing = computeDecisionFraming({
+            lifespan,
+            currentSpot: prices[tk] ?? null,
+            baselineRate: cspBaseline.avg_return_per_capital_day,
+            ticker: tk,
+            today,
+          });
+          if (framing) summary.decision_framing = framing;
+        }
+        return summary;
+      });
       allSummaries.sort((a, b) =>
         (b.assignment_date ?? "").localeCompare(a.assignment_date ?? "")
       );
@@ -133,6 +174,19 @@ export default async function handler(req, res) {
 
       const lifespan = buildLifespan(raw, cspBaseline, today);
 
+      // Compute decision_framing for active lifespans (no-op for closed)
+      let decisionFraming = null;
+      if (lifespan.lifespan_status === "active") {
+        const prices = await fetchLastPrices(supabase, [tickerUpper]);
+        decisionFraming = computeDecisionFraming({
+          lifespan,
+          currentSpot: prices[tickerUpper] ?? null,
+          baselineRate: cspBaseline.avg_return_per_capital_day,
+          ticker: tickerUpper,
+          today,
+        });
+      }
+
       let linkedJournals = [];
       if (lifespan._tradeIds.length > 0) {
         const journalResult = await supabase
@@ -143,15 +197,34 @@ export default async function handler(req, res) {
       }
 
       const result = attachJournalContext(lifespan, linkedJournals);
+      if (decisionFraming) result.decision_framing = decisionFraming;
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");
       return res.status(200).json({ ok: true, ...result });
     } else {
       // --- List mode: all lifespans for ticker ---
-      const summaries = rawLifespans
-        .map((r) => buildLifespan(r, cspBaseline, today))
-        .map(lifespanSummary);
+      const built = rawLifespans.map((r) => buildLifespan(r, cspBaseline, today));
+
+      // For active lifespans, fetch a single quote and inject decision_framing
+      // onto the summary (only). Closed lifespans don't get the field.
+      const hasActive = built.some((l) => l.lifespan_status === "active");
+      const prices = hasActive ? await fetchLastPrices(supabase, [tickerUpper]) : {};
+
+      const summaries = built.map((l) => {
+        const summary = lifespanSummary(l);
+        if (l.lifespan_status === "active") {
+          const framing = computeDecisionFraming({
+            lifespan: l,
+            currentSpot: prices[tickerUpper] ?? null,
+            baselineRate: cspBaseline.avg_return_per_capital_day,
+            ticker: tickerUpper,
+            today,
+          });
+          if (framing) summary.decision_framing = framing;
+        }
+        return summary;
+      });
 
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.setHeader("Content-Type", "application/json");

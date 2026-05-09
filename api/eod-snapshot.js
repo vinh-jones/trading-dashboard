@@ -21,6 +21,12 @@ import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
+import {
+  detectLifespans,
+  buildLifespan,
+  computeCspBaseline,
+  computeDecisionFraming,
+} from "./_lib/lifespan.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -82,6 +88,27 @@ function pad(s, w) {
   return String(s ?? "").padEnd(w);
 }
 
+// Fetch all CSP/CC/Shares trades for the given tickers, used to rebuild
+// per-ticker lifespans for decision_framing computation in the EOD snapshot.
+async function fetchTickerTrades(supabase, tickers) {
+  if (!tickers || tickers.length === 0) return {};
+  const { data, error } = await supabase
+    .from("trades")
+    .select("*")
+    .in("ticker", tickers)
+    .order("close_date", { ascending: true });
+  if (error) {
+    console.warn("[api/eod-snapshot] trades fetch failed:", error.message);
+    return {};
+  }
+  const byTicker = {};
+  for (const t of data ?? []) {
+    if (!byTicker[t.ticker]) byTicker[t.ticker] = [];
+    byTicker[t.ticker].push(t);
+  }
+  return byTicker;
+}
+
 // ─── Text blob builder ────────────────────────────────────────────────
 
 function buildTextBlob({
@@ -94,6 +121,7 @@ function buildTextBlob({
   spyQuote,
   qqqQuote,
   radarRows,
+  decisionFraming,
 }) {
   const lines = [];
 
@@ -200,6 +228,39 @@ function buildTextBlob({
         lines.push(`  ↳ No active CC`);
       }
     }
+    lines.push("");
+  }
+
+  // ── Decision Framing ──
+  if (decisionFraming && decisionFraming.length) {
+    lines.push("DECISION FRAMING — ACTIVE ASSIGNED POSITIONS");
+    lines.push("─".repeat(40));
+    for (const f of decisionFraming) {
+      const breakevenLabel = f.breakeven_zone
+        .replace("wheel_ahead_perpetually", "Wheel ahead")
+        .replace("quick_recovery", "Quick recovery")
+        .replace("decision_zone", "Decision zone")
+        .replace("long_horizon", "Long horizon")
+        .replace("effectively_stuck", "Effectively stuck");
+      const drawdownLabel = f.drawdown_zone[0].toUpperCase() + f.drawdown_zone.slice(1);
+      lines.push(`${f.ticker} · ${drawdownLabel} / ${breakevenLabel}`);
+      if (f.framing_question && f.framing_duration) {
+        lines.push(`  Q: "${f.framing_question}" (${f.framing_duration})`);
+      } else if (f.framing_question) {
+        lines.push(`  ${f.framing_question}`);
+      }
+    }
+
+    // Footer two-line summary
+    const decisionZone = decisionFraming.filter((f) => f.breakeven_zone === "decision_zone").map((f) => f.ticker);
+    const anchored = decisionFraming
+      .filter((f) => f.breakeven_zone === "long_horizon" || f.breakeven_zone === "effectively_stuck")
+      .map((f) => f.ticker);
+
+    if (decisionZone.length || anchored.length) lines.push("");
+    if (decisionZone.length) lines.push(`DECISION ZONE (comparison most informative): ${decisionZone.join(", ")}`);
+    if (anchored.length)     lines.push(`ANCHORED (math says hold despite long timeline): ${anchored.join(", ")}`);
+
     lines.push("");
   }
 
@@ -551,6 +612,70 @@ export default async function handler(req, res) {
     effectiveSnapshot = { ...effectiveSnapshot, _source: "daily_snapshot" };
   }
 
+  // ── Decision framing for active assigned positions ────────────────────────
+  // Reuse the CSP baseline computed for the existing cut-and-redeploy benchmark.
+  // For each active assigned ticker, rebuild the lifespan and compute framing.
+  const assignedTickers = (positions?.assigned_shares ?? []).map((s) => s.ticker);
+  const decisionFraming = [];
+
+  if (assignedTickers.length > 0) {
+    // Fetch CSP baseline (same query/columns as position-lifespan)
+    const cspBaselineResult = await supabase
+      .from("trades")
+      .select("id, premium_collected, capital_fronted, days_held, close_date, subtype, strike, contracts, spot_at_assignment")
+      .eq("type", "CSP")
+      .in("subtype", ["Close", "Roll Loss", "Assigned"])
+      .gt("days_held", 0)
+      .gt("capital_fronted", 0)
+      .order("close_date", { ascending: false })
+      .limit(60);
+
+    const cspBaseline = computeCspBaseline(cspBaselineResult.data ?? []);
+    const tradesByTicker = await fetchTickerTrades(supabase, assignedTickers);
+
+    // Try to read prices from quotesMap (already populated from radar quotes).
+    // For tickers not in the radar universe, fetch their quotes separately.
+    const missingPriceTickers = assignedTickers.filter((tk) => !quotesMap[tk]);
+    let extraPrices = {};
+    if (missingPriceTickers.length > 0) {
+      const { data: extraQuotes, error: extraError } = await supabase
+        .from("quotes")
+        .select("symbol, last")
+        .in("symbol", missingPriceTickers);
+      if (!extraError) {
+        for (const q of extraQuotes ?? []) {
+          if (q?.symbol && q.last != null) extraPrices[q.symbol] = parseFloat(q.last);
+        }
+      }
+    }
+
+    for (const tk of assignedTickers) {
+      const tickerTrades = tradesByTicker[tk] ?? [];
+      const lifespans = detectLifespans(tk, tickerTrades);
+      const activeLifespan = lifespans.find((l) => !l.exit_event);
+      if (!activeLifespan) continue;
+
+      const built = buildLifespan(activeLifespan, cspBaseline, today);
+      const currentSpot = quotesMap[tk]?.last ?? extraPrices[tk] ?? null;
+      const framing = computeDecisionFraming({
+        lifespan: built,
+        currentSpot,
+        baselineRate: cspBaseline.avg_return_per_capital_day,
+        ticker: tk,
+        today,
+      });
+      if (framing) decisionFraming.push({ ticker: tk, ...framing });
+    }
+  }
+
+  // Sort by drawdown severity then ticker alphabetical
+  const drawdownSeverityRank = { severe: 0, deep: 1, moderate: 2, shallow: 3 };
+  decisionFraming.sort((a, b) => {
+    const dr = drawdownSeverityRank[a.drawdown_zone] - drawdownSeverityRank[b.drawdown_zone];
+    if (dr !== 0) return dr;
+    return a.ticker.localeCompare(b.ticker);
+  });
+
   const text = buildTextBlob({
     today,
     dailySnapshot: effectiveSnapshot,
@@ -561,6 +686,7 @@ export default async function handler(req, res) {
     spyQuote,
     qqqQuote,
     radarRows,
+    decisionFraming,
   });
 
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -580,6 +706,7 @@ export default async function handler(req, res) {
       macro: { ai_context: macroAiContext, posture: macroPosture },
       market: { spy: spyQuote, qqq: qqqQuote, vix: liveVix },
       radar: radarRows,
+      decision_framing: decisionFraming,
     },
   });
 }

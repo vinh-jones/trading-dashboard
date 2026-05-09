@@ -4,12 +4,16 @@
  * Shared lifespan helpers used by:
  *   - api/position-lifespan.js
  *   - api/ticker-detail.js
+ *   - api/eod-snapshot.js
  *
  * Exports: DATA_QUALITY_THRESHOLD, detectLifespans, buildLifespan,
- *          computeCspBaseline, lifespanSummary
+ *          computeCspBaseline, lifespanSummary, computeDecisionFraming,
+ *          and decision-framing helpers (classifyDrawdown, classifyBreakeven,
+ *          getRecentCcStrike, addCalendarDays, subtractCalendarDays,
+ *          humanizeDuration, computeTrailingCcRate)
  *
  * Private (not exported): tradeSortPriority, isRedundantSharesSold,
- *   computeBlendedBasis, computeVerdict, round2, round6, daysBetween,
+ *   computeBlendedBasis, computeVerdict, round2, round4, round6, daysBetween,
  *   daysBetweenDates, clusterLifespanDecisions
  */
 
@@ -676,4 +680,175 @@ function daysBetweenDates(d1, d2) {
 }
 
 function round2(n) { return +n.toFixed(2); }
+function round4(n) { return +n.toFixed(4); }
 function round6(n) { return +n.toFixed(6); }
+
+// ---------------------------------------------------------------------------
+// Decision-framing helpers
+// ---------------------------------------------------------------------------
+
+export function classifyDrawdown(pct) {
+  if (pct >= -0.15) return "shallow";
+  if (pct >= -0.30) return "moderate";
+  if (pct >= -0.45) return "deep";
+  return "severe";
+}
+
+export function classifyBreakeven(days) {
+  if (days < 90)  return "quick_recovery";
+  if (days < 270) return "decision_zone";
+  if (days < 540) return "long_horizon";
+  return "effectively_stuck";
+}
+
+// Most recent CC strike from cc_history (by close_date). Returns null when
+// no CCs have closed yet for this lifespan. Does not consider currently-open
+// CCs not yet in cc_history.
+export function getRecentCcStrike(ccHistory) {
+  if (!ccHistory || ccHistory.length === 0) return null;
+  const sorted = [...ccHistory].sort(
+    (a, b) => (b.close_date ?? "").localeCompare(a.close_date ?? "")
+  );
+  return sorted[0]?.strike ?? null;
+}
+
+// Calendar-day arithmetic on YYYY-MM-DD strings (no weekend skipping).
+export function addCalendarDays(dateStr, days) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function subtractCalendarDays(dateStr, days) {
+  return addCalendarDays(dateStr, -days);
+}
+
+// Human-readable duration (≤ ~30 chars).
+//   < 14 days     -> "~N days"
+//   < 60 days     -> "~N weeks" (rounded to nearest week)
+//   < 365 days    -> "~N.5 months" (rounded to nearest 0.5 month, 30.44 days/month)
+//   >= 365 days   -> "~N.5 years" (rounded to nearest 0.5 year, 365.25 days/year)
+export function humanizeDuration(days) {
+  if (days < 14)  return `~${days} days`;
+  if (days < 60)  return `~${Math.round(days / 7)} weeks`;
+  if (days < 365) {
+    const months = Math.round((days / 30.44) * 2) / 2;
+    return `~${months} months`;
+  }
+  const years = Math.round((days / 365.25) * 2) / 2;
+  return `~${years} years`;
+}
+
+// Trailing-window CC rate. Returns null if no CCs in the window (caller falls
+// back to lifetime rate).
+export function computeTrailingCcRate(ccHistory, today, days = 60) {
+  const cutoff = subtractCalendarDays(today, days);
+  const recent = (ccHistory ?? []).filter((cc) => (cc.close_date ?? "") >= cutoff);
+  if (recent.length === 0) return null;
+  const recentPnl  = recent.reduce((s, cc) => s + (parseFloat(cc.premium_collected) || 0), 0);
+  const recentDays = recent.reduce((s, cc) => s + (parseFloat(cc.days_held) || 0), 0);
+  return recentDays > 0 ? recentPnl / recentDays : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Decision framing for active assigned positions
+// ---------------------------------------------------------------------------
+
+// Computes a wheel-vs-cut-and-redeploy framing for an active assigned-share
+// lifespan. Returns null when not applicable (closed, currentSpot >= cb, no
+// shares held, missing inputs).
+//
+// See spec: docs/superpowers/specs/2026-05-09-decision-framing-active-positions-design.md
+export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ticker, today }) {
+  // Guards
+  if (!lifespan || lifespan.lifespan_status !== "active") return null;
+  if (!Array.isArray(lifespan.assignment_events) || lifespan.assignment_events.length === 0) return null;
+  if (currentSpot == null || !Number.isFinite(currentSpot)) return null;
+
+  const cb = parseFloat(lifespan.blended_cost_basis) || 0;
+  if (cb <= 0)            return null;
+  if (currentSpot >= cb)  return null;
+
+  // currentShares = peak − sum(partial_dispositions.shares)
+  const peak = parseFloat(lifespan.total_shares_at_peak) || 0;
+  const disposedShares = (lifespan.partial_dispositions ?? []).reduce(
+    (s, d) => s + (parseFloat(d.shares) || 0), 0
+  );
+  const currentShares = peak - disposedShares;
+  if (currentShares <= 0) return null;
+
+  const m = lifespan.lifespan_metrics ?? {};
+  const cspPremium = parseFloat(m.csp_premium_collected) || 0;
+  const ccPremium  = parseFloat(m.cc_premium_total)      || 0;
+  const daysHeld   = parseFloat(m.days_active)           || 0;
+
+  const partialDisposalPnl = (lifespan.partial_dispositions ?? []).reduce(
+    (s, d) => s + (parseFloat(d.disposal_pnl) || 0), 0
+  );
+
+  const cumulativeWheelPnl     = round2(cspPremium + ccPremium + partialDisposalPnl);
+  const realizedLoss           = round2((cb - currentSpot) * currentShares);
+  const freedCapital           = round2(currentSpot * currentShares);
+  const cutAlternativeStateNow = round2(cspPremium + partialDisposalPnl - realizedLoss);
+  const gap                    = round2(cumulativeWheelPnl - cutAlternativeStateNow);
+
+  const trailingCcRate = computeTrailingCcRate(lifespan.cc_history, today, 60);
+  const usingTrailing  = trailingCcRate !== null;
+  const lifetimeCcRate = daysHeld > 0 ? ccPremium / daysHeld : 0;
+  const wheelDailyRate = usingTrailing ? trailingCcRate : lifetimeCcRate;
+
+  const cutDailyRate      = freedCapital * (parseFloat(baselineRate) || 0);
+  const dailyDifferential = cutDailyRate - wheelDailyRate;
+
+  const drawdownPct  = (currentSpot - cb) / cb;
+  const drawdownZone = classifyDrawdown(drawdownPct);
+
+  const detailed_breakdown = {
+    cumulative_wheel_pnl:        cumulativeWheelPnl,
+    csp_premium_collected:       round2(cspPremium),
+    cc_premium_total:            round2(ccPremium),
+    partial_disposal_pnl:        round2(partialDisposalPnl),
+    cc_count_winning:            m.cc_count_winning ?? null,
+    cc_count_losing:             m.cc_count_losing  ?? null,
+    trailing_60day_cc_rate:      trailingCcRate != null ? round4(trailingCcRate) : null,
+    lifetime_cc_rate:            round4(lifetimeCcRate),
+    using_trailing_rate:         usingTrailing,
+    recent_cc_strike:            getRecentCcStrike(lifespan.cc_history),
+    current_shares:              currentShares,
+    realized_loss_if_cut_today:  realizedLoss,
+    freed_capital_if_cut:        freedCapital,
+    cut_alternative_state:       cutAlternativeStateNow,
+    gap:                         gap,
+    wheel_daily_rate:            round4(wheelDailyRate),
+    cut_daily_rate:              round4(cutDailyRate),
+    daily_differential:          round4(dailyDifferential),
+  };
+
+  if (dailyDifferential <= 0) {
+    return {
+      drawdown_pct:       round4(drawdownPct),
+      drawdown_zone:      drawdownZone,
+      days_to_breakeven:  null,
+      breakeven_zone:     "wheel_ahead_perpetually",
+      recovery_date:      null,
+      framing_question:   "Wheel currently outperforming cut alternative; no breakeven date.",
+      framing_duration:   null,
+      detailed_breakdown,
+    };
+  }
+
+  const daysToBreakeven = Math.ceil(gap / dailyDifferential);
+  const recoveryDate    = addCalendarDays(today, daysToBreakeven);
+  const breakevenZone   = classifyBreakeven(daysToBreakeven);
+
+  return {
+    drawdown_pct:       round4(drawdownPct),
+    drawdown_zone:      drawdownZone,
+    days_to_breakeven:  daysToBreakeven,
+    breakeven_zone:     breakevenZone,
+    recovery_date:      recoveryDate,
+    framing_question:   `Do you think ${ticker} reaches $${cb.toFixed(2)} (cost basis) by ${recoveryDate}?`,
+    framing_duration:   humanizeDuration(daysToBreakeven),
+    detailed_breakdown,
+  };
+}
