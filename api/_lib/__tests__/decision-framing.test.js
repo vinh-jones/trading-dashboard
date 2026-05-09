@@ -307,4 +307,24 @@ describe("computeDecisionFraming math", () => {
     expect(r.detailed_breakdown.freed_capital_if_cut).toBe(4800);
     expect(r.detailed_breakdown.gap).toBe(1650);
   });
+
+  it("Test 13: trailing_rate_immature is true when days_held < 30", () => {
+    const r = computeDecisionFraming({
+      lifespan: baseLifespan({
+        lifespan_metrics: { csp_premium_collected: 200, cc_premium_total: 50, days_active: 14, cc_count_winning: 1, cc_count_losing: 0 },
+      }),
+      currentSpot: 80, baselineRate: 0.00245, ticker: "T", today: "2026-05-09",
+    });
+    expect(r.detailed_breakdown.trailing_rate_immature).toBe(true);
+  });
+
+  it("Test 14: trailing_rate_immature is false at days_held = 30", () => {
+    const r = computeDecisionFraming({
+      lifespan: baseLifespan({
+        lifespan_metrics: { csp_premium_collected: 200, cc_premium_total: 50, days_active: 30, cc_count_winning: 1, cc_count_losing: 0 },
+      }),
+      currentSpot: 80, baselineRate: 0.00245, ticker: "T", today: "2026-05-09",
+    });
+    expect(r.detailed_breakdown.trailing_rate_immature).toBe(false);
+  });
 });
