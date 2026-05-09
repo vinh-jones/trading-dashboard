@@ -208,6 +208,36 @@ function VerdictLine({ lifespan }) {
   return <span>{parts.join(" · ")}</span>;
 }
 
+// Diagnostics describing the trailing-60 CSP sample used as the cut-and-redeploy
+// baseline. Two clean signals — gross income rate and assignment risk — kept
+// side by side so they can't be confused for a single combined number.
+function BaselineDiagnosticsCaption({ lifespan }) {
+  const c = lifespan.benchmarks?.cut_and_redeploy_baseline;
+  if (!c || !(c.sample_size_csps_used > 0)) return null;
+
+  const parts = [];
+  if (c.annualized_income_rate_pct != null) {
+    parts.push(`${c.annualized_income_rate_pct.toFixed(1)}% ann income`);
+  }
+  if (c.assignment_rate_in_baseline != null) {
+    parts.push(`${(c.assignment_rate_in_baseline * 100).toFixed(0)}% assign rate`);
+  }
+  if (c.assignment_count_in_baseline > 0 && c.avg_realized_loss_in_baseline) {
+    parts.push(`avg loss ${formatDollars(c.avg_realized_loss_in_baseline)}`);
+  }
+  if (parts.length === 0) return null;
+
+  return (
+    <div style={{
+      fontSize: theme.size.xs,
+      color: theme.text.subtle,
+      marginTop: 2,
+    }}>
+      Baseline: {parts.join(" · ")} <span style={{ color: theme.text.faint }}>(n={c.sample_size_csps_used})</span>
+    </div>
+  );
+}
+
 function Stat({ label, value, color, sub }) {
   return (
     <div>
@@ -287,6 +317,7 @@ function LifespanRow({ lifespan, n, expanded, onToggle, accentColor, currentPric
         }}>
           <div style={{ marginTop: theme.space[3], fontSize: theme.size.sm, color: theme.text.secondary }}>
             <VerdictLine lifespan={lifespan} />
+            <BaselineDiagnosticsCaption lifespan={lifespan} />
           </div>
           {isActive && <RunningPnlPanel running={running} />}
           <div style={{ marginTop: theme.space[3], display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: theme.space[3], fontSize: theme.size.sm }}>

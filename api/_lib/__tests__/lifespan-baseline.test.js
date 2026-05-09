@@ -92,3 +92,118 @@ describe("computeCspBaseline", () => {
     expect(result.sample_size).toBe(0);
   });
 });
+
+describe("computeCspBaseline diagnostic fields", () => {
+  it("empty sample — counts and rates are 0", () => {
+    const result = computeCspBaseline([]);
+    expect(result.assignment_count).toBe(0);
+    expect(result.assignment_rate).toBe(0);
+    expect(result.avg_realized_loss_per_assignment).toBe(0);
+  });
+
+  it("sample with no assignments — assignment_rate = 0", () => {
+    const result = computeCspBaseline([
+      csp({ id: "a", subtype: "Close",     premium_collected: 100, capital_fronted: 5000, days_held: 5 }),
+      csp({ id: "b", subtype: "Roll Loss", premium_collected: -50, capital_fronted: 5000, days_held: 5 }),
+    ]);
+    expect(result.sample_size).toBe(2);
+    expect(result.assignment_count).toBe(0);
+    expect(result.assignment_rate).toBe(0);
+    expect(result.avg_realized_loss_per_assignment).toBe(0);
+  });
+
+  it("assigned-with-NULL-spot row counts toward assignment_count but NOT toward avg loss", () => {
+    // Two assignments: one has spot data (loss = ($100 - $90) × 1 × 100 = $1,000),
+    // the other has spot=null. Avg loss should be $1,000, not $500.
+    const result = computeCspBaseline([
+      csp({
+        id: "a",
+        subtype: "Assigned",
+        premium_collected: 200,
+        capital_fronted: 10000,
+        days_held: 10,
+        strike: 100,
+        spot_at_assignment: 90,
+        contracts: 1,
+      }),
+      csp({
+        id: "b",
+        subtype: "Assigned",
+        premium_collected: 150,
+        capital_fronted: 10000,
+        days_held: 10,
+        strike: 100,
+        spot_at_assignment: null,
+        contracts: 1,
+      }),
+    ]);
+    expect(result.sample_size).toBe(2);
+    expect(result.assignment_count).toBe(2);
+    expect(result.assignment_rate).toBe(1);
+    expect(result.avg_realized_loss_per_assignment).toBeCloseTo(1000, 2);
+  });
+
+  it("mixed sample — assignment_rate = assignments / sample_size", () => {
+    // 1 assignment among 4 valid rows = 0.25 assignment rate.
+    const result = computeCspBaseline([
+      csp({ id: "a", subtype: "Close",    premium_collected: 100, capital_fronted: 5000, days_held: 5 }),
+      csp({ id: "b", subtype: "Close",    premium_collected: 100, capital_fronted: 5000, days_held: 5 }),
+      csp({ id: "c", subtype: "Roll Loss", premium_collected: -50, capital_fronted: 5000, days_held: 5 }),
+      csp({
+        id: "d",
+        subtype: "Assigned",
+        premium_collected: 200,
+        capital_fronted: 10000,
+        days_held: 10,
+        strike: 100,
+        spot_at_assignment: 95,
+        contracts: 2,
+      }),
+    ]);
+    expect(result.sample_size).toBe(4);
+    expect(result.assignment_count).toBe(1);
+    expect(result.assignment_rate).toBeCloseTo(0.25, 6);
+    // ($100 - $95) × 2 × 100 = $1,000 realized loss
+    expect(result.avg_realized_loss_per_assignment).toBeCloseTo(1000, 2);
+  });
+
+  it("assignment with spot ABOVE strike — diagnostic loss is negative (i.e., a gain)", () => {
+    // Edge case worth pinning down: if spot > strike at assignment, the
+    // diagnostic field reports a negative "loss." Caller can interpret as
+    // "in-the-money on assignment day" but the math doesn't suppress it.
+    const result = computeCspBaseline([
+      csp({
+        id: "a",
+        subtype: "Assigned",
+        premium_collected: 200,
+        capital_fronted: 10000,
+        days_held: 10,
+        strike: 100,
+        spot_at_assignment: 105,
+        contracts: 1,
+      }),
+    ]);
+    expect(result.assignment_count).toBe(1);
+    expect(result.avg_realized_loss_per_assignment).toBeCloseTo(-500, 2);
+  });
+
+  it("diagnostic fields never re-enter avg_return_per_capital_day", () => {
+    // Sanity: an assigned CSP with a huge realized loss does NOT pull the
+    // gross-premium rate down. Rate is premium-only.
+    const result = computeCspBaseline([
+      csp({
+        id: "a",
+        subtype: "Assigned",
+        premium_collected: 300,
+        capital_fronted: 50000,
+        days_held: 30,
+        strike: 100,
+        spot_at_assignment: 50, // $50 × 1 × 100 = $5,000 realized loss
+        contracts: 1,
+      }),
+    ]);
+    // rate = 300 / 1,500,000 = 0.0002 — same as the no-loss-modeling case
+    expect(result.avg_return_per_capital_day).toBeCloseTo(0.0002, 7);
+    expect(result.avg_realized_loss_per_assignment).toBeCloseTo(5000, 2);
+  });
+});
