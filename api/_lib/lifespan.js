@@ -676,6 +676,7 @@ function daysBetweenDates(d1, d2) {
 }
 
 function round2(n) { return +n.toFixed(2); }
+function round4(n) { return +n.toFixed(4); }
 function round6(n) { return +n.toFixed(6); }
 
 // ---------------------------------------------------------------------------
@@ -743,4 +744,107 @@ export function computeTrailingCcRate(ccHistory, today, days = 60) {
   const recentPnl  = recent.reduce((s, cc) => s + (parseFloat(cc.premium_collected) || 0), 0);
   const recentDays = recent.reduce((s, cc) => s + (parseFloat(cc.days_held) || 0), 0);
   return recentDays > 0 ? recentPnl / recentDays : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Decision framing for active assigned positions
+// ---------------------------------------------------------------------------
+
+// Computes a wheel-vs-cut-and-redeploy framing for an active assigned-share
+// lifespan. Returns null when not applicable (closed, currentSpot >= cb, no
+// shares held, missing inputs).
+//
+// See spec: docs/superpowers/specs/2026-05-09-decision-framing-active-positions-design.md
+export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ticker, today }) {
+  // Guards
+  if (!lifespan || lifespan.lifespan_status !== "active") return null;
+  if (!Array.isArray(lifespan.assignment_events) || lifespan.assignment_events.length === 0) return null;
+  if (currentSpot == null || !Number.isFinite(currentSpot)) return null;
+
+  const cb = parseFloat(lifespan.blended_cost_basis) || 0;
+  if (cb <= 0)            return null;
+  if (currentSpot >= cb)  return null;
+
+  // currentShares = peak − sum(partial_dispositions.shares)
+  const peak = parseFloat(lifespan.total_shares_at_peak) || 0;
+  const disposedShares = (lifespan.partial_dispositions ?? []).reduce(
+    (s, d) => s + (parseFloat(d.shares) || 0), 0
+  );
+  const currentShares = peak - disposedShares;
+  if (currentShares <= 0) return null;
+
+  const m = lifespan.lifespan_metrics ?? {};
+  const cspPremium = parseFloat(m.csp_premium_collected) || 0;
+  const ccPremium  = parseFloat(m.cc_premium_total)      || 0;
+  const daysHeld   = parseFloat(m.days_active)           || 0;
+
+  const partialDisposalPnl = (lifespan.partial_dispositions ?? []).reduce(
+    (s, d) => s + (parseFloat(d.disposal_pnl) || 0), 0
+  );
+
+  const cumulativeWheelPnl     = round2(cspPremium + ccPremium + partialDisposalPnl);
+  const realizedLoss           = round2((cb - currentSpot) * currentShares);
+  const freedCapital           = round2(currentSpot * currentShares);
+  const cutAlternativeStateNow = round2(cspPremium + partialDisposalPnl - realizedLoss);
+  const gap                    = round2(cumulativeWheelPnl - cutAlternativeStateNow);
+
+  const trailingCcRate = computeTrailingCcRate(lifespan.cc_history, today, 60);
+  const usingTrailing  = trailingCcRate !== null;
+  const lifetimeCcRate = daysHeld > 0 ? ccPremium / daysHeld : 0;
+  const wheelDailyRate = usingTrailing ? trailingCcRate : lifetimeCcRate;
+
+  const cutDailyRate      = freedCapital * (parseFloat(baselineRate) || 0);
+  const dailyDifferential = cutDailyRate - wheelDailyRate;
+
+  const drawdownPct  = (currentSpot - cb) / cb;
+  const drawdownZone = classifyDrawdown(drawdownPct);
+
+  const detailed_breakdown = {
+    cumulative_wheel_pnl:        cumulativeWheelPnl,
+    csp_premium_collected:       round2(cspPremium),
+    cc_premium_total:            round2(ccPremium),
+    partial_disposal_pnl:        round2(partialDisposalPnl),
+    cc_count_winning:            m.cc_count_winning ?? null,
+    cc_count_losing:             m.cc_count_losing  ?? null,
+    trailing_60day_cc_rate:      trailingCcRate != null ? round4(trailingCcRate) : null,
+    lifetime_cc_rate:            round4(lifetimeCcRate),
+    using_trailing_rate:         usingTrailing,
+    recent_cc_strike:            getRecentCcStrike(lifespan.cc_history),
+    current_shares:              currentShares,
+    realized_loss_if_cut_today:  realizedLoss,
+    freed_capital_if_cut:        freedCapital,
+    cut_alternative_state:       cutAlternativeStateNow,
+    gap:                         gap,
+    wheel_daily_rate:            round4(wheelDailyRate),
+    cut_daily_rate:              round4(cutDailyRate),
+    daily_differential:          round4(dailyDifferential),
+  };
+
+  if (dailyDifferential <= 0) {
+    return {
+      drawdown_pct:       round4(drawdownPct),
+      drawdown_zone:      drawdownZone,
+      days_to_breakeven:  null,
+      breakeven_zone:     "wheel_ahead_perpetually",
+      recovery_date:      null,
+      framing_question:   "Wheel currently outperforming cut alternative; no breakeven date.",
+      framing_duration:   null,
+      detailed_breakdown,
+    };
+  }
+
+  const daysToBreakeven = Math.ceil(gap / dailyDifferential);
+  const recoveryDate    = addCalendarDays(today, daysToBreakeven);
+  const breakevenZone   = classifyBreakeven(daysToBreakeven);
+
+  return {
+    drawdown_pct:       round4(drawdownPct),
+    drawdown_zone:      drawdownZone,
+    days_to_breakeven:  daysToBreakeven,
+    breakeven_zone:     breakevenZone,
+    recovery_date:      recoveryDate,
+    framing_question:   `Do you think ${ticker} reaches $${cb.toFixed(2)} (cost basis) by ${recoveryDate}?`,
+    framing_duration:   humanizeDuration(daysToBreakeven),
+    detailed_breakdown,
+  };
 }
