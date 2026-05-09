@@ -286,7 +286,16 @@ export function buildLifespan(raw, cspBaseline, today) {
   const spaxxReturn   = round2(totalCapital * 0.04 * (daysActive / 365));
   const spaxxVsActual = totalLifespanPnl !== null ? round2(totalLifespanPnl - spaxxReturn) : null;
 
-  const { avg_return_per_capital_day, sample_size } = cspBaseline;
+  const {
+    avg_return_per_capital_day,
+    sample_size,
+    assignment_count,
+    assignment_rate,
+    avg_realized_loss_per_assignment,
+  } = cspBaseline;
+  // Annualized gross-income rate as a percent (×365 ×100). Diagnostic only;
+  // never feeds back into the rate-based math above.
+  const annualizedIncomeRatePct = round2(avg_return_per_capital_day * 365 * 100);
   const hasSpotAtFirst = firstAssignment?.spot_at_assignment != null;
   let cutAndRedeploy;
 
@@ -302,6 +311,10 @@ export function buildLifespan(raw, cspBaseline, today) {
       net_outcome_if_cut_and_redeploy:    null,
       vs_actual_pnl:                      null,
       verdict: computeVerdict(lifespanStatus, null, false),
+      annualized_income_rate_pct:         annualizedIncomeRatePct,
+      assignment_count_in_baseline:       assignment_count,
+      assignment_rate_in_baseline:        assignment_rate,
+      avg_realized_loss_in_baseline:      avg_realized_loss_per_assignment,
     };
   } else {
     const fa             = firstAssignment;
@@ -333,6 +346,10 @@ export function buildLifespan(raw, cspBaseline, today) {
       net_outcome_if_cut_and_redeploy:    netOutcome,
       vs_actual_pnl:                      vsActual,
       verdict: computeVerdict(lifespanStatus, vsActual, true),
+      annualized_income_rate_pct:         annualizedIncomeRatePct,
+      assignment_count_in_baseline:       assignment_count,
+      assignment_rate_in_baseline:        assignment_rate,
+      avg_realized_loss_in_baseline:      avg_realized_loss_per_assignment,
     };
   }
 
@@ -542,10 +559,20 @@ function clusterLifespanDecisions(trades, ticker) {
 // realized loss for the lifespan being benchmarked at the consuming
 // layer, but we do not statistically model losses on hypothetical
 // redeployment-period CSPs. Verdicts should be read with that caveat.
+//
+// Diagnostic fields (assignment_count, assignment_rate,
+// avg_realized_loss_per_assignment) describe the SAME sample but never feed
+// back into avg_return_per_capital_day. They surface the assignment risk
+// that the rate intentionally excludes, so a caller can present both
+// signals side by side without recombining them.
 export function computeCspBaseline(cspTrades) {
   let totalPremium = 0;
   let totalCapDays = 0;
   let included = 0;
+
+  let assignmentCount = 0;
+  let realizedLossSum = 0;
+  let realizedLossCount = 0;
 
   for (const t of cspTrades) {
     const premium = parseFloat(t.premium_collected) || 0;
@@ -556,13 +583,37 @@ export function computeCspBaseline(cspTrades) {
     totalPremium += premium;
     totalCapDays += capital * days;
     included++;
+
+    if (t.subtype === "Assigned") {
+      assignmentCount++;
+      const strike    = parseFloat(t.strike);
+      const spot      = parseFloat(t.spot_at_assignment);
+      const contracts = parseFloat(t.contracts);
+      if (
+        Number.isFinite(strike) &&
+        Number.isFinite(spot) &&
+        Number.isFinite(contracts) &&
+        t.spot_at_assignment != null
+      ) {
+        // Loss expressed as a positive dollar amount: how far below strike
+        // the spot was at assignment, scaled to share count.
+        realizedLossSum += (strike - spot) * contracts * 100;
+        realizedLossCount++;
+      }
+    }
   }
 
   const avg = totalCapDays > 0 ? totalPremium / totalCapDays : 0;
+  const assignmentRate = included > 0 ? assignmentCount / included : 0;
+  const avgRealizedLossPerAssignment =
+    realizedLossCount > 0 ? realizedLossSum / realizedLossCount : 0;
 
   return {
     avg_return_per_capital_day: avg,
     sample_size: included,
+    assignment_count: assignmentCount,
+    assignment_rate: assignmentRate,
+    avg_realized_loss_per_assignment: round2(avgRealizedLossPerAssignment),
   };
 }
 

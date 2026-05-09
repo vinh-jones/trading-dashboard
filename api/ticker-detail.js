@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     const [baselineResult, tradesResult, positionsResult, quoteResult] = await Promise.all([
       supabase
         .from("trades")
-        .select("id, premium_collected, capital_fronted, days_held, close_date")
+        .select("id, premium_collected, capital_fronted, days_held, close_date, subtype, strike, contracts, spot_at_assignment")
         .eq("type", "CSP")
         .in("subtype", ["Close", "Roll Loss", "Assigned"])
         .gt("days_held", 0)
