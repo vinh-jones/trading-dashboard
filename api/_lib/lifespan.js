@@ -677,3 +677,70 @@ function daysBetweenDates(d1, d2) {
 
 function round2(n) { return +n.toFixed(2); }
 function round6(n) { return +n.toFixed(6); }
+
+// ---------------------------------------------------------------------------
+// Decision-framing helpers
+// ---------------------------------------------------------------------------
+
+export function classifyDrawdown(pct) {
+  if (pct >= -0.15) return "shallow";
+  if (pct >= -0.30) return "moderate";
+  if (pct >= -0.45) return "deep";
+  return "severe";
+}
+
+export function classifyBreakeven(days) {
+  if (days < 90)  return "quick_recovery";
+  if (days < 270) return "decision_zone";
+  if (days < 540) return "long_horizon";
+  return "effectively_stuck";
+}
+
+// Most recent CC strike from cc_history (by close_date). Returns null when
+// no CCs have closed yet for this lifespan. Does not consider currently-open
+// CCs not yet in cc_history.
+export function getRecentCcStrike(ccHistory) {
+  if (!ccHistory || ccHistory.length === 0) return null;
+  const sorted = [...ccHistory].sort(
+    (a, b) => (b.close_date ?? "").localeCompare(a.close_date ?? "")
+  );
+  return sorted[0]?.strike ?? null;
+}
+
+// Calendar-day arithmetic on YYYY-MM-DD strings (no weekend skipping).
+export function addCalendarDays(dateStr, days) {
+  const d = new Date(dateStr + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function subtractCalendarDays(dateStr, days) {
+  return addCalendarDays(dateStr, -days);
+}
+
+// Human-readable duration (≤ ~30 chars).
+//   < 14 days     -> "~N days"
+//   < 60 days     -> "~N weeks" (rounded to nearest week)
+//   < 365 days    -> "~N.5 months" (rounded to nearest 0.5 month, 30.44 days/month)
+//   >= 365 days   -> "~N.5 years" (rounded to nearest 0.5 year, 365.25 days/year)
+export function humanizeDuration(days) {
+  if (days < 14)  return `~${days} days`;
+  if (days < 60)  return `~${Math.round(days / 7)} weeks`;
+  if (days < 365) {
+    const months = Math.round((days / 30.44) * 2) / 2;
+    return `~${months} months`;
+  }
+  const years = Math.round((days / 365.25) * 2) / 2;
+  return `~${years} years`;
+}
+
+// Trailing-window CC rate. Returns null if no CCs in the window (caller falls
+// back to lifetime rate).
+export function computeTrailingCcRate(ccHistory, today, days = 60) {
+  const cutoff = subtractCalendarDays(today, days);
+  const recent = (ccHistory ?? []).filter((cc) => (cc.close_date ?? "") >= cutoff);
+  if (recent.length === 0) return null;
+  const recentPnl  = recent.reduce((s, cc) => s + (parseFloat(cc.premium_collected) || 0), 0);
+  const recentDays = recent.reduce((s, cc) => s + (parseFloat(cc.days_held) || 0), 0);
+  return recentDays > 0 ? recentPnl / recentDays : 0;
+}
