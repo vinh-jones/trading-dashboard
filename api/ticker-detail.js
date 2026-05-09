@@ -3,6 +3,7 @@ import {
   detectLifespans,
   buildLifespan,
   computeCspBaseline,
+  computeDecisionFraming,
 } from "./_lib/lifespan.js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 
@@ -73,11 +74,24 @@ export default async function handler(req, res) {
       leaps:  reshaped.open_leaps     ?? [],
     };
 
-    // 5. Build lifespans (with full benchmarks + cc_history intact)
+    // 5. Build lifespans (with full benchmarks + cc_history intact).
+    // Inject decision_framing on active lifespans using the quote we already
+    // have on this same response — no separate quote fetch needed.
     const rawLifespans = detectLifespans(ticker, trades);
+    const currentSpot  = quote?.last != null ? parseFloat(quote.last) : null;
     const lifespans = rawLifespans.map((r) => {
       const built = buildLifespan(r, cspBaseline, today);
       const { _tradeIds, ...rest } = built;
+      if (built.lifespan_status === "active") {
+        const framing = computeDecisionFraming({
+          lifespan: built,
+          currentSpot,
+          baselineRate: cspBaseline.avg_return_per_capital_day,
+          ticker,
+          today,
+        });
+        if (framing) rest.decision_framing = framing;
+      }
       return rest;
     });
 
