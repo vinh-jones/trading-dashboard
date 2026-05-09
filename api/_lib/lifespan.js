@@ -76,6 +76,23 @@ function isRedundantSharesSold(trade, closedLifespans, currentLifespan) {
   return false;
 }
 
+// Currently-held shares for a ticker, computed across the FULL trade history
+// (no cutoff). NULL contracts contribute 0 — common for ad-hoc P&L adjustment
+// rows in the source spreadsheet that don't actually move shares.
+function computeCurrentlyHeldShares(allTickerTrades) {
+  let shares = 0;
+  for (const t of allTickerTrades) {
+    if (t.type === "CSP" && t.subtype === "Assigned") {
+      shares += (parseInt(t.contracts) || 0) * 100;
+    } else if (t.type === "CC" && t.subtype === "Assigned") {
+      shares -= (parseInt(t.contracts) || 0) * 100;
+    } else if (t.type === "Shares" && (t.subtype === "Sold" || t.subtype === "Exit")) {
+      shares -= parseInt(t.contracts) || 0;
+    }
+  }
+  return shares;
+}
+
 // ---------------------------------------------------------------------------
 // Lifespan detection — running share count
 // ---------------------------------------------------------------------------
@@ -85,10 +102,17 @@ export function detectLifespans(ticker, allTickerTrades) {
   // DATA_QUALITY_THRESHOLD as if it didn't happen for share-cycle math.
   // Trades themselves remain visible in the Trade Timeline / All-Time Stats —
   // this filter only governs lifespan detection.
+  //
+  // Carry-over for currently-held positions: if the user still holds shares
+  // of this ticker today, we trust that the full history (including pre-cutoff
+  // assignments) is needed to model the lifespan correctly. A ticker with
+  // currently-held = 0 keeps the cutoff in place — we don't resurface
+  // known-suspect data for closed positions.
+  const currentlyHeld = computeCurrentlyHeldShares(allTickerTrades);
   const relevant = allTickerTrades.filter(
     (t) =>
       t.close_date &&
-      t.close_date >= DATA_QUALITY_THRESHOLD &&
+      (t.close_date >= DATA_QUALITY_THRESHOLD || currentlyHeld > 0) &&
       ((t.type === "CSP" && t.subtype === "Assigned") ||
         (t.type === "CC" &&
           (t.subtype === "Close" ||
@@ -813,6 +837,7 @@ export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ti
     trailing_60day_cc_rate:      trailingCcRate != null ? round4(trailingCcRate) : null,
     lifetime_cc_rate:            round4(lifetimeCcRate),
     using_trailing_rate:         usingTrailing,
+    trailing_rate_immature:      daysHeld < 30,
     recent_cc_strike:            getRecentCcStrike(lifespan.cc_history),
     current_shares:              currentShares,
     realized_loss_if_cut_today:  realizedLoss,
