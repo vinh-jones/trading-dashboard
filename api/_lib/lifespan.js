@@ -296,15 +296,16 @@ export function buildLifespan(raw, cspBaseline, today) {
   // Annualized gross-income rate as a percent (×365 ×100). Diagnostic only;
   // never feeds back into the rate-based math above.
   const annualizedIncomeRatePct = round2(avg_return_per_capital_day * 365 * 100);
-  const hasSpotAtFirst = firstAssignment?.spot_at_assignment != null;
+  const hasSpotAtEachAssignment = assignment_events.every((e) => e.spot_at_assignment != null);
+  const assignmentCount = assignment_events.length;
   let cutAndRedeploy;
 
-  if (!hasSpotAtFirst) {
+  if (!hasSpotAtEachAssignment) {
     cutAndRedeploy = {
-      requires_spot_at_first_assignment:  true,
-      sell_at_assignment_recovery:        null,
-      realized_loss_at_assignment:        null,
-      capital_to_redeploy:                null,
+      requires_spot_at_each_assignment:   true,
+      assignment_count:                   assignmentCount,
+      total_capital_to_redeploy:          null,
+      total_realized_losses:              null,
       avg_csp_return_per_capital_day:     avg_return_per_capital_day,
       sample_size_csps_used:              sample_size,
       estimated_csp_pnl_over_lifespan:    null,
@@ -315,34 +316,55 @@ export function buildLifespan(raw, cspBaseline, today) {
       assignment_count_in_baseline:       assignment_count,
       assignment_rate_in_baseline:        assignment_rate,
       avg_realized_loss_in_baseline:      avg_realized_loss_per_assignment,
+      assignment_breakdown:               [],
     };
   } else {
-    const fa             = firstAssignment;
-    const sellRecovery   = round2(fa.spot_at_assignment * fa.shares_added);
-    const realizedLoss   = round2(fa.capital_added - sellRecovery);
-    const toRedeploy     = sellRecovery;
-    // estCspPnl uses the gross-premium baseline rate (see computeCspBaseline
-    // doc-block). It models forward income on redeployed capital but does NOT
-    // model future-assignment risk on that capital — a known framing limitation.
-    // The deterministic realizedLoss below is for THIS lifespan's first
-    // assignment only; hypothetical future cuts during the redeployment window
-    // are not subtracted.
-    const estCspPnl      = avg_return_per_capital_day > 0
-      ? round2(toRedeploy * avg_return_per_capital_day * daysActive)
-      : 0;
-    // Apples-to-apples vs total_lifespan_pnl (which includes the assignment-trigger
-    // CSP premium): that premium was collected in BOTH scenarios before the cut
-    // decision was made, so it must be on both sides of the comparison.
-    const netOutcome     = round2(-realizedLoss + estCspPnl + fa.csp_premium_collected);
-    const vsActual       = totalLifespanPnl !== null ? round2(totalLifespanPnl - netOutcome) : null;
+    // Multi-assignment cut-and-redeploy (interpretation B): the cut alternative
+    // takes assignment on every CSP that the wheel did, but cuts at each spot
+    // instead of holding. Each cut frees a pool that redeploys at the baseline
+    // rate for the remaining lifespan window from that assignment date.
+    //
+    // For single-assignment lifespans this reduces exactly to the prior formula.
+    //
+    // Known limitation: when freed capital from an earlier cut is partially
+    // absorbed as collateral for a subsequent CSP (whose premium is already
+    // counted in cspPremiumTotal), the freed × rate × inter-assignment-days
+    // term double-counts that subsequent CSP's contribution by a bounded amount.
+    // Tolerable; the baseline rate is itself an average estimate.
+    const breakdown = assignment_events.map((e) => {
+      const capitalFreed   = round2(e.spot_at_assignment * e.shares_added);
+      const realizedLoss   = round2(e.capital_added - capitalFreed);
+      const daysRemaining  = daysBetween(e.date, effectiveEnd);
+      const estCspPnl      = avg_return_per_capital_day > 0 && daysRemaining > 0
+        ? round2(capitalFreed * avg_return_per_capital_day * daysRemaining)
+        : 0;
+      return {
+        date:           e.date,
+        capital_added:  e.capital_added,
+        capital_freed:  capitalFreed,
+        realized_loss:  realizedLoss,
+        days_remaining: daysRemaining,
+        est_csp_pnl:    estCspPnl,
+      };
+    });
+
+    const totalCapitalToRedeploy = round2(breakdown.reduce((s, b) => s + b.capital_freed, 0));
+    const totalRealizedLosses    = round2(breakdown.reduce((s, b) => s + b.realized_loss, 0));
+    const estCspPnlTotal         = round2(breakdown.reduce((s, b) => s + b.est_csp_pnl, 0));
+
+    // Apples-to-apples with total_lifespan_pnl: both sides include cspPremiumTotal
+    // (those premiums were collected in both scenarios before any cut decision).
+    const netOutcome = round2(cspPremiumTotal - totalRealizedLosses + estCspPnlTotal);
+    const vsActual   = totalLifespanPnl !== null ? round2(totalLifespanPnl - netOutcome) : null;
+
     cutAndRedeploy = {
-      requires_spot_at_first_assignment:  true,
-      sell_at_assignment_recovery:        sellRecovery,
-      realized_loss_at_assignment:        realizedLoss,
-      capital_to_redeploy:                toRedeploy,
+      requires_spot_at_each_assignment:   true,
+      assignment_count:                   assignmentCount,
+      total_capital_to_redeploy:          totalCapitalToRedeploy,
+      total_realized_losses:              totalRealizedLosses,
       avg_csp_return_per_capital_day:     avg_return_per_capital_day,
       sample_size_csps_used:              sample_size,
-      estimated_csp_pnl_over_lifespan:    estCspPnl,
+      estimated_csp_pnl_over_lifespan:    estCspPnlTotal,
       net_outcome_if_cut_and_redeploy:    netOutcome,
       vs_actual_pnl:                      vsActual,
       verdict: computeVerdict(lifespanStatus, vsActual, true),
@@ -350,6 +372,7 @@ export function buildLifespan(raw, cspBaseline, today) {
       assignment_count_in_baseline:       assignment_count,
       assignment_rate_in_baseline:        assignment_rate,
       avg_realized_loss_in_baseline:      avg_realized_loss_per_assignment,
+      assignment_breakdown:               breakdown,
     };
   }
 
@@ -433,7 +456,7 @@ export function buildLifespan(raw, cspBaseline, today) {
 
     computed_at: new Date().toISOString(),
     data_completeness: {
-      has_spot_at_first_assignment: hasSpotAtFirst,
+      has_spot_at_each_assignment: hasSpotAtEachAssignment,
       has_all_ccs:                  true,
       has_disposal_event:           lifespanStatus === "closed",
       warnings,
