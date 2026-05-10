@@ -21,7 +21,7 @@ import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
 import { supabase } from "../lib/supabase";
 import { groupStrategicTagsByPosition, positionKey, STRATEGIC_TAG_PREFIXES } from "../lib/tags";
-import { PositionTagChip, PositionTagOverflow } from "./PositionTagChip";
+import { PositionTagChip } from "./PositionTagChip";
 
 // ── Roll Analysis card section ────────────────────────────────────────────────
 
@@ -597,8 +597,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
               if (da !== db) return da - db;
               return a.tag.localeCompare(b.tag);
             });
-            const firstTag = sortedTags[0];
-            const overflow = Math.max(0, sortedTags.length - 1);
+            const hasTagRow = sortedTags.length > 0;
 
             let priceTargets = null;
             if (isExpanded) {
@@ -613,7 +612,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
               <React.Fragment key={i}>
                 <tr
                   style={{
-                    borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
+                    borderBottom: (hasTagRow || isExpanded) ? "none" : `1px solid ${theme.border.default}`,
                     borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
                     cursor:       canExpand ? "pointer" : "default",
                     background:   highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
@@ -648,19 +647,6 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                       {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
-                      {firstTag && (
-                        <PositionTagChip
-                          tag={firstTag.tag}
-                          compact={true}
-                          onClick={() => onShowJournalEntry?.(firstTag.entryId)}
-                        />
-                      )}
-                      {overflow > 0 && canExpand && (
-                        <PositionTagOverflow
-                          count={overflow}
-                          onClick={() => setExpandedRowKey(isExpanded ? null : rowKey)}
-                        />
-                      )}
                     </span>
                   )}
                   {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
@@ -680,51 +666,53 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                     { width: 30, textAlign: "center", padding: "9px 4px" }
                   )}
                 </tr>
+                {hasTagRow && (
+                  <tr
+                    style={{
+                      borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
+                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
+                      cursor:       canExpand ? "pointer" : "default",
+                      background:   highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
+                    }}
+                    onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
+                  >
+                    <td
+                      colSpan={isMobile ? 5 : 10}
+                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[2]}px` }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1] }}>
+                        {sortedTags.map(t => (
+                          <PositionTagChip
+                            key={t.tag}
+                            tag={t.tag}
+                            compact={false}
+                            onClick={() => onShowJournalEntry?.(t.entryId)}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {isExpanded && (
                   <tr>
                     <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
-                      {(sortedTags.length > 0 || onTagPosition) && (
+                      {onTagPosition && (
                         <div style={{
-                          padding: theme.space[3],
+                          padding: `${theme.space[2]}px ${theme.space[3]}px`,
                           background: theme.bg.surface,
                           borderTop: `1px solid ${theme.border.default}`,
                         }}>
-                          <div style={{
-                            color: theme.text.subtle, fontSize: theme.size.xs,
-                            textTransform: "uppercase", letterSpacing: "0.8px",
-                            marginBottom: theme.space[2], fontWeight: 700,
-                          }}>
-                            Strategic context
-                          </div>
-                          {sortedTags.length > 0 ? (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1], marginBottom: theme.space[2] }}>
-                              {sortedTags.map(t => (
-                                <PositionTagChip
-                                  key={t.tag}
-                                  tag={t.tag}
-                                  compact={false}
-                                  onClick={() => onShowJournalEntry?.(t.entryId)}
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <div style={{ color: theme.text.subtle, fontSize: theme.size.sm, marginBottom: theme.space[2], fontStyle: "italic" }}>
-                              No strategic tags yet.
-                            </div>
-                          )}
-                          {onTagPosition && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); onTagPosition(pos); }}
-                              style={{
-                                background: "transparent", border: "none", padding: 0,
-                                color: theme.text.muted, cursor: "pointer",
-                                fontSize: theme.size.sm, fontFamily: "inherit",
-                                textDecoration: "underline",
-                              }}
-                            >
-                              + Tag
-                            </button>
-                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onTagPosition(pos); }}
+                            style={{
+                              background: "transparent", border: "none", padding: 0,
+                              color: theme.text.muted, cursor: "pointer",
+                              fontSize: theme.size.sm, fontFamily: "inherit",
+                              textDecoration: "underline",
+                            }}
+                          >
+                            + Tag
+                          </button>
                         </div>
                       )}
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
