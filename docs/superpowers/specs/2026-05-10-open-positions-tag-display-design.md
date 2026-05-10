@@ -76,6 +76,37 @@ The expanded row currently renders `PriceTargetPanel` and a cushion-state alert 
 - If a tag appears in multiple journal entries, clicking jumps to the **most recent** matching entry.
 - If no in-scope tags exist for the position, the block is omitted entirely (don't render an empty header).
 
+## Adding tags from the position page
+
+A `+ Tag` affordance in the expanded row gives a fast path to add a strategic tag without leaving the Open Positions table. Editing or deleting *existing* tags continues to flow through click-the-chip → jump to source entry → edit there (the same path as journal-entry edits today). Rationale: tags live on journal entries, not on positions, so a single per-position "delete this tag" action would have ambiguous semantics when the tag exists on multiple entries. v1 keeps add (lightweight) inline and edit/delete (heavier) routed through the journal tab.
+
+### Affordance placement
+At the bottom of the **Strategic context** block in the expanded row, render a `+ Tag` button (compact, `theme.text.muted` text, no background — looks like a link). If the position has no tags yet, the Strategic context block isn't rendered at all; in that case the `+ Tag` button appears as a small standalone row at the top of the expanded panel so the user can still add the first tag.
+
+### Click behavior
+Clicking `+ Tag` opens the existing `JournalQuickAdd` composer pre-filled to the position. This reuses all the existing composer infrastructure — no new mutation API, no new save path.
+
+Specifically:
+- `entryType` → `"position_note"`
+- `linkedPosition` → the position object (the composer already accepts this; see [JournalQuickAdd.jsx:33](src/components/journal/JournalQuickAdd.jsx:33))
+- `formTags` → `[]` (empty; user fills in)
+- Cursor focus on the `TagInput` field
+- Title and body left empty
+
+### What gets created
+A new `journal_entries` row with `type: "position_note"`, ticker/strike/expiry/type fields populated from the linked position, the user's chosen tags, and an empty body. Title can auto-generate from the position label (e.g. `SOFI Shares — tag note`) so the journal-list view doesn't show an unlabeled entry.
+
+**Body is not required.** The tag *is* the content. Forcing the user to write prose defeats the "fast inline add" goal. If `JournalQuickAdd`'s save path currently requires a non-empty body, we relax that for `position_note` entries created via this path. (Confirm during implementation; if the constraint is enforced, add `body: "(tag-only)"` as a fallback.)
+
+### Intent shape
+The `+ Tag` action extends the `journalIntent` discriminated union with a fourth variant:
+
+```js
+| { kind: "tag_position", position: PositionObject }
+```
+
+`JournalQuickAdd`'s intent-handling effect ([JournalQuickAdd.jsx:173](src/components/journal/JournalQuickAdd.jsx:173)) gains a branch: on `kind === "tag_position"`, set `entryType="position_note"`, set `linkedPosition`, open the composer, and focus the TagInput.
+
 ## Click behavior — link out to source journal entry
 
 Click a chip → land on Review → Journal subview, with the source entry scrolled into view and `defaultExpanded`.
@@ -92,6 +123,7 @@ journalIntent:
   | { kind: "new_entry" }
   | { kind: "eod_update" }
   | { kind: "show_entry", entryId: string }
+  | { kind: "tag_position", position: PositionObject }
   | null
 ```
 
@@ -148,10 +180,10 @@ Group by `(ticker, type, strike, expiry)` (Shares: just `ticker`) into a map; pe
 | File | Change |
 |---|---|
 | [src/lib/tags.js](src/lib/tags.js) | Add `STRATEGIC_TAG_PREFIXES = ["earnings-play", "signal", "macro"]` and `getStrategicTagsForPositions(tickers) → Promise<Map<positionKey, {tag, entryId, createdAt}[]>>` helper. |
-| [src/components/OpenPositionsTab.jsx](src/components/OpenPositionsTab.jsx) | Hook to fetch strategic tags. Pass tag map down to `PositionsTable`. Render chips inline after ticker; render Strategic context block in expanded row. New `onShowJournalEntry` prop wired to App. |
+| [src/components/OpenPositionsTab.jsx](src/components/OpenPositionsTab.jsx) | Hook to fetch strategic tags. Pass tag map down to `PositionsTable`. Render chips inline after ticker; render Strategic context block + `+ Tag` button in expanded row. New `onShowJournalEntry` and `onTagPosition` props wired to App. |
 | [src/components/journal/journalConstants.js](src/components/journal/journalConstants.js) | Add `TAG_CATEGORY_COLORS` map. |
-| [src/App.jsx](src/App.jsx) | Update `journalIntent` shape (string → object). Add wiring for `onShowJournalEntry` → set intent + switch to Review/Journal. |
-| [src/components/journal/JournalQuickAdd.jsx](src/components/journal/JournalQuickAdd.jsx) | Update intent reads (`=== "new_entry"` → `?.kind === "new_entry"`). |
+| [src/App.jsx](src/App.jsx) | Update `journalIntent` shape (string → object). Add wiring for `onShowJournalEntry` → set intent + switch to Review/Journal. Add wiring for `onTagPosition` → set `tag_position` intent + switch to Review/Journal. |
+| [src/components/journal/JournalQuickAdd.jsx](src/components/journal/JournalQuickAdd.jsx) | Update intent reads (`=== "new_entry"` → `?.kind === "new_entry"`). New branch for `kind === "tag_position"`: set `entryType="position_note"`, `linkedPosition`, open composer, focus TagInput. Relax body-required check for empty-body `position_note` saves if currently enforced. |
 | [src/components/journal/JournalTab.jsx](src/components/journal/JournalTab.jsx) | New effect for `kind: "show_entry"` — scroll-to-id + defaultExpanded for matching entry. Add `id={\`journal-entry-${entry.id}\`}` to each card wrapper. |
 | New: `src/components/PositionTagChip.jsx` | Small presentational chip — props: `tag`, `entryId`, `onClick`, `compact?`. |
 
@@ -163,6 +195,8 @@ Group by `(ticker, type, strike, expiry)` (Shares: just `ticker`) into a map; pe
 - Manual: click a tag chip, confirm Review → Journal opens with the right entry expanded and scrolled into view.
 - Manual: position with 0/1/2/3+ tags renders correctly on collapsed row (mobile + desktop).
 - Manual: LEAPS chip renders inline; LEAPS row doesn't expand (unchanged).
+- Manual: click `+ Tag` on a position with no tags → composer opens with the position pre-linked, TagInput focused; saving with tags only (empty body) succeeds and the new tag appears on the position row after refresh.
+- Manual: click `+ Tag` on a position that already has tags → same composer flow; new entry's tags union with existing on next render.
 
 ## Open questions
 
