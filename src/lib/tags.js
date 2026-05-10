@@ -114,8 +114,11 @@ export function groupStrategicTagsByPosition(entries, positions) {
 
   // Walk entries newest-first; for each strategic tag, keep the first occurrence
   // (which is the most recent thanks to the sort).
-  const sorted = [...entries].sort((a, b) =>
-    String(b.created_at).localeCompare(String(a.created_at)));
+  const sorted = [...entries].sort((a, b) => {
+    const tcmp = String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+    if (tcmp !== 0) return tcmp;
+    return String(b.id ?? "").localeCompare(String(a.id ?? ""));
+  });
 
   const out = new Map(); // posKey → Map<tag, {tag, entryId, createdAt}>
   for (const e of sorted) {

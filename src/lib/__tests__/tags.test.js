@@ -97,4 +97,22 @@ describe("groupStrategicTagsByPosition", () => {
     const map = groupStrategicTagsByPosition([], positions);
     expect(map.size).toBe(0);
   });
+
+  it("when two entries share created_at, dedupe prefers the entry with the larger id (deterministic tiebreak)", () => {
+    const tied = [
+      { id: "a", ticker: "SOFI", type: "CSP", strike: 14, expiry: "2026-06-19", tags: ["signal:ryan"], created_at: "2026-05-09T10:00:00Z" },
+      { id: "b", ticker: "SOFI", type: "CSP", strike: 14, expiry: "2026-06-19", tags: ["signal:ryan"], created_at: "2026-05-09T10:00:00Z" },
+    ];
+    const map = groupStrategicTagsByPosition(tied, positions);
+    expect(map.get("SOFI|CSP|14|2026-06-19")[0].entryId).toBe("b");
+  });
+
+  it("entries missing created_at do not float ahead of real-timestamped entries during dedupe", () => {
+    const mixed = [
+      { id: "no-date", ticker: "SOFI", type: "CSP", strike: 14, expiry: "2026-06-19", tags: ["signal:ryan"], created_at: undefined },
+      { id: "real",    ticker: "SOFI", type: "CSP", strike: 14, expiry: "2026-06-19", tags: ["signal:ryan"], created_at: "2026-05-01T10:00:00Z" },
+    ];
+    const map = groupStrategicTagsByPosition(mixed, positions);
+    expect(map.get("SOFI|CSP|14|2026-06-19")[0].entryId).toBe("real");
+  });
 });
