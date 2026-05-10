@@ -678,9 +678,19 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                   >
                     <td
                       colSpan={isMobile ? 5 : 10}
-                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[5]}px` }}
+                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[3]}px` }}
                     >
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1] }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1], alignItems: "center" }}>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            color:      theme.text.faint,
+                            fontSize:   theme.size.md,
+                            lineHeight: 1,
+                            marginRight: theme.space[1],
+                            userSelect: "none",
+                          }}
+                        >↳</span>
                         {sortedTags.map(t => (
                           <PositionTagChip
                             key={t.tag}
