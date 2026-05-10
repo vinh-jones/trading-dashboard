@@ -678,7 +678,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                   >
                     <td
                       colSpan={isMobile ? 5 : 10}
-                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[2]}px` }}
+                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[5]}px` }}
                     >
                       <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1] }}>
                         {sortedTags.map(t => (
