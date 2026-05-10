@@ -20,7 +20,7 @@ import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
 import { supabase } from "../lib/supabase";
-import { groupStrategicTagsByPosition } from "../lib/tags";
+import { groupStrategicTagsByPosition, positionKey, STRATEGIC_TAG_PREFIXES } from "../lib/tags";
 import { PositionTagChip, PositionTagOverflow } from "./PositionTagChip";
 
 // ── Roll Analysis card section ────────────────────────────────────────────────
@@ -426,11 +426,6 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
 
-  function posKey(pos) {
-    if (pos.type === "Shares") return `${pos.ticker}|Shares`;
-    return `${pos.ticker}|${pos.type}|${pos.strike}|${pos.expiry_date ?? pos.expiry}`;
-  }
-
   function handleSort(col) {
     if (sortCol === col) {
       setSortDir(d => d === "desc" ? "asc" : "desc");
@@ -592,12 +587,11 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
             const rowKey   = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
             const isExpanded = canExpand && expandedRowKey === rowKey;
 
-            const TAG_ORDER = ["earnings-play", "signal", "macro"];
-            const sortedTags = [...(strategicTagsByPos?.get(posKey(pos)) ?? [])].sort((a, b) => {
+            const sortedTags = [...(strategicTagsByPos?.get(positionKey(pos)) ?? [])].sort((a, b) => {
               const pa = a.tag.split(":")[0];
               const pb = b.tag.split(":")[0];
-              const da = TAG_ORDER.indexOf(pa);
-              const db = TAG_ORDER.indexOf(pb);
+              const da = STRATEGIC_TAG_PREFIXES.indexOf(pa);
+              const db = STRATEGIC_TAG_PREFIXES.indexOf(pb);
               if (da !== db) return da - db;
               return a.tag.localeCompare(b.tag);
             });

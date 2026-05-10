@@ -85,7 +85,7 @@ function isStrategic(tag) {
   return STRATEGIC_TAG_PREFIXES.includes(tagPrefix(tag));
 }
 
-function positionKey(p) {
+export function positionKey(p) {
   if (p.type === "Shares") return `${p.ticker}|Shares`;
   return `${p.ticker}|${p.type}|${p.strike}|${p.expiry_date ?? p.expiry}`;
 }
