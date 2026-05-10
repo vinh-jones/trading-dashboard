@@ -102,7 +102,7 @@ export default function TradeDashboard() {
   useHotkey("n", () => {
     setMode("review");
     setSubViewRaw("journal");
-    setJournalIntent("new_entry");
+    setJournalIntent({ kind: "new_entry" });
   });
 
   const paletteItems = useMemo(() => buildPaletteItems({ positions }), [positions]);
@@ -133,7 +133,7 @@ export default function TradeDashboard() {
       case "new_eod_entry":
         setMode("review");
         setSubViewRaw("journal");
-        setJournalIntent("eod_update");
+        setJournalIntent({ kind: "eod_update" });
         return;
       case "open_radar":
         setMode("explore");
@@ -153,6 +153,18 @@ export default function TradeDashboard() {
       default:
         return;
     }
+  }
+
+  function handleShowJournalEntry(entryId) {
+    setMode("review");
+    setSubViewRaw("journal");
+    setJournalIntent({ kind: "show_entry", entryId });
+  }
+
+  function handleTagPosition(position) {
+    setMode("review");
+    setSubViewRaw("journal");
+    setJournalIntent({ kind: "tag_position", position });
   }
 
   // ── Filter state — preserved from prior shell ─────────────────────────────
@@ -278,6 +290,8 @@ export default function TradeDashboard() {
                   setSubViewRaw("positions");
                   window.history.replaceState(null, "", " ");
                 }}
+                onShowJournalEntry={handleShowJournalEntry}
+                onTagPosition={handleTagPosition}
               />
             )}
             {mode === "review" && (

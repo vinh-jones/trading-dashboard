@@ -53,6 +53,9 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
   const [inlineSaving,  setInlineSaving]  = useState(false);
   const [inlineError,   setInlineError]   = useState(null);
 
+  // Target entry id for "show_entry" intent — used to scroll-into-view + auto-expand.
+  const [targetEntryId, setTargetEntryId] = useState(null);
+
   // Q5: focus states for filter selects
   const [focusedFilter, setFocusedFilter] = useState(null);
 
@@ -74,6 +77,33 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
     const ccs  = (positions.assigned_shares || []).reduce((sum, s) => sum + (s.active_cc?.premium_collected || 0), 0);
     return csps + ccs;
   }, [positions]);
+
+  // Handle "show_entry" intent: scroll and auto-expand the matching card.
+  useEffect(() => {
+    if (journalIntent?.kind !== "show_entry") return;
+    const id = journalIntent.entryId;
+    setTargetEntryId(id);
+    onJournalIntentConsumed?.();
+    // Scroll once the card is in the DOM. We retry briefly because the card
+    // may not be rendered yet if filters/data aren't loaded.
+    let cancelled = false;
+    let tries = 0;
+    let timer = null;
+    const tick = () => {
+      if (cancelled) return;
+      const el = document.getElementById(`journal-entry-${id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (++tries < 20) timer = setTimeout(tick, 100);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [journalIntent, onJournalIntentConsumed]);
 
   useEffect(() => { fetchEntries(); }, [filterType, filterTicker, filterSince]);
 
@@ -282,9 +312,13 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
                               saving={inlineSaving}
                               error={inlineError}
                             />
-                          : entry.entry_type === "eod_update"
-                            ? <EODBand key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
-                            : <JournalEntryCard key={entry.id} entry={entry} onEdit={handleEdit} onDelete={handleDelete} />;
+                          : (
+                            <div key={entry.id} id={`journal-entry-${entry.id}`}>
+                              {entry.entry_type === "eod_update"
+                                ? <EODBand entry={entry} onEdit={handleEdit} onDelete={handleDelete} />
+                                : <JournalEntryCard entry={entry} onEdit={handleEdit} onDelete={handleDelete} defaultExpanded={entry.id === targetEntryId} />}
+                            </div>
+                          );
 
                       return [...eodEntries.map(renderCard), ...otherEntries.map(renderCard)];
                     })()}

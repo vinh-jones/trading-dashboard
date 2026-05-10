@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLiveVix } from "../../hooks/useLiveVix";
 import { useQuotes } from "../../hooks/useQuotes";
 import { generateFocusItems } from "../../lib/focusEngine";
@@ -44,6 +44,8 @@ export function JournalQuickAdd({
   const [hoveredMood,    setHoveredMood]    = useState(null);
 
   const { vocabulary } = useTagVocabulary();
+
+  const tagFieldRef = useRef(null);
 
   // ── EOD auto-populated values ──
   const eodAutoFreeCash = useMemo(() =>
@@ -169,16 +171,33 @@ export function JournalQuickAdd({
       })),
   [trades]);
 
-  // ── Journal intent handling (moved from JournalTab, extended for new_entry) ──
+  // ── Journal intent handling — discriminated by .kind ──
   useEffect(() => {
-    if (journalIntent === "eod_update") {
+    if (!journalIntent) return;
+    if (journalIntent.kind === "eod_update") {
       setEntryType("eod_update");
       onOpen();
       onJournalIntentConsumed?.();
-    } else if (journalIntent === "new_entry") {
+    } else if (journalIntent.kind === "new_entry") {
       onOpen();
       onJournalIntentConsumed?.();
+    } else if (journalIntent.kind === "tag_position") {
+      const pos = journalIntent.position;
+      setEntryType("position_note");
+      setLinkedPosition(pos);
+      setLinkedTrade(null);
+      setFormTitle(buildAutoTitle("position_note", pos, null));
+      setFormTags([]);
+      setFormBody("");
+      onOpen();
+      onJournalIntentConsumed?.();
+      // Focus the TagInput once the composer opens.
+      setTimeout(() => {
+        const input = tagFieldRef.current?.querySelector("input");
+        input?.focus();
+      }, 50);
     }
+    // "show_entry" is handled in JournalTab.
   }, [journalIntent, onJournalIntentConsumed, onOpen]);
 
   // ── Esc closes the bloom ──
@@ -211,10 +230,11 @@ export function JournalQuickAdd({
   }
 
   async function handleSave() {
-    const isEOD = entryType === "eod_update";
-    const titleToSave = isEOD ? `EOD — ${formDate}` : formTitle.trim();
+    const isEOD          = entryType === "eod_update";
+    const isPositionNote = entryType === "position_note";
+    const titleToSave    = isEOD ? `EOD — ${formDate}` : formTitle.trim();
     if (!isEOD && !titleToSave) { setSaveError("Title is required."); return; }
-    if (!formBody.trim())       { setSaveError("Notes are required."); return; }
+    if (!isPositionNote && !formBody.trim()) { setSaveError("Notes are required."); return; }
     setSaving(true);
     setSaveError(null);
     try {
@@ -535,7 +555,12 @@ export function JournalQuickAdd({
               placeholder="Auto-filled from position, or enter manually"
             />
           </JournalField>
-          <JournalField label="Notes">
+          <JournalField label="Tags">
+            <div ref={tagFieldRef}>
+              <TagInput value={formTags} onChange={setFormTags} vocabulary={vocabulary} />
+            </div>
+          </JournalField>
+          <JournalField label="Notes (optional for position notes)">
             <JournalAutoTextarea value={formBody} onChange={e => setFormBody(e.target.value)} minH={120} placeholder="Ongoing observations, roll considerations, delta watch..." />
           </JournalField>
         </>
