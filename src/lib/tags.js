@@ -74,15 +74,25 @@ export async function getTagUsageStats({ from, to } = {}) {
 
 // ── Strategic-tag display for open positions ─────────────────────────────────
 
+// Tags whose prefix is in this list are NOT shown on position rows.
+// position-action: action history, redundant with the position record.
+// framework:      process descriptors, not strategic state.
+// drift:          private reflection, inappropriate to surface on a position display.
+// Anything else — including ad-hoc user-coined prefixes (e.g. "structure:cost-basis-layer",
+// "thesis:*", "strategy:*") — counts as strategic context and surfaces.
+export const NON_STRATEGIC_TAG_PREFIXES = ["position-action", "framework", "drift"];
+
+// Display ordering for known strategic prefixes; unknown prefixes sort after these.
 export const STRATEGIC_TAG_PREFIXES = ["earnings-play", "signal", "macro"];
 
 function tagPrefix(tag) {
+  if (typeof tag !== "string") return "";
   const i = tag.indexOf(":");
   return i === -1 ? tag : tag.slice(0, i);
 }
 
 function isStrategic(tag) {
-  return STRATEGIC_TAG_PREFIXES.includes(tagPrefix(tag));
+  return !NON_STRATEGIC_TAG_PREFIXES.includes(tagPrefix(tag));
 }
 
 export function positionKey(p) {
