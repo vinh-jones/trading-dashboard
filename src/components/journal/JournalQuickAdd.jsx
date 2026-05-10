@@ -239,7 +239,11 @@ export function JournalQuickAdd({
     setSaveError(null);
     try {
       const tags = formTags;
-      const ticker = linkedPosition?.ticker ?? linkedTrade?.ticker ?? null;
+      const linked = linkedPosition ?? linkedTrade ?? null;
+      const ticker = linked?.ticker ?? null;
+      const ptype  = linked?.type   ?? null;
+      const strike = linked?.strike ?? null;
+      const expiry = linked?.expiry_date ?? linked?.expiry ?? null;
       const now    = new Date().toISOString();
       const src    = isEOD ? null : (formSource || null);
       const mood   = isEOD ? formMood : null;
@@ -263,6 +267,9 @@ export function JournalQuickAdd({
         position_id:     linkedPosition?.id ?? null,
         entry_date:      formDate,
         ticker,
+        type:            ptype,
+        strike,
+        expiry,
         title:           titleToSave,
         body:            formBody.trim(),
         tags,

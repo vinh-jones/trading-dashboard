@@ -590,8 +590,10 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
             const sortedTags = [...(strategicTagsByPos?.get(positionKey(pos)) ?? [])].sort((a, b) => {
               const pa = a.tag.split(":")[0];
               const pb = b.tag.split(":")[0];
-              const da = STRATEGIC_TAG_PREFIXES.indexOf(pa);
-              const db = STRATEGIC_TAG_PREFIXES.indexOf(pb);
+              const ia = STRATEGIC_TAG_PREFIXES.indexOf(pa);
+              const ib = STRATEGIC_TAG_PREFIXES.indexOf(pb);
+              const da = ia === -1 ? Number.MAX_SAFE_INTEGER : ia;
+              const db = ib === -1 ? Number.MAX_SAFE_INTEGER : ib;
               if (da !== db) return da - db;
               return a.tag.localeCompare(b.tag);
             });

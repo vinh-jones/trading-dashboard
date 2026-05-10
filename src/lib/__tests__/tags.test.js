@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupStrategicTagsByPosition, STRATEGIC_TAG_PREFIXES } from "../tags";
+import { groupStrategicTagsByPosition, STRATEGIC_TAG_PREFIXES, NON_STRATEGIC_TAG_PREFIXES } from "../tags";
 
 const positions = {
   open_csps: [
@@ -34,9 +34,12 @@ const entries = [
   { id: "e7", ticker: "ZZZZ", type: "CSP", strike: 5, expiry: "2026-06-19", tags: ["signal:ryan"], created_at: "2026-05-09T10:00:00Z" },
 ];
 
-describe("STRATEGIC_TAG_PREFIXES", () => {
-  it("includes earnings-play, signal, macro and excludes others", () => {
+describe("tag prefix lists", () => {
+  it("STRATEGIC_TAG_PREFIXES drives display ordering for known prefixes", () => {
     expect(STRATEGIC_TAG_PREFIXES).toEqual(["earnings-play", "signal", "macro"]);
+  });
+  it("NON_STRATEGIC_TAG_PREFIXES are the only ones excluded from position rows", () => {
+    expect(NON_STRATEGIC_TAG_PREFIXES).toEqual(["position-action", "framework", "drift"]);
   });
 });
 
@@ -114,5 +117,15 @@ describe("groupStrategicTagsByPosition", () => {
     ];
     const map = groupStrategicTagsByPosition(mixed, positions);
     expect(map.get("SOFI|CSP|14|2026-06-19")[0].entryId).toBe("real");
+  });
+
+  it("surfaces user-coined prefixes (e.g. structure:*) — only position-action / framework / drift are excluded", () => {
+    const userTagged = [
+      { id: "u1", ticker: "SOFI", type: "CSP", strike: 14, expiry: "2026-06-19", tags: ["structure:cost-basis-layer", "thesis:long-volatility"], created_at: "2026-05-10T10:00:00Z" },
+    ];
+    const map = groupStrategicTagsByPosition(userTagged, positions);
+    const sofi = map.get("SOFI|CSP|14|2026-06-19");
+    expect(sofi).toBeTruthy();
+    expect(sofi.map(t => t.tag).sort()).toEqual(["structure:cost-basis-layer", "thesis:long-volatility"]);
   });
 });
