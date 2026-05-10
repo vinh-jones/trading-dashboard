@@ -155,6 +155,18 @@ export default function TradeDashboard() {
     }
   }
 
+  function handleShowJournalEntry(entryId) {
+    setMode("review");
+    setSubViewRaw("journal");
+    setJournalIntent({ kind: "show_entry", entryId });
+  }
+
+  function handleTagPosition(position) {
+    setMode("review");
+    setSubViewRaw("journal");
+    setJournalIntent({ kind: "tag_position", position });
+  }
+
   // ── Filter state — preserved from prior shell ─────────────────────────────
   const [selectedTicker,   setSelectedTicker]   = useState(null);
   const [selectedType,     setSelectedType]     = useState(null);
@@ -278,6 +290,8 @@ export default function TradeDashboard() {
                   setSubViewRaw("positions");
                   window.history.replaceState(null, "", " ");
                 }}
+                onShowJournalEntry={handleShowJournalEntry}
+                onTagPosition={handleTagPosition}
               />
             )}
             {mode === "review" && (

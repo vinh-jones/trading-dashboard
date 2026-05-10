@@ -19,6 +19,9 @@ import { computeCushion } from "../lib/cushionBreach";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
+import { supabase } from "../lib/supabase";
+import { groupStrategicTagsByPosition } from "../lib/tags";
+import { PositionTagChip, PositionTagOverflow } from "./PositionTagChip";
 
 // ── Roll Analysis card section ────────────────────────────────────────────────
 
@@ -415,13 +418,18 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail }) {
+function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
   const canExpand = !isLeap;
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("desc");
+
+  function posKey(pos) {
+    if (pos.type === "Shares") return `${pos.ticker}|Shares`;
+    return `${pos.ticker}|${pos.type}|${pos.strike}|${pos.expiry_date ?? pos.expiry}`;
+  }
 
   function handleSort(col) {
     if (sortCol === col) {
@@ -584,6 +592,18 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
             const rowKey   = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
             const isExpanded = canExpand && expandedRowKey === rowKey;
 
+            const TAG_ORDER = ["earnings-play", "signal", "macro"];
+            const sortedTags = [...(strategicTagsByPos?.get(posKey(pos)) ?? [])].sort((a, b) => {
+              const pa = a.tag.split(":")[0];
+              const pb = b.tag.split(":")[0];
+              const da = TAG_ORDER.indexOf(pa);
+              const db = TAG_ORDER.indexOf(pb);
+              if (da !== db) return da - db;
+              return a.tag.localeCompare(b.tag);
+            });
+            const firstTag = sortedTags[0];
+            const overflow = Math.max(0, sortedTags.length - 1);
+
             let priceTargets = null;
             if (isExpanded) {
               const currentIV         = quoteMap.get(pos.ticker)?.iv ?? null;
@@ -632,6 +652,19 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                       {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
+                      {firstTag && (
+                        <PositionTagChip
+                          tag={firstTag.tag}
+                          compact={true}
+                          onClick={() => onShowJournalEntry?.(firstTag.entryId)}
+                        />
+                      )}
+                      {overflow > 0 && canExpand && (
+                        <PositionTagOverflow
+                          count={overflow}
+                          onClick={() => setExpandedRowKey(isExpanded ? null : rowKey)}
+                        />
+                      )}
                     </span>
                   )}
                   {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
@@ -651,9 +684,53 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                     { width: 30, textAlign: "center", padding: "9px 4px" }
                   )}
                 </tr>
-                {isExpanded && (priceTargets || (pos.cushion_state && pos.cushion_state !== "safe")) && (
+                {isExpanded && (
                   <tr>
                     <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
+                      {(sortedTags.length > 0 || onTagPosition) && (
+                        <div style={{
+                          padding: theme.space[3],
+                          background: theme.bg.surface,
+                          borderTop: `1px solid ${theme.border.default}`,
+                        }}>
+                          <div style={{
+                            color: theme.text.subtle, fontSize: theme.size.xs,
+                            textTransform: "uppercase", letterSpacing: "0.8px",
+                            marginBottom: theme.space[2], fontWeight: 700,
+                          }}>
+                            Strategic context
+                          </div>
+                          {sortedTags.length > 0 ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1], marginBottom: theme.space[2] }}>
+                              {sortedTags.map(t => (
+                                <PositionTagChip
+                                  key={t.tag}
+                                  tag={t.tag}
+                                  compact={false}
+                                  onClick={() => onShowJournalEntry?.(t.entryId)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ color: theme.text.subtle, fontSize: theme.size.sm, marginBottom: theme.space[2], fontStyle: "italic" }}>
+                              No strategic tags yet.
+                            </div>
+                          )}
+                          {onTagPosition && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onTagPosition(pos); }}
+                              style={{
+                                background: "transparent", border: "none", padding: 0,
+                                color: theme.text.muted, cursor: "pointer",
+                                fontSize: theme.size.sm, fontFamily: "inherit",
+                                textDecoration: "underline",
+                              }}
+                            >
+                              + Tag
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
@@ -676,7 +753,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
 
 const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 
-export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail }) {
+export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition }) {
   const { positions, account } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
@@ -696,6 +773,33 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
     const timer = setTimeout(() => setHighlightedTicker(null), 3000);
     return () => clearTimeout(timer);
   }, [positionIntent]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [strategicTagsByPos, setStrategicTagsByPos] = useState(new Map());
+
+  useEffect(() => {
+    const tickers = [
+      ...(open_csps        ?? []).map(p => p.ticker),
+      ...(open_leaps       ?? []).map(p => p.ticker),
+      ...(assigned_shares  ?? []).map(s => s.ticker),
+    ];
+    const uniqTickers = [...new Set(tickers)];
+    if (uniqTickers.length === 0) {
+      setStrategicTagsByPos(new Map());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("journal_entries")
+        .select("id, ticker, type, strike, expiry, tags, created_at")
+        .in("ticker", uniqTickers)
+        .not("tags", "is", null);
+      if (cancelled) return;
+      if (error) { console.warn("[OpenPositionsTab] tag fetch failed:", error.message); setStrategicTagsByPos(new Map()); return; }
+      setStrategicTagsByPos(groupStrategicTagsByPosition(data ?? [], { open_csps, open_leaps, assigned_shares }));
+    })();
+    return () => { cancelled = true; };
+  }, [open_csps, open_leaps, assigned_shares]);
   const [threshold, setThreshold]     = useState(25);
   const [thresholdInput, setThresholdInput] = useState("25");
   const [thresholdError, setThresholdError] = useState(null);
@@ -861,6 +965,9 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
             isMobile={isMobile}
             highlightedTicker={highlightedTicker}
             onOpenTickerDetail={onOpenTickerDetail}
+            strategicTagsByPos={strategicTagsByPos}
+            onShowJournalEntry={onShowJournalEntry}
+            onTagPosition={onTagPosition}
           />
         </>
       )}
