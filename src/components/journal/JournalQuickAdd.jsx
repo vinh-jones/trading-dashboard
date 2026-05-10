@@ -169,16 +169,19 @@ export function JournalQuickAdd({
       })),
   [trades]);
 
-  // ── Journal intent handling (moved from JournalTab, extended for new_entry) ──
+  // ── Journal intent handling — discriminated by .kind ──
   useEffect(() => {
-    if (journalIntent === "eod_update") {
+    if (!journalIntent) return;
+    if (journalIntent.kind === "eod_update") {
       setEntryType("eod_update");
       onOpen();
       onJournalIntentConsumed?.();
-    } else if (journalIntent === "new_entry") {
+    } else if (journalIntent.kind === "new_entry") {
       onOpen();
       onJournalIntentConsumed?.();
     }
+    // "show_entry" and "tag_position" are handled in their respective consumers
+    // (JournalTab for show_entry; this file's Task 5 for tag_position).
   }, [journalIntent, onJournalIntentConsumed, onOpen]);
 
   // ── Esc closes the bloom ──
