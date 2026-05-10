@@ -3,6 +3,7 @@ import { CATEGORY_COLORS, categoryFromTag } from "../lib/tagConstants";
 import { TagChip } from "./journal/TagChip";
 
 function tagSuffix(tag) {
+  if (!tag) return "";
   const i = tag.indexOf(":");
   return i === -1 ? tag : tag.slice(i + 1);
 }
