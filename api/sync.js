@@ -153,6 +153,39 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Auto-journal: assigned shares — one entry per lot ──────────────────
+    // assigned_shares position rows have no open_date (NULL), so they're
+    // excluded by the .gte("open_date", ...) query above. Read their lots
+    // JSONB directly — each lot now carries its own open_date.
+    const { data: sharePositions } = await supabase
+      .from("positions")
+      .select("ticker, lots, source")
+      .eq("position_type", "assigned_shares");
+
+    for (const sp of sharePositions || []) {
+      for (const lot of (sp.lots || [])) {
+        if (!lot.open_date || lot.open_date < JOURNAL_CUTOFF) continue;
+        const title = "Shares — Opened";
+        const key   = `${sp.ticker}|${lot.open_date}|${title}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          toInsert.push({
+            entry_type:  "trade_note",
+            trade_id:    null,
+            position_id: null,
+            entry_date:  lot.open_date,
+            ticker:      sp.ticker,
+            title,
+            body:        "",
+            tags:        [],
+            source:      sp.source || null,
+            created_at:  now,
+            updated_at:  now,
+          });
+        }
+      }
+    }
+
     if (toInsert.length > 0) {
       await supabase.from("journal_entries").insert(toInsert);
     }
