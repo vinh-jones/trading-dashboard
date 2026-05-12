@@ -60,7 +60,9 @@ function CycleEvents({ lifespan, activeCc }) {
   for (const a of lifespan.assignment_events ?? []) {
     events.push({
       date: a.date,
-      label: `CSP $${a.strike} assigned · ${a.shares_added / 100} ct`,
+      label: a.is_direct_purchase
+        ? `Shares bought · ${a.shares_added} sh @ $${a.strike}`
+        : `CSP $${a.strike} assigned · ${a.shares_added / 100} ct`,
       color: theme.blue,
     });
   }

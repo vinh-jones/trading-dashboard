@@ -84,6 +84,8 @@ function computeCurrentlyHeldShares(allTickerTrades) {
   for (const t of allTickerTrades) {
     if (t.type === "CSP" && t.subtype === "Assigned") {
       shares += (parseInt(t.contracts) || 0) * 100;
+    } else if (t.type === "Shares" && t.subtype === "Assigned") {
+      shares += parseInt(t.contracts) || 0;
     } else if (t.type === "CC" && t.subtype === "Assigned") {
       shares -= (parseInt(t.contracts) || 0) * 100;
     } else if (t.type === "Shares" && (t.subtype === "Sold" || t.subtype === "Exit")) {
@@ -114,6 +116,7 @@ export function detectLifespans(ticker, allTickerTrades) {
       t.close_date &&
       (t.close_date >= DATA_QUALITY_THRESHOLD || currentlyHeld > 0) &&
       ((t.type === "CSP" && t.subtype === "Assigned") ||
+        (t.type === "Shares" && t.subtype === "Assigned") ||
         (t.type === "CC" &&
           (t.subtype === "Close" ||
             t.subtype === "Roll Loss" ||
@@ -162,6 +165,35 @@ export function detectLifespans(ticker, allTickerTrades) {
           trade.spot_at_assignment != null
             ? parseFloat(trade.spot_at_assignment)
             : null,
+      });
+      runningShares += sharesAdded;
+
+    } else if (trade.type === "Shares" && trade.subtype === "Assigned") {
+      // Direct share purchase — user bought shares outright (not via CSP assignment).
+      // contracts field is a direct share count (consistent with Shares/Sold).
+      const sharesAdded = trade.contracts ?? 0;
+      if (runningShares === 0) {
+        current = {
+          ticker,
+          assignment_events: [],
+          _cspTrades: [],
+          cc_history: [],
+          partial_dispositions: [],
+          exit_event: null,
+          _disposalTrade: null,
+          _orphanWarnings: [],
+        };
+      }
+      current._cspTrades.push(trade);
+      current.assignment_events.push({
+        date: trade.close_date,
+        triggering_csp_id: trade.id,
+        strike: parseFloat(trade.strike) || 0,
+        csp_premium_collected: 0,
+        shares_added: sharesAdded,
+        capital_added: round2(sharesAdded * (parseFloat(trade.strike) || 0)),
+        spot_at_assignment: null,
+        is_direct_purchase: true,
       });
       runningShares += sharesAdded;
 
@@ -505,14 +537,17 @@ function clusterLifespanDecisions(trades, ticker) {
   const assigned = new Set();
 
   const cspAssignedTrades = trades
-    .filter((t) => t.type === "CSP" && t.subtype === "Assigned")
+    .filter((t) => (t.type === "CSP" || t.type === "Shares") && t.subtype === "Assigned")
     .sort((a, b) => (a.close_date ?? "").localeCompare(b.close_date ?? ""));
   for (const t of cspAssignedTrades) {
+    const isDirect = t.type === "Shares";
     decisions.push({
       decision_id:   nextId(),
-      decision_type: "assignment_taken",
+      decision_type: isDirect ? "shares_purchased" : "assignment_taken",
       decision_date: t.close_date,
-      summary:       `${ticker} CSP $${t.strike} ${t.expiry_date} assigned`,
+      summary:       isDirect
+        ? `${ticker} shares bought · ${t.contracts ?? 0} sh @ $${t.strike}`
+        : `${ticker} CSP $${t.strike} ${t.expiry_date} assigned`,
       net_pnl:       round2(parseFloat(t.premium_collected) || 0),
     });
     assigned.add(t.id);
