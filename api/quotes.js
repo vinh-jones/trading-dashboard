@@ -112,7 +112,7 @@ async function fetchPublicQuotes(token, instruments, attempt = 1) {
 
 function buildInstruments(rows) {
   const equitySymbols = new Set();
-  const optionInstruments = [];
+  const optionSymbols = new Set();
 
   for (const row of rows) {
     const { ticker, type, strike, expiry_date, position_type } = row;
@@ -130,11 +130,11 @@ function buildInstruments(rows) {
 
     if (isCall === undefined) continue;    // Shares or unknown — skip
 
-    const symbol = buildOccSymbol(ticker, expiry_date, isCall, strike);
-    optionInstruments.push({ symbol, type: "OPTION" });
+    optionSymbols.add(buildOccSymbol(ticker, expiry_date, isCall, strike));
   }
 
   const equityInstruments = [...equitySymbols].map(s => ({ symbol: s, type: "EQUITY" }));
+  const optionInstruments = [...optionSymbols].map(s => ({ symbol: s, type: "OPTION" }));
   return { equityInstruments, optionInstruments };
 }
 
