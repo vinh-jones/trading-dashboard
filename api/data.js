@@ -14,8 +14,10 @@ import { reshapePositions } from "./_lib/reshapePositions.js";
 import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  // trades/positions/account_snapshots/daily_snapshots are RLS-locked (no anon
+  // policy) — must use the service role server-side. Anon fallback is local dev only.
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
 }

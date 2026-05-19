@@ -171,11 +171,13 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
       const updateFields = { title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, updated_at: now };
       if (isEOD) updateFields.metadata = metadata;
 
-      const { error } = await supabase
-        .from("journal_entries")
-        .update(updateFields)
-        .eq("id", inlineEditId);
-      if (error) throw error;
+      const resp = await fetch("/api/journal-entry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: inlineEditId, fields: updateFields }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
       setEntries(prev => prev.map(e =>
         e.id === inlineEditId
           ? { ...e, title: titleToSave, body: inlineBody.trim(), tags, source: src, mood, ...(isEOD ? { metadata } : {}) }
@@ -191,8 +193,9 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
 
   async function handleDelete(id) {
     if (!window.confirm("Delete this entry? This cannot be undone.")) return;
-    const { error } = await supabase.from("journal_entries").delete().eq("id", id);
-    if (error) { window.alert(`Delete failed: ${error.message}`); return; }
+    const resp = await fetch(`/api/journal-entry?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) { window.alert(`Delete failed: ${json.error || `HTTP ${resp.status}`}`); return; }
     setEntries(prev => prev.filter(e => e.id !== id));
   }
 
