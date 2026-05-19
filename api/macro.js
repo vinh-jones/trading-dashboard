@@ -412,12 +412,24 @@ async function fetchFearGreed() {
   };
 }
 
+// Finviz Cloudflare 403s datacenter IPs (Vercel), so route through an
+// anti-bot proxy when SCRAPER_API_KEY is set. Falls back to a direct
+// fetch (works from residential IPs / local dev) when unset.
+function finvizUrl(target) {
+  const key = process.env.SCRAPER_API_KEY;
+  if (!key) return target;
+  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}`;
+}
+
 async function fetchS5fi() {
   const headers = { "User-Agent": UA };
+  const proxied = !!process.env.SCRAPER_API_KEY;
+  // Proxy round-trip is slower than a direct hit; give it more headroom.
+  const timeoutMs = proxied ? 25000 : 12000;
 
   const [totalRes, aboveRes] = await Promise.all([
-    fetchWithTimeout("https://finviz.com/screener.ashx?v=111&f=idx_sp500&ft=4", { headers }, 12000),
-    fetchWithTimeout("https://finviz.com/screener.ashx?v=111&f=idx_sp500,ta_sma50_pa&ft=4", { headers }, 12000),
+    fetchWithTimeout(finvizUrl("https://finviz.com/screener?v=111&f=idx_sp500&ft=4"), { headers }, timeoutMs),
+    fetchWithTimeout(finvizUrl("https://finviz.com/screener?v=111&f=idx_sp500,ta_sma50_pa&ft=4"), { headers }, timeoutMs),
   ]);
 
   if (!totalRes.ok) throw new Error(`Finviz total returned ${totalRes.status}`);
