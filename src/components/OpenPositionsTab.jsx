@@ -19,7 +19,7 @@ import { computeCushion } from "../lib/cushionBreach";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
-import { supabase } from "../lib/supabase";
+import { listJournalEntries } from "../lib/journalApi";
 import { groupStrategicTagsByPosition, positionKey, STRATEGIC_TAG_PREFIXES } from "../lib/tags";
 import { PositionTagChip } from "./PositionTagChip";
 
@@ -783,13 +783,16 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
     }
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("journal_entries")
-        .select("id, ticker, type, strike, expiry, tags, created_at")
-        .in("ticker", uniqTickers)
-        .not("tags", "is", null);
+      let data;
+      try {
+        data = await listJournalEntries({ tickers: uniqTickers.join(","), hasTags: "1" });
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("[OpenPositionsTab] tag fetch failed:", err.message);
+        setStrategicTagsByPos(new Map());
+        return;
+      }
       if (cancelled) return;
-      if (error) { console.warn("[OpenPositionsTab] tag fetch failed:", error.message); setStrategicTagsByPos(new Map()); return; }
       setStrategicTagsByPos(groupStrategicTagsByPosition(data ?? [], { open_csps, open_leaps, assigned_shares }));
     })();
     return () => { cancelled = true; };

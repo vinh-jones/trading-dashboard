@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useData } from "../../hooks/useData";
 import { formatExpiry } from "../../lib/format";
-import { supabase } from "../../lib/supabase";
+import { listJournalEntries } from "../../lib/journalApi";
 import { JOURNAL_BADGE } from "./journalConstants";
 import { journalSinceDate, fmtEntryDate } from "./journalHelpers";
 import { JournalEntryCard } from "./JournalEntryCard";
@@ -111,18 +111,13 @@ export function JournalTab({ journalIntent, onJournalIntentConsumed }) {
     setLoading(true);
     setFeedError(null);
     try {
-      let query = supabase
-        .from("journal_entries")
-        .select("*")
-        .order("entry_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (filterType !== "all")   query = query.eq("entry_type", filterType);
-      if (filterTicker !== "all") query = query.eq("ticker", filterTicker);
       const sd = journalSinceDate(filterSince);
-      if (sd) query = query.gte("entry_date", sd);
-      const { data, error } = await query;
-      if (error) throw error;
+      const data = await listJournalEntries({
+        type:   filterType !== "all" ? filterType : undefined,
+        ticker: filterTicker !== "all" ? filterTicker : undefined,
+        since:  sd || undefined,
+        limit:  50,
+      });
       setEntries(data ?? []);
     } catch (err) {
       setFeedError(err.message);

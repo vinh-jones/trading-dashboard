@@ -1,12 +1,18 @@
 /**
  * api/journal-entry.js — Vercel serverless function
  *
+ * GET    /api/journal-entry?...     → lists entries (filters below)
  * POST   /api/journal-entry        body: <entry payload>          → inserts, returns row
  * PATCH  /api/journal-entry        body: { id, fields }           → updates by id, returns row
  * DELETE /api/journal-entry?id=    → deletes by id
  *
- * journal_entries is RLS-locked to anon SELECT only. The browser must route
- * all writes through this service-key endpoint instead of the public bundle key.
+ * journal_entries is RLS-locked (anon has no policy). The browser must route
+ * ALL access — reads and writes — through this service-key endpoint instead of
+ * the public bundle anon key. This endpoint is APP_SECRET-gated by middleware.js.
+ *
+ * GET filters (all optional): type (entry_type eq), ticker (eq),
+ * tickers (comma list, IN), since (entry_date >=), tag (tags contains),
+ * from/to (created_at >=/<=), hasTags=1 (tags not null), limit (N).
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -23,6 +29,26 @@ function getSupabase() {
 export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
+
+    if (req.method === "GET") {
+      const { type, ticker, tickers, since, tag, from, to, hasTags, limit } = req.query;
+      let q = supabase.from("journal_entries").select("*");
+      if (type && type !== "all")     q = q.eq("entry_type", type);
+      if (ticker && ticker !== "all") q = q.eq("ticker", ticker);
+      if (tickers)                    q = q.in("ticker", String(tickers).split(",").filter(Boolean));
+      if (since)                      q = q.gte("entry_date", since);
+      if (tag)                        q = q.contains("tags", [tag]);
+      if (from)                       q = q.gte("created_at", from);
+      if (to)                         q = q.lte("created_at", to);
+      if (hasTags === "1")            q = q.not("tags", "is", null);
+      q = q.order("entry_date", { ascending: false }).order("created_at", { ascending: false });
+      const n = parseInt(limit, 10);
+      if (Number.isFinite(n) && n > 0) q = q.limit(n);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      res.status(200).json({ ok: true, data: data ?? [] });
+      return;
+    }
 
     if (req.method === "POST") {
       const payload = req.body;

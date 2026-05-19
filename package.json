@@ -2,7 +2,7 @@
   "name": "trading-dashboard",
   "private": true,
 
-  "version": "1.112.0",
+  "version": "1.112.1",
 
   "type": "module",
   "scripts": {
