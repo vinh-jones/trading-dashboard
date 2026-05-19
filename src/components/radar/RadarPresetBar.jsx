@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { theme } from "../../lib/theme";
-import { supabase } from "../../lib/supabase";
 import { DEFAULT_FILTERS } from "./radarConstants";
 import RadarAdvancedFilters from "./RadarAdvancedFilters";
 
@@ -59,19 +58,14 @@ function SavePresetModal({ initialFilters, onSave, onClose }) {
   async function handleSave() {
     if (!name.trim()) { setError('Name is required.'); return; }
     setSaving(true);
-    const { data: existing } = await supabase
-      .from('radar_presets')
-      .select('display_order')
-      .order('display_order', { ascending: false })
-      .limit(1);
-    const maxOrder = existing?.[0]?.display_order ?? 0;
-    const { data, error: err } = await supabase
-      .from('radar_presets')
-      .insert({ name: name.trim(), filters: localFilters, display_order: maxOrder + 1, updated_at: new Date().toISOString() })
-      .select()
-      .single();
-    if (err) { setError(err.message); setSaving(false); return; }
-    onSave(data);
+    const resp = await fetch('/api/radar-preset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), filters: localFilters }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) { setError(json.error || `HTTP ${resp.status}`); setSaving(false); return; }
+    onSave(json.data);
   }
 
   return (
@@ -131,19 +125,20 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
   async function handleSave() {
     if (!name.trim()) { setError('Name is required.'); return; }
     setSaving(true);
-    const { data, error: err } = await supabase
-      .from('radar_presets')
-      .update({ name: name.trim(), filters: localFilters, updated_at: new Date().toISOString() })
-      .eq('id', preset.id)
-      .select()
-      .single();
-    if (err) { setError(err.message); setSaving(false); return; }
-    onSave(data);
+    const resp = await fetch('/api/radar-preset', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: preset.id, name: name.trim(), filters: localFilters }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) { setError(json.error || `HTTP ${resp.status}`); setSaving(false); return; }
+    onSave(json.data);
   }
 
   async function handleDelete() {
-    const { error: err } = await supabase.from('radar_presets').delete().eq('id', preset.id);
-    if (err) { setError(err.message); return; }
+    const resp = await fetch(`/api/radar-preset?id=${encodeURIComponent(preset.id)}`, { method: 'DELETE' });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) { setError(json.error || `HTTP ${resp.status}`); return; }
     onDelete(preset.id);
   }
 

@@ -6,7 +6,6 @@ import { formatDollars, formatExpiry } from "../../lib/format";
 import { calcDTE, computeEodMetadata } from "../../lib/trading";
 import { getVixBand } from "../../lib/vixBand";
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../../lib/constants";
-import { supabase } from "../../lib/supabase";
 import { MOODS, JOURNAL_ENTRY_TYPES, JOURNAL_INPUT_ST, JOURNAL_LABEL_ST } from "./journalConstants";
 import { todayISO, buildAutoTitle } from "./journalHelpers";
 import { JournalField } from "./JournalField";
@@ -280,12 +279,13 @@ export function JournalQuickAdd({
         created_at:      now,
         updated_at:      now,
       };
-      const { data, error } = await supabase
-        .from("journal_entries")
-        .insert(payload)
-        .select()
-        .single();
-      if (error) throw error;
+      const resp = await fetch("/api/journal-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json.ok) throw new Error(json.error || `HTTP ${resp.status}`);
       resetForm();
       onEntryCreated?.();
       onClose();
