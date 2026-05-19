@@ -17,8 +17,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  // market_context is RLS-locked (no anon policy) — must use the service
+  // role server-side. Anon fallback is for local dev only.
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
   return createClient(url, key);
 }
