@@ -1,0 +1,21 @@
+-- migration-023-journal-entries-drop-anon-read.sql
+-- Closes the last journal exposure: journal_entries was readable by anyone
+-- holding the public bundle anon key (RLS policy "anon read" / SELECT / true),
+-- bypassing the APP_SECRET API gate entirely via direct Supabase REST.
+--
+-- All journal access now routes through the service-key, APP_SECRET-gated
+-- /api/journal-entry endpoint:
+--   - writes (POST/PATCH/DELETE) — already migrated previously
+--   - reads (GET) — added in this release; JournalTab / OpenPositionsTab /
+--     tags.getEntriesWithTag repointed off the anon client
+--   - tag_usage_stats RPC — converted to SECURITY DEFINER in migration-022
+--
+-- After this, journal_entries has RLS enabled with NO policy = anon fully
+-- denied (same deny-all pattern as positions/trades/etc.). The service role
+-- (server endpoints) bypasses RLS and is unaffected.
+--
+-- PREREQUISITE: deploy the GET endpoint + client repoint AND apply
+-- migration-022 first, then apply this. Verify journal read/write works via
+-- the deployed app before applying.
+
+DROP POLICY IF EXISTS "anon read" ON public.journal_entries;

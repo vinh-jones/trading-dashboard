@@ -24,7 +24,6 @@ const BYPASS = new Set([
   "/api/snapshot",
   "/api/alert-check",
   "/api/calibrate-forecast",
-  "/api/assigned-share-income",
   "/api/ingest",
   "/api/ingest-iv",
   "/api/ingest-s5fi",
@@ -62,12 +61,8 @@ function extractToken(request) {
     if (k === "app_auth") return decodeURIComponent(v.join("="));
   }
 
-  try {
-    const t = new URL(request.url).searchParams.get("token");
-    if (t) return t;
-  } catch {
-    /* ignore malformed URL */
-  }
+  // Secret is never accepted via query string — keeps it out of logs,
+  // browser history, and Referer headers. Cookie/Bearer only.
   return null;
 }
 

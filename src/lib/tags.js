@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
+import { listJournalEntries } from "./journalApi";
 
 // Module-level cache — vocabulary rarely changes, fetch once per session.
 let _cache = null;
@@ -42,16 +43,7 @@ export function useTagVocabulary() {
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
 export async function getEntriesWithTag(tag, { from, to } = {}) {
-  let query = supabase
-    .from("journal_entries")
-    .select("*")
-    .contains("tags", [tag])
-    .order("created_at", { ascending: false });
-  if (from) query = query.gte("created_at", from);
-  if (to)   query = query.lte("created_at", to);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  return listJournalEntries({ tag, from, to });
 }
 
 export async function countEntriesByTag(tags, { from, to } = {}) {
