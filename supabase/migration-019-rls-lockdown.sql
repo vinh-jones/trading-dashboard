@@ -32,6 +32,12 @@ CREATE POLICY "anon read" ON wheel_universe FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "Allow all" ON fundamentals;
 CREATE POLICY "anon read" ON fundamentals FOR SELECT TO anon USING (true);
 
+-- NOTE: quotes predates the rls_auto_enable event trigger, so RLS was never
+-- enabled on it — its old "Allow all" policy was never enforced (table was
+-- effectively wide open). Enable RLS so the SELECT-only policy below takes
+-- effect. All quotes writers (bb.js, ingest-iv.js, eod-snapshot.js, etc.) use
+-- the service key, which bypasses RLS.
+ALTER TABLE public.quotes ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all" ON quotes;
 CREATE POLICY "anon read" ON quotes FOR SELECT TO anon USING (true);
 
