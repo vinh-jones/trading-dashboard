@@ -8,6 +8,15 @@
  * a combined JSON response with an ai_context field for future LLM synthesis.
  */
 
+import { createClient } from "@supabase/supabase-js";
+
+function getSupabase() {
+  const url = process.env.SUPABASE_URL      || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
+}
+
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -412,24 +421,12 @@ async function fetchFearGreed() {
   };
 }
 
-// Finviz Cloudflare 403s datacenter IPs (Vercel), so route through an
-// anti-bot proxy when SCRAPER_API_KEY is set. Falls back to a direct
-// fetch (works from residential IPs / local dev) when unset.
-function finvizUrl(target) {
-  const key = process.env.SCRAPER_API_KEY;
-  if (!key) return target;
-  return `https://api.scraperapi.com/?api_key=${key}&url=${encodeURIComponent(target)}`;
-}
-
-async function fetchS5fi() {
+async function scrapeS5fiFinviz() {
   const headers = { "User-Agent": UA };
-  const proxied = !!process.env.SCRAPER_API_KEY;
-  // Proxy round-trip is slower than a direct hit; give it more headroom.
-  const timeoutMs = proxied ? 25000 : 12000;
 
   const [totalRes, aboveRes] = await Promise.all([
-    fetchWithTimeout(finvizUrl("https://finviz.com/screener?v=111&f=idx_sp500&ft=4"), { headers }, timeoutMs),
-    fetchWithTimeout(finvizUrl("https://finviz.com/screener?v=111&f=idx_sp500,ta_sma50_pa&ft=4"), { headers }, timeoutMs),
+    fetchWithTimeout("https://finviz.com/screener?v=111&f=idx_sp500&ft=4", { headers }, 12000),
+    fetchWithTimeout("https://finviz.com/screener?v=111&f=idx_sp500,ta_sma50_pa&ft=4", { headers }, 12000),
   ]);
 
   if (!totalRes.ok) throw new Error(`Finviz total returned ${totalRes.status}`);
@@ -451,6 +448,29 @@ async function fetchS5fi() {
 
   const pct = Math.round((above / total) * 1000) / 10;
   return { pct, above, total };
+}
+
+// Finviz's Cloudflare 403s Vercel's datacenter IPs, so prod can't scrape it.
+// OpenClaw scrapes it on a residential IP once/day and POSTs to
+// /api/ingest-s5fi; we read the latest stored row here. The direct scrape
+// is kept only as a local-dev / residential fallback when no row exists.
+async function fetchS5fi() {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("s5fi")
+      .select("pct, above, total")
+      .order("as_of", { ascending: false })
+      .limit(1)
+      .single();
+    if (error && error.code !== "PGRST116") throw new Error(error.message);
+    if (data && data.pct != null) {
+      return { pct: Number(data.pct), above: data.above, total: data.total };
+    }
+  } catch (err) {
+    console.warn("[macro fetchS5fi] Supabase read failed, falling back to direct scrape:", err.message);
+  }
+  return scrapeS5fiFinviz();
 }
 
 async function fetchFedWatch() {

@@ -1,7 +1,6 @@
 {
   "functions": {
-    "api/monthly-review.js": { "maxDuration": 30 },
-    "api/macro.js": { "maxDuration": 30 }
+    "api/monthly-review.js": { "maxDuration": 30 }
   },
   "crons": [
     {
