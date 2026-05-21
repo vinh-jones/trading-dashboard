@@ -26,6 +26,34 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+/**
+ * When a journal entry is saved/updated with a non-null `source` and is linked
+ * to a position (position_id set), propagate that source onto the position row.
+ *
+ * Rationale: the intraday-snapshot / data / focus-engine consumers all read
+ * `positions.source` as the attribution flag (Ryan vs. Self). The journal
+ * source toggle is how the user reclassifies a trade after they've rolled or
+ * taken ownership of a Ryan-originated position. Without this sync the
+ * journal entry says "Self" but downstream payloads still say "Ryan".
+ *
+ * Best-effort: failure to update the position is logged but does NOT fail
+ * the journal write — the entry was saved correctly, which is the primary
+ * intent. The user can re-save to retry the propagation.
+ */
+async function propagateSourceToPosition(supabase, entry) {
+  if (!entry?.position_id || !entry?.source) return;
+  const { error } = await supabase
+    .from("positions")
+    .update({ source: entry.source })
+    .eq("id", entry.position_id);
+  if (error) {
+    console.error(
+      `[api/journal-entry] source propagation failed for position ${entry.position_id}:`,
+      error.message,
+    );
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
@@ -62,6 +90,7 @@ export default async function handler(req, res) {
         .select()
         .single();
       if (error) throw new Error(error.message);
+      await propagateSourceToPosition(supabase, data);
       res.status(200).json({ ok: true, data });
       return;
     }
@@ -79,6 +108,11 @@ export default async function handler(req, res) {
         .select()
         .single();
       if (error) throw new Error(error.message);
+      // Only propagate when the PATCH actually touched `source` — avoids
+      // stomping a position update from an unrelated edit (e.g. retitling).
+      if (Object.prototype.hasOwnProperty.call(fields, "source")) {
+        await propagateSourceToPosition(supabase, data);
+      }
       res.status(200).json({ ok: true, data });
       return;
     }
