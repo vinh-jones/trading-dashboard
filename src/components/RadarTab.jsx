@@ -64,6 +64,16 @@ const BB_BUCKET_LABELS = {
   above_band: "Above Band",
 };
 
+// One-line definitions shown as hover tooltips on the compact-row chips.
+// Longer paragraph explanations live in BB_EXPLANATIONS below for the expanded panel.
+const BB_BUCKET_DEFINITIONS = {
+  below_band: "Price is below the lower Bollinger Band (>2σ down). Ryan's primary CSP entry zone — 95% mean-reversion historically.",
+  near_lower: "Price approaching the lower Bollinger Band (0 ≤ pos < 0.20). Pulling back toward statistical support but not yet at the high-conviction entry zone.",
+  mid_range:  "Price in the middle of the Bollinger Band range (0.20 ≤ pos < 0.80). No edge from price location — neither fear nor extension.",
+  near_upper: "Price approaching the upper Bollinger Band (0.80 ≤ pos ≤ 1.0). Extended to the upside — premium thins and risk/reward inverts.",
+  above_band: "Price is above the upper Bollinger Band (>2σ up). Statistically extended — avoid new CSP entries.",
+};
+
 // Hardcoded hex — intentional exception (like TYPE_COLORS)
 const BB_BUCKET_COLORS = {
   below_band: { bg: "#3d1a1a", text: "#f85149" },
@@ -220,6 +230,14 @@ const TREND_COLORS = {
   downtrend:  { bg: "#3d1a1a", text: "#f85149" },
 };
 
+// One-line definitions for the trend chips (compact-row tooltips).
+const TREND_DEFINITIONS = {
+  uptrend:    "Price above both the 50-day and 200-day moving averages — healthy uptrend, mean-reversion setups work as intended. 1.00× score modifier.",
+  pullback:   "Price below the 50-day MA but above the 200-day — transient dip within a broader uptrend. Reduce size 10–15%. 0.90× score modifier.",
+  recovering: "Price reclaimed the 50-day MA but is still below the 200-day — short-term trend flipped, long-term unconfirmed. Size down 15–20%. 0.85× score modifier.",
+  downtrend:  "Price below both the 50-day and 200-day moving averages — structural downtrend. Mean-reversion unreliable; Ryan actively avoids these. 0.70× score modifier.",
+};
+
 const TREND_EXPLANATIONS = {
   uptrend: (ticker, price, ma50, ma200) =>
     `${ticker} is above both its 50-day (${ma50 != null ? `$${ma50.toFixed(2)}` : "N/A"}) and 200-day (${ma200 != null ? `$${ma200.toFixed(2)}` : "N/A"}) moving averages — ` +
@@ -250,6 +268,14 @@ const IV_TREND_COLORS = {
   falling:    { bg: "#2d2600", text: "#e3b341" },
   spiking:    { bg: "#2d2600", text: "#e3b341" },
   collapsing: { bg: "#2d2600", text: "#e3b341" },
+};
+
+// One-line definitions for the IV trend chips (compact-row tooltips).
+const IV_TREND_DEFINITIONS = {
+  rising:     "IV rank up ≥8 points over the past 5 days with raw IV also moving — premium is getting richer. Favorable for CSP entry. 1.10× score modifier.",
+  falling:    "IV rank down ≥8 points over the past 5 days with raw IV also moving — premium is compressing. Window for rich premium may be narrowing. 0.90× score modifier.",
+  spiking:    "IV rank surged ≥15 points in the past 24 hours — anomalous move, often signals a catalyst, news event, or upcoming earnings. Size down 15%. 0.85× score modifier.",
+  collapsing: "IV rank dropped ≥15 points in the past 24 hours — typically post-earnings IV crush. Often Ryan's preferred post-event entry if BB position confirms. 0.90× score modifier.",
 };
 
 const IV_TREND_EXPLANATIONS = {
@@ -539,15 +565,19 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 
           {/* BB badge */}
           {bucket ? (
-            <span style={{
-              fontSize:     theme.size.xs,
-              fontWeight:   600,
-              color:        bucketColors.text,
-              background:   bucketColors.bg,
-              borderRadius: theme.radius.pill,
-              padding:      "2px 8px",
-              flexShrink:   0,
-            }}>
+            <span
+              title={BB_BUCKET_DEFINITIONS[bucket]}
+              style={{
+                fontSize:     theme.size.xs,
+                fontWeight:   600,
+                color:        bucketColors.text,
+                background:   bucketColors.bg,
+                borderRadius: theme.radius.pill,
+                padding:      "2px 8px",
+                flexShrink:   0,
+                cursor:       "help",
+              }}
+            >
               {BB_BUCKET_LABELS[bucket]}
             </span>
           ) : (
@@ -556,30 +586,38 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 
           {/* Trend badge — only shown when not uptrend */}
           {trend && trend.state !== "uptrend" && TREND_COLORS[trend.state] && (
-            <span style={{
-              fontSize:     theme.size.xs,
-              fontWeight:   600,
-              color:        TREND_COLORS[trend.state].text,
-              background:   TREND_COLORS[trend.state].bg,
-              borderRadius: theme.radius.pill,
-              padding:      "2px 8px",
-              flexShrink:   0,
-            }}>
+            <span
+              title={TREND_DEFINITIONS[trend.state]}
+              style={{
+                fontSize:     theme.size.xs,
+                fontWeight:   600,
+                color:        TREND_COLORS[trend.state].text,
+                background:   TREND_COLORS[trend.state].bg,
+                borderRadius: theme.radius.pill,
+                padding:      "2px 8px",
+                flexShrink:   0,
+                cursor:       "help",
+              }}
+            >
               {trend.label}
             </span>
           )}
 
           {/* IV trend badge — only shown when not stable or insufficient */}
           {ivTrend && ivTrend.state !== "stable" && ivTrend.state !== "insufficient" && IV_TREND_COLORS[ivTrend.state] && (
-            <span style={{
-              fontSize:     theme.size.xs,
-              fontWeight:   600,
-              color:        IV_TREND_COLORS[ivTrend.state].text,
-              background:   IV_TREND_COLORS[ivTrend.state].bg,
-              borderRadius: theme.radius.pill,
-              padding:      "2px 8px",
-              flexShrink:   0,
-            }}>
+            <span
+              title={IV_TREND_DEFINITIONS[ivTrend.state]}
+              style={{
+                fontSize:     theme.size.xs,
+                fontWeight:   600,
+                color:        IV_TREND_COLORS[ivTrend.state].text,
+                background:   IV_TREND_COLORS[ivTrend.state].bg,
+                borderRadius: theme.radius.pill,
+                padding:      "2px 8px",
+                flexShrink:   0,
+                cursor:       "help",
+              }}
+            >
               {ivTrend.label}
             </span>
           )}
