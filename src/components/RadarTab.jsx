@@ -491,6 +491,61 @@ function ScannerScoreFormula({ bbPosition, ivComp, priceTrend, ivTrend, score, l
 
 // ── Compact row ───────────────────────────────────────────────────────────────
 
+// Pill chip with a styled hover tooltip. Native `title` attributes were unreliable
+// here (slow, sometimes silently dropped on small inline elements), so we render
+// our own absolutely-positioned tooltip on mouseenter — same pattern as
+// SectorTooltip in RadarAdvancedFilters.jsx.
+function ChipWithTooltip({ label, tooltip, color, background }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <span
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position:     "relative",
+        display:      "inline-block",
+        fontSize:     theme.size.xs,
+        fontWeight:   600,
+        color,
+        background,
+        borderRadius: theme.radius.pill,
+        padding:      "2px 8px",
+        flexShrink:   0,
+        cursor:       "help",
+      }}
+    >
+      {label}
+      {hovered && tooltip && (
+        <span
+          style={{
+            position:      "absolute",
+            top:           "calc(100% + 6px)",
+            left:          "50%",
+            transform:     "translateX(-50%)",
+            background:    theme.bg.elevated,
+            border:        `1px solid ${theme.border.strong}`,
+            borderRadius:  theme.radius.md,
+            padding:       `${theme.space[2]}px ${theme.space[3]}px`,
+            zIndex:        300,
+            minWidth:      220,
+            maxWidth:      320,
+            fontSize:      theme.size.xs,
+            fontWeight:    400,
+            color:         theme.text.secondary,
+            lineHeight:    1.5,
+            textAlign:     "left",
+            whiteSpace:    "normal",
+            pointerEvents: "none",
+            boxShadow:     "0 4px 12px rgba(0,0,0,0.4)",
+          }}
+        >
+          {tooltip}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, ma_50, ma_200 } = row;
   const bucket   = bbBucket(bb_position);
@@ -565,61 +620,34 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 
           {/* BB badge */}
           {bucket ? (
-            <span
-              title={BB_BUCKET_DEFINITIONS[bucket]}
-              style={{
-                fontSize:     theme.size.xs,
-                fontWeight:   600,
-                color:        bucketColors.text,
-                background:   bucketColors.bg,
-                borderRadius: theme.radius.pill,
-                padding:      "2px 8px",
-                flexShrink:   0,
-                cursor:       "help",
-              }}
-            >
-              {BB_BUCKET_LABELS[bucket]}
-            </span>
+            <ChipWithTooltip
+              label={BB_BUCKET_LABELS[bucket]}
+              tooltip={BB_BUCKET_DEFINITIONS[bucket]}
+              color={bucketColors.text}
+              background={bucketColors.bg}
+            />
           ) : (
             <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
           )}
 
           {/* Trend badge — only shown when not uptrend */}
           {trend && trend.state !== "uptrend" && TREND_COLORS[trend.state] && (
-            <span
-              title={TREND_DEFINITIONS[trend.state]}
-              style={{
-                fontSize:     theme.size.xs,
-                fontWeight:   600,
-                color:        TREND_COLORS[trend.state].text,
-                background:   TREND_COLORS[trend.state].bg,
-                borderRadius: theme.radius.pill,
-                padding:      "2px 8px",
-                flexShrink:   0,
-                cursor:       "help",
-              }}
-            >
-              {trend.label}
-            </span>
+            <ChipWithTooltip
+              label={trend.label}
+              tooltip={TREND_DEFINITIONS[trend.state]}
+              color={TREND_COLORS[trend.state].text}
+              background={TREND_COLORS[trend.state].bg}
+            />
           )}
 
           {/* IV trend badge — only shown when not stable or insufficient */}
           {ivTrend && ivTrend.state !== "stable" && ivTrend.state !== "insufficient" && IV_TREND_COLORS[ivTrend.state] && (
-            <span
-              title={IV_TREND_DEFINITIONS[ivTrend.state]}
-              style={{
-                fontSize:     theme.size.xs,
-                fontWeight:   600,
-                color:        IV_TREND_COLORS[ivTrend.state].text,
-                background:   IV_TREND_COLORS[ivTrend.state].bg,
-                borderRadius: theme.radius.pill,
-                padding:      "2px 8px",
-                flexShrink:   0,
-                cursor:       "help",
-              }}
-            >
-              {ivTrend.label}
-            </span>
+            <ChipWithTooltip
+              label={ivTrend.label}
+              tooltip={IV_TREND_DEFINITIONS[ivTrend.state]}
+              color={IV_TREND_COLORS[ivTrend.state].text}
+              background={IV_TREND_COLORS[ivTrend.state].bg}
+            />
           )}
 
           {/* Spacer */}
