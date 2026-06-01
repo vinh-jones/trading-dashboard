@@ -45,6 +45,19 @@ describe("resolveBasket", () => {
     expect(members).toHaveLength(1);
     expect(members[0]).toMatchObject({ status: "closed", realized: 450 });
   });
+
+  it("reads realized P/L from the app's normalized trade shape (premium/fronted)", () => {
+    // normalizeTrade() renames premium_collected→premium, capital_fronted→fronted,
+    // and drops the ISO close_date (keeps `close` as MM/DD). The lib must read these.
+    const normalizedTrades = [
+      { id: "loss-n", ticker: "SOFI", type: "Shares", strike: null, expiry_date: null, open_date: "2026-02-12", close: "06/01", premium: -26400, fronted: 85800 },
+    ];
+    const e = [{ tags: ["strategy:n", "role:makeup-baseline"], trade_id: "loss-n", ticker: "SOFI", type: "Shares", strike: null, expiry: null }];
+    const members = resolveBasket("strategy:n", { openPositions: [], trades: normalizedTrades, entries: e });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ status: "closed", role: "baseline", realized: -26400, capitalFronted: 85800 });
+    expect(basketTarget(members)).toBe(26400);
+  });
 });
 
 describe("reducers", () => {

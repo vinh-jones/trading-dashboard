@@ -31,6 +31,10 @@ function fromOpenPosition(pos, role) {
   };
 }
 
+// Accepts both the raw DB trade row and the app's normalizeTrade() output, which
+// renames premium_collected→premium, capital_fronted→fronted, and drops the ISO
+// close_date (keeping `close` as MM/DD). The app only ever passes the normalized
+// shape, so read those first with the raw names as fallback.
 function fromTrade(trade, role) {
   return {
     status: "closed",
@@ -40,11 +44,11 @@ function fromTrade(trade, role) {
     strike: trade.strike ?? null,
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
-    closeDate: trade.close_date ?? null,
+    closeDate: trade.close_date ?? trade.close ?? null,
     contracts: trade.contracts ?? null,
-    capitalFronted: trade.capital_fronted ?? 0,
+    capitalFronted: trade.capital_fronted ?? trade.fronted ?? 0,
     entryCost: trade.entry_cost ?? null,
-    realized: trade.premium_collected ?? 0,
+    realized: trade.premium_collected ?? trade.premium ?? 0,
   };
 }
 
