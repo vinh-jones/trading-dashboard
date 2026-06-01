@@ -1,13 +1,15 @@
 // Pure basket resolution: tagged journal entries + flat position/trade arrays
 // → normalized member list and reducer metrics. No React, no fetch, no quotes.
 
+import { buildOccSymbol } from "./trading";
+
 const BASELINE_TAG = "role:makeup-baseline";
 
 function tupleMatch(a, b) {
   return (
     a.ticker === b.ticker &&
     String(a.type) === String(b.type) &&
-    Number(a.strike) === Number(b.strike) &&
+    String(a.strike) === String(b.strike) &&
     String(a.expiry ?? a.expiry_date) === String(b.expiry ?? b.expiry_date)
   );
 }
@@ -87,4 +89,36 @@ export function realizedRecovery(members) {
   return members
     .filter(m => m.role === "recovery" && m.status === "closed")
     .reduce((sum, m) => sum + (m.realized ?? 0), 0);
+}
+
+const SHORT_TYPES = new Set(["CSP", "CC"]);
+const LONG_OPTION_TYPES = new Set(["LEAPS"]);
+
+function markFor(member, quoteMap) {
+  const isCall = member.type === "LEAPS" || member.type === "CC";
+  const sym = buildOccSymbol(member.ticker, member.expiry, isCall, member.strike);
+  const q = quoteMap.get(sym);
+  if (!q) return null;
+  return q.mid ?? q.last ?? null;
+}
+
+/**
+ * Live mark-to-market cushion for open recovery members.
+ * @returns {{total:number, marked:number, unmarked:number}}
+ */
+export function unrealizedCushion(members, quoteMap) {
+  let total = 0, marked = 0, unmarked = 0;
+  for (const m of members) {
+    if (m.status !== "open" || m.role !== "recovery") continue;
+    if (!LONG_OPTION_TYPES.has(m.type) && !SHORT_TYPES.has(m.type)) { continue; }
+    const mark = markFor(m, quoteMap);
+    if (mark == null) { unmarked += 1; continue; }
+    const mult = (m.contracts ?? 0) * 100;
+    const pnl = SHORT_TYPES.has(m.type)
+      ? (m.entryCost - mark) * mult
+      : (mark - m.entryCost) * mult;
+    total += pnl;
+    marked += 1;
+  }
+  return { total, marked, unmarked };
 }

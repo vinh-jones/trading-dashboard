@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion } from "../strategyBasket";
+import { buildOccSymbol } from "../trading";
 
 const openPositions = [
   { ticker: "SOFI", type: "LEAPS", strike: 15,  expiry_date: "2027-01-21", contracts: 20, capital_fronted: 8000, entry_cost: 4.0, open_date: "2026-06-01" },
@@ -53,5 +54,38 @@ describe("reducers", () => {
   it("realizedRecovery counts closed recovery members", () => {
     const closedRec = [{ status: "closed", role: "recovery", realized: 450 }, { status: "closed", role: "baseline", realized: -26400 }];
     expect(realizedRecovery(closedRec)).toBe(450);
+  });
+});
+
+describe("unrealizedCushion", () => {
+  const longLeaps  = { status: "open", role: "recovery", ticker: "SOFI", type: "LEAPS", strike: 15,  expiry: "2027-01-21", contracts: 20, entryCost: 4.0 };
+  const shortCsp   = { status: "open", role: "recovery", ticker: "COHR", type: "CSP",   strike: 310, expiry: "2026-07-02", contracts: 1,  entryCost: 6.0 };
+  const leapsSym = buildOccSymbol("SOFI", "2027-01-21", true,  15);
+  const cspSym   = buildOccSymbol("COHR", "2026-07-02", false, 310);
+
+  it("long option gains when mark > entry, short option gains when mark < entry", () => {
+    const quoteMap = new Map([
+      [leapsSym, { mid: 5.0 }],   // long: (5.0-4.0)*20*100 = 2000
+      [cspSym,   { mid: 4.0 }],   // short: (6.0-4.0)*1*100 = 200
+    ]);
+    const { total, marked, unmarked } = unrealizedCushion([longLeaps, shortCsp], quoteMap);
+    expect(total).toBe(2200);
+    expect(marked).toBe(2);
+    expect(unmarked).toBe(0);
+  });
+
+  it("falls back to last, and counts unmarked members without blocking the total", () => {
+    const quoteMap = new Map([[leapsSym, { last: 4.5 }]]); // long: (4.5-4.0)*20*100 = 1000; csp unmarked
+    const { total, marked, unmarked } = unrealizedCushion([longLeaps, shortCsp], quoteMap);
+    expect(total).toBe(1000);
+    expect(marked).toBe(1);
+    expect(unmarked).toBe(1);
+  });
+
+  it("only marks open recovery members", () => {
+    const baseline = { status: "closed", role: "baseline", ticker: "SOFI", type: "Shares" };
+    const { total, marked } = unrealizedCushion([baseline], new Map());
+    expect(total).toBe(0);
+    expect(marked).toBe(0);
   });
 });
