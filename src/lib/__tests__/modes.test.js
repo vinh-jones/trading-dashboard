@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODES, EXPLORE_SUBVIEWS, REVIEW_SUBVIEWS, defaultSubView, isValidMode, isValidSubView } from "../modes";
+import { MODES, EXPLORE_SUBVIEWS, REVIEW_SUBVIEWS, SUBVIEW_LABELS, defaultSubView, isValidMode, isValidSubView } from "../modes";
 
 describe("modes", () => {
   it("exposes the three top-level modes", () => {
@@ -7,7 +7,7 @@ describe("modes", () => {
   });
 
   it("exposes Explore sub-views in order", () => {
-    expect(EXPLORE_SUBVIEWS).toEqual(["positions", "tickers", "radar", "earnings", "macro"]);
+    expect(EXPLORE_SUBVIEWS).toEqual(["positions", "tickers", "radar", "earnings", "macro", "baskets"]);
   });
 
   it("exposes Review sub-views in order with Journal first", () => {
@@ -34,5 +34,13 @@ describe("modes", () => {
     expect(isValidSubView("review", "radar")).toBe(false);
     expect(isValidSubView("focus", null)).toBe(true);
     expect(isValidSubView("focus", "anything")).toBe(false);
+  });
+});
+
+describe("baskets sub-view registration", () => {
+  it("is a valid explore sub-view with a label", () => {
+    expect(EXPLORE_SUBVIEWS).toContain("baskets");
+    expect(SUBVIEW_LABELS.baskets).toBe("Baskets");
+    expect(isValidSubView("explore", "baskets")).toBe(true);
   });
 });

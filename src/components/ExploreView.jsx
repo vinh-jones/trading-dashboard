@@ -1,15 +1,17 @@
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useData } from "../hooks/useData";
 import { EXPLORE_SUBVIEWS, SUBVIEW_LABELS, isValidSubView } from "../lib/modes";
 import { theme } from "../lib/theme";
 import { lazyNamed } from "../lib/lazyNamed";
+import { listJournalEntries } from "../lib/journalApi";
 
-const OpenPositionsTab = lazyNamed(() => import("./OpenPositionsTab"), "OpenPositionsTab");
-const RadarTab         = lazyNamed(() => import("./RadarTab"),         "RadarTab");
-const MacroTab         = lazyNamed(() => import("./MacroTab"),         "MacroTab");
-const EarningsTab      = lazyNamed(() => import("./EarningsTab"),      "EarningsTab");
-const TickersTab       = lazyNamed(() => import("./TickersTab"),       "TickersTab");
-const TickerDetailView = lazyNamed(() => import("./tickerDetail"),     "TickerDetailView");
+const OpenPositionsTab   = lazyNamed(() => import("./OpenPositionsTab"),   "OpenPositionsTab");
+const RadarTab           = lazyNamed(() => import("./RadarTab"),           "RadarTab");
+const MacroTab           = lazyNamed(() => import("./MacroTab"),           "MacroTab");
+const EarningsTab        = lazyNamed(() => import("./EarningsTab"),        "EarningsTab");
+const TickersTab         = lazyNamed(() => import("./TickersTab"),         "TickersTab");
+const TickerDetailView   = lazyNamed(() => import("./tickerDetail"),       "TickerDetailView");
+const StrategyBasketTab  = lazyNamed(() => import("./StrategyBasketTab"),  "StrategyBasketTab");
 
 function TabLoading() {
   return (
@@ -54,10 +56,12 @@ export function ExploreView({
   positionIntent,
   onPositionIntentConsumed,
   detailTicker,
+  basketTag,
   onOpenTickerDetail,
   onCloseTickerDetail,
   onShowJournalEntry,
   onTagPosition,
+  onOpenBasket,
 }) {
   const { positions, account, trades } = useData();
   const isDetail = subView === "ticker-detail";
@@ -71,6 +75,17 @@ export function ExploreView({
   }
 
   const active = isValidSubView("explore", subView) && subView !== "ticker-detail" ? subView : "positions";
+
+  const [strategyEntries, setStrategyEntries] = useState([]);
+  useEffect(() => {
+    if (active !== "baskets") return;
+    let cancelled = false;
+    listJournalEntries({}).then(rows => {
+      if (cancelled) return;
+      setStrategyEntries((rows ?? []).filter(r => (r.tags ?? []).some(t => t.startsWith("strategy:"))));
+    }).catch(() => { if (!cancelled) setStrategyEntries([]); });
+    return () => { cancelled = true; };
+  }, [active]);
 
   return (
     <div>
@@ -96,12 +111,16 @@ export function ExploreView({
             onOpenTickerDetail={onOpenTickerDetail}
             onShowJournalEntry={onShowJournalEntry}
             onTagPosition={onTagPosition}
+            onOpenBasket={onOpenBasket}
           />
         )}
         {active === "tickers"   && <TickersTab onOpenTickerDetail={onOpenTickerDetail} />}
         {active === "radar"     && <RadarTab positions={positions} account={account} />}
         {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
         {active === "macro"     && <MacroTab />}
+        {active === "baskets" && (
+          <StrategyBasketTab initialTag={basketTag} entries={strategyEntries} />
+        )}
       </Suspense>
     </div>
   );
