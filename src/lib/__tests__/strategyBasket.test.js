@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized } from "../strategyBasket";
 import { buildOccSymbol } from "../trading";
 
 const openPositions = [
@@ -107,5 +107,34 @@ describe("unrealizedCushion", () => {
     const { total, marked } = unrealizedCushion([baseline], new Map());
     expect(total).toBe(0);
     expect(marked).toBe(0);
+  });
+});
+
+describe("memberUnrealized", () => {
+  const longLeaps = { status: "open", role: "recovery", ticker: "SOFI", type: "LEAPS", strike: 15,  expiry: "2027-01-21", contracts: 20, entryCost: 4.0 };
+  const shortCsp  = { status: "open", role: "recovery", ticker: "COHR", type: "CSP",   strike: 310, expiry: "2026-07-02", contracts: 1,  entryCost: 6.0 };
+  const leapsSym = buildOccSymbol("SOFI", "2027-01-21", true,  15);
+  const cspSym   = buildOccSymbol("COHR", "2026-07-02", false, 310);
+
+  it("returns per-member P/L for a marked open recovery option", () => {
+    const quoteMap = new Map([[leapsSym, { mid: 5.0 }], [cspSym, { mid: 4.0 }]]);
+    expect(memberUnrealized(longLeaps, quoteMap)).toBe(2000); // (5-4)*20*100
+    expect(memberUnrealized(shortCsp, quoteMap)).toBe(200);   // (6-4)*1*100
+  });
+
+  it("returns null when unmarked (no quote)", () => {
+    expect(memberUnrealized(shortCsp, new Map())).toBe(null);
+  });
+
+  it("returns null for closed or baseline members", () => {
+    const baseline = { status: "closed", role: "baseline", ticker: "SOFI", type: "Shares" };
+    expect(memberUnrealized(baseline, new Map())).toBe(null);
+  });
+
+  it("aggregate cushion equals the sum of per-member marks", () => {
+    const quoteMap = new Map([[leapsSym, { mid: 5.0 }], [cspSym, { mid: 4.0 }]]);
+    const members = [longLeaps, shortCsp];
+    const summed = members.reduce((s, m) => s + (memberUnrealized(m, quoteMap) ?? 0), 0);
+    expect(unrealizedCushion(members, quoteMap).total).toBe(summed);
   });
 });

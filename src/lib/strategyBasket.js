@@ -109,6 +109,24 @@ function markFor(member, quoteMap) {
 }
 
 /**
+ * Per-member live mark-to-market P/L for a single open recovery option member.
+ * Returns a number in dollars when a live mark is available, or null when the
+ * member isn't an open recovery option or has no quote in `quoteMap`.
+ * Matches the Open Positions widget's G/L $: short (CSP/CC) profits as the mark
+ * falls, long (LEAPS) profits as it rises.
+ */
+export function memberUnrealized(member, quoteMap) {
+  if (member.status !== "open" || member.role !== "recovery") return null;
+  if (!LONG_OPTION_TYPES.has(member.type) && !SHORT_TYPES.has(member.type)) return null;
+  const mark = markFor(member, quoteMap);
+  if (mark == null) return null;
+  const mult = (member.contracts ?? 0) * 100;
+  return SHORT_TYPES.has(member.type)
+    ? (member.entryCost - mark) * mult
+    : (mark - member.entryCost) * mult;
+}
+
+/**
  * Live mark-to-market cushion for open recovery members.
  * @returns {{total:number, marked:number, unmarked:number}}
  */
@@ -117,12 +135,8 @@ export function unrealizedCushion(members, quoteMap) {
   for (const m of members) {
     if (m.status !== "open" || m.role !== "recovery") continue;
     if (!LONG_OPTION_TYPES.has(m.type) && !SHORT_TYPES.has(m.type)) { continue; }
-    const mark = markFor(m, quoteMap);
-    if (mark == null) { unmarked += 1; continue; }
-    const mult = (m.contracts ?? 0) * 100;
-    const pnl = SHORT_TYPES.has(m.type)
-      ? (m.entryCost - mark) * mult
-      : (mark - m.entryCost) * mult;
+    const pnl = memberUnrealized(m, quoteMap);
+    if (pnl == null) { unmarked += 1; continue; }
     total += pnl;
     marked += 1;
   }

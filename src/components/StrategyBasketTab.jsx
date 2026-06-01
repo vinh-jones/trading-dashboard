@@ -6,7 +6,7 @@ import { TYPE_COLORS } from "../lib/constants";
 import { getOpenCSPs, getOpenCCs, getOpenLEAPs } from "../lib/positionSchema";
 import {
   resolveBasket, basketTarget, capitalDeployed,
-  realizedRecovery, unrealizedCushion,
+  realizedRecovery, unrealizedCushion, memberUnrealized,
 } from "../lib/strategyBasket";
 
 const STRATEGY_PREFIX = "strategy:";
@@ -66,7 +66,13 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
   const deployed  = capitalDeployed(members);
   const realized  = realizedRecovery(members);
   const cushion   = unrealizedCushion(members, quoteMap);
-  const pct = target > 0 ? Math.max(0, Math.min(100, (realized / target) * 100)) : 0;
+
+  // Stacked progress: locked-in realized fill + paper unrealized fill toward target.
+  const clampPct = (v) => Math.max(0, Math.min(100, v));
+  const realizedFill   = target > 0 ? clampPct((Math.max(0, realized) / target) * 100) : 0;
+  const cushionPos     = Math.max(0, cushion.total);
+  const combinedFill   = target > 0 ? clampPct(((Math.max(0, realized) + cushionPos) / target) * 100) : 0;
+  const unrealizedFill = Math.max(0, combinedFill - realizedFill);
 
   if (strategyTags.length === 0) {
     return <div style={{ padding: theme.space[5], color: theme.text.muted }}>No positions tagged with a <code>strategy:</code> tag yet.</div>;
@@ -100,14 +106,16 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
         />
       </div>
 
-      {/* Progress bar (realized only) */}
+      {/* Progress bar: realized (solid) + unrealized cushion (lighter) stacked toward target */}
       {target > 0 ? (
         <div style={{ marginBottom: theme.space[5] }}>
-          <div style={{ height: 10, background: theme.bg.surface, borderRadius: theme.radius.pill, overflow: "hidden", border: `1px solid ${theme.border.default}` }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: theme.green, transition: "width 0.3s" }} />
+          <div style={{ display: "flex", height: 10, background: theme.bg.surface, borderRadius: theme.radius.pill, overflow: "hidden", border: `1px solid ${theme.border.default}` }}>
+            <div style={{ width: `${realizedFill}%`, height: "100%", background: theme.green, transition: "width 0.3s" }} />
+            <div style={{ width: `${unrealizedFill}%`, height: "100%", background: theme.green, opacity: 0.35, transition: "width 0.3s" }} />
           </div>
           <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
-            {fmtMoney(realized)} of {fmtMoney(target)} recovered ({pct.toFixed(1)}%)
+            {fmtMoney(realized)} realized + {fmtMoney(cushion.total)} unrealized of {fmtMoney(target)} ({combinedFill.toFixed(1)}%)
+            {cushion.unmarked > 0 ? ` · ${cushion.unmarked} position${cushion.unmarked > 1 ? "s" : ""} unmarked` : ""}
           </div>
         </div>
       ) : (
@@ -120,7 +128,12 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
       <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginBottom: theme.space[2], textTransform: "uppercase", letterSpacing: "0.4px" }}>Transactions</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
         {members.length === 0 && <div style={{ color: theme.text.muted, fontSize: theme.size.sm }}>No members.</div>}
-        {members.map((m, i) => (
+        {members.map((m, i) => {
+          // Open recovery members show live G/L (mark-to-market); closed show realized P/L.
+          const open = m.status === "open";
+          const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
+          const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
+          return (
           <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
             display: "flex", alignItems: "center", gap: theme.space[3],
             padding: `${theme.space[2]}px ${theme.space[3]}px`,
@@ -130,15 +143,18 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
             <span style={{ width: 56, fontWeight: 600 }}>{m.ticker}</span>
             <span style={{ width: 64, color: TYPE_COLORS[m.type]?.text ?? theme.text.secondary }}>{m.type}</span>
             <span style={{ flex: 1, color: theme.text.subtle }}>
-              {m.role === "baseline" ? "Baseline loss" : m.status === "open" ? "Open" : "Closed"}
+              {m.role === "baseline" ? "Baseline loss" : open ? "Open" : "Closed"}
               {m.strike != null ? ` · $${m.strike}` : ""}
             </span>
-            <span style={{ width: 90, textAlign: "right", fontFamily: theme.font.mono,
-              color: m.realized == null ? theme.text.muted : m.realized >= 0 ? theme.green : theme.red }}>
-              {m.realized == null ? fmtMoney(-(m.capitalFronted)) : fmtMoney(m.realized)}
+            <span style={{ width: 60, textAlign: "right", fontFamily: theme.font.mono, color: theme.text.subtle }}>
+              {open ? `${fmtMoney(m.capitalFronted)} col` : ""}
+            </span>
+            <span style={{ width: 90, textAlign: "right", fontFamily: theme.font.mono, color: glColor }}>
+              {gl == null ? "—" : fmtMoney(gl)}
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
