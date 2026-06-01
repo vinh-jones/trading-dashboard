@@ -38,6 +38,13 @@ describe("resolveBasket", () => {
     const members = resolveBasket("strategy:x", { openPositions: [], trades, entries: e });
     expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 450 });
   });
+
+  it("resolves a trade via metadata.trade_id when top-level trade_id is absent", () => {
+    const e = [{ tags: ["strategy:m"], trade_id: null, metadata: { trade_id: "rec-1" }, ticker: "COHR", type: "CSP", strike: 999, expiry: "2099-01-01" }];
+    const members = resolveBasket("strategy:m", { openPositions: [], trades, entries: e });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ status: "closed", realized: 450 });
+  });
 });
 
 describe("reducers", () => {

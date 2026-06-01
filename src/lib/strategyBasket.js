@@ -60,8 +60,9 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
     if (!Array.isArray(entry.tags) || !entry.tags.includes(tag)) continue;
     const role = entry.tags.includes(BASELINE_TAG) ? "baseline" : "recovery";
 
-    if (entry.trade_id) {
-      const t = trades.find(tr => tr.id === entry.trade_id);
+    const tradeId = entry.trade_id ?? entry.metadata?.trade_id;
+    if (tradeId) {
+      const t = trades.find(tr => tr.id === tradeId);
       if (t) { members.push(fromTrade(t, role)); continue; }
     }
     const openMatch = openPositions.find(p => tupleMatch(entry, p));
