@@ -61,6 +61,7 @@ export function ExploreView({
   onCloseTickerDetail,
   onShowJournalEntry,
   onTagPosition,
+  onOpenBasket,
 }) {
   const { positions, account, trades } = useData();
   const isDetail = subView === "ticker-detail";
@@ -110,6 +111,7 @@ export function ExploreView({
             onOpenTickerDetail={onOpenTickerDetail}
             onShowJournalEntry={onShowJournalEntry}
             onTagPosition={onTagPosition}
+            onOpenBasket={onOpenBasket}
           />
         )}
         {active === "tickers"   && <TickersTab onOpenTickerDetail={onOpenTickerDetail} />}

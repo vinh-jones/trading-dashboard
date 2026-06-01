@@ -418,7 +418,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition }) {
+function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -696,7 +696,11 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                             key={t.tag}
                             tag={t.tag}
                             compact={false}
-                            onClick={() => onShowJournalEntry?.(t.entryId)}
+                            onClick={
+                              t.tag.startsWith("strategy:") && onOpenBasket
+                                ? () => onOpenBasket(t.tag)
+                                : () => onShowJournalEntry?.(t.entryId)
+                            }
                           />
                         ))}
                       </div>
@@ -747,7 +751,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
 
 const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 
-export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition }) {
+export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition, onOpenBasket }) {
   const { positions, account } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
@@ -965,6 +969,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
             strategicTagsByPos={strategicTagsByPos}
             onShowJournalEntry={onShowJournalEntry}
             onTagPosition={onTagPosition}
+            onOpenBasket={onOpenBasket}
           />
         </>
       )}

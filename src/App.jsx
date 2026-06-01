@@ -89,6 +89,7 @@ export default function TradeDashboard() {
   const [journalIntent,   setJournalIntent]   = useState(null);
   const [positionIntent,  setPositionIntent]  = useState(null);
   const [detailTicker,    setDetailTicker]    = useState(null);
+  const [basketTag,       setBasketTag]       = useState(null);
 
   useHotkey("mod+k", (e) => {
     e.preventDefault();
@@ -165,6 +166,12 @@ export default function TradeDashboard() {
     setMode("review");
     setSubViewRaw("journal");
     setJournalIntent({ kind: "tag_position", position });
+  }
+
+  function openBasket(tag) {
+    setBasketTag(tag);
+    setModeRaw("explore");
+    setSubViewRaw("baskets");
   }
 
   // ── Filter state — preserved from prior shell ─────────────────────────────
@@ -292,6 +299,8 @@ export default function TradeDashboard() {
                 }}
                 onShowJournalEntry={handleShowJournalEntry}
                 onTagPosition={handleTagPosition}
+                basketTag={basketTag}
+                onOpenBasket={openBasket}
               />
             )}
             {mode === "review" && (
