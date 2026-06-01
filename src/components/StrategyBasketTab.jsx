@@ -51,8 +51,10 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
     return [...set].sort();
   }, [entries]);
 
-  const [selectedTag, setSelectedTag] = useState(initialTag ?? strategyTags[0] ?? null);
-  const activeTag = (initialTag && strategyTags.includes(initialTag)) ? initialTag : (selectedTag ?? strategyTags[0] ?? null);
+  const [selectedTag, setSelectedTag] = useState(initialTag);
+  const activeTag = (selectedTag && strategyTags.includes(selectedTag))
+    ? selectedTag
+    : (strategyTags[0] ?? null);
 
   const openPositions = useMemo(() => flattenOpen(positions), [positions]);
   const members = useMemo(
@@ -119,7 +121,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
         {members.length === 0 && <div style={{ color: theme.text.muted, fontSize: theme.size.sm }}>No members.</div>}
         {members.map((m, i) => (
-          <div key={i} style={{
+          <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
             display: "flex", alignItems: "center", gap: theme.space[3],
             padding: `${theme.space[2]}px ${theme.space[3]}px`,
             background: theme.bg.surface, fontSize: theme.size.sm,
