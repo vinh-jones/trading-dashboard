@@ -93,9 +93,10 @@ export function realizedRecovery(members) {
 
 const SHORT_TYPES = new Set(["CSP", "CC"]);
 const LONG_OPTION_TYPES = new Set(["LEAPS"]);
+const CALL_TYPES = new Set(["LEAPS", "CC"]);
 
 function markFor(member, quoteMap) {
-  const isCall = member.type === "LEAPS" || member.type === "CC";
+  const isCall = CALL_TYPES.has(member.type);
   const sym = buildOccSymbol(member.ticker, member.expiry, isCall, member.strike);
   const q = quoteMap.get(sym);
   if (!q) return null;
