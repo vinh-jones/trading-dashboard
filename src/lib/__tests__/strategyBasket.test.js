@@ -39,6 +39,19 @@ describe("resolveBasket", () => {
     expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 450 });
   });
 
+  it("tuple-matches a closed leg whose normalizeTrade output added an MM/DD `expiry` alongside ISO `expiry_date`", () => {
+    // When a tagged OPEN position closes, it becomes a normalized trade carrying
+    // BOTH expiry_date (ISO) and expiry (MM/DD). The ISO date must win the match,
+    // or the closed leg silently drops out of the basket.
+    const closedNorm = [
+      { id: "cohr-c", ticker: "COHR", type: "CSP", strike: 310, expiry: "07/02", expiry_date: "2026-07-02", close: "06/02", closeDate: new Date("2026-06-02T12:00:00"), premium: 810, fronted: 31000 },
+    ];
+    const e = [{ tags: ["strategy:k"], trade_id: null, ticker: "COHR", type: "CSP", strike: 310, expiry: "2026-07-02" }];
+    const members = resolveBasket("strategy:k", { openPositions: [], trades: closedNorm, entries: e });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 810 });
+  });
+
   it("resolves a trade via metadata.trade_id when top-level trade_id is absent", () => {
     const e = [{ tags: ["strategy:m"], trade_id: null, metadata: { trade_id: "rec-1" }, ticker: "COHR", type: "CSP", strike: 999, expiry: "2099-01-01" }];
     const members = resolveBasket("strategy:m", { openPositions: [], trades, entries: e });

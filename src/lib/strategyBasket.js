@@ -6,11 +6,17 @@ import { buildOccSymbol } from "./trading";
 const BASELINE_TAG = "role:makeup-baseline";
 
 function tupleMatch(a, b) {
+  // Prefer the ISO `expiry_date` over `expiry`. Journal entries carry the ISO
+  // date in `expiry`; open positions carry it in `expiry_date`. But a CLOSED
+  // leg goes through normalizeTrade(), which adds an MM/DD `expiry` ("07/02")
+  // ALONGSIDE the ISO `expiry_date` — so reading `expiry` first would compare
+  // "07/02" against the entry's "2026-07-02" and silently fail to match.
+  const exp = (x) => String(x.expiry_date ?? x.expiry);
   return (
     a.ticker === b.ticker &&
     String(a.type) === String(b.type) &&
     String(a.strike) === String(b.strike) &&
-    String(a.expiry ?? a.expiry_date) === String(b.expiry ?? b.expiry_date)
+    exp(a) === exp(b)
   );
 }
 
