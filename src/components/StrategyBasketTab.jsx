@@ -6,7 +6,7 @@ import { TYPE_COLORS } from "../lib/constants";
 import { getOpenCSPs, getOpenCCs, getOpenLEAPs } from "../lib/positionSchema";
 import {
   resolveBasket, basketTarget, capitalDeployed,
-  realizedRecovery, unrealizedCushion, memberUnrealized,
+  realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
 } from "../lib/strategyBasket";
 
 const STRATEGY_PREFIX = "strategy:";
@@ -139,6 +139,45 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
           No baseline set — tag the loss trade with <code>role:makeup-baseline</code> to enable the progress bar.
         </div>
       )}
+
+      {/* A/B: makeup basket vs. just holding the closed underlying */}
+      {(() => {
+        const baseline = members.find(m => m.role === "baseline");
+        if (!baseline) return null;
+        const cur = quoteMap.get(baseline.ticker)?.mid ?? quoteMap.get(baseline.ticker)?.last ?? null;
+        const holdGain = holdCounterfactual(baseline, cur);
+        if (holdGain == null) return null;
+        const basketGain = realized + cushion.total;
+        const maxAbs = Math.max(Math.abs(basketGain), Math.abs(holdGain), 1);
+        const delta  = basketGain - holdGain;
+
+        const CmpRow = (label, value) => (
+          <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], marginBottom: theme.space[1] }}>
+            <span style={{ width: 150, fontSize: theme.size.sm, color: theme.text.secondary }}>{label}</span>
+            <span style={{ width: 80, textAlign: "right", fontFamily: theme.font.mono, fontSize: theme.size.sm, color: value >= 0 ? theme.green : theme.red }}>{fmtMoney(value)}</span>
+            <div style={{ flex: 1, height: 8, background: theme.bg.base, borderRadius: theme.radius.pill, overflow: "hidden" }}>
+              <div style={{ width: `${(Math.abs(value) / maxAbs) * 100}%`, height: "100%", background: value >= 0 ? theme.green : theme.red, transition: "width 0.3s" }} />
+            </div>
+          </div>
+        );
+
+        return (
+          <div style={{ marginBottom: theme.space[5], padding: theme.space[3], background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: theme.space[2] }}>
+              <span style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>vs. holding {baseline.ticker}</span>
+              <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>since {fmtDate(baseline.closeDate ?? baseline.openDate)}</span>
+            </div>
+            {CmpRow("Makeup basket", basketGain)}
+            {CmpRow(`Hold ${baseline.contracts != null ? baseline.contracts.toLocaleString() : "?"} @ $${baseline.exitCost}`, holdGain)}
+            <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginTop: theme.space[2] }}>
+              → {delta >= 0 ? "Makeup" : "Holding"} ahead by {fmtMoney(Math.abs(delta))}
+            </div>
+            <div style={{ fontSize: theme.size.xs, color: theme.text.faint ?? theme.text.subtle, marginTop: theme.space[1] }}>
+              Mark-to-market since the pivot · not capital-matched · excludes covered-call premium the shares would have earned
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Transaction log */}
       <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginBottom: theme.space[2], textTransform: "uppercase", letterSpacing: "0.4px" }}>Transactions</div>

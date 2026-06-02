@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual } from "../strategyBasket";
 import { buildOccSymbol } from "../trading";
 
 const openPositions = [
@@ -137,5 +137,24 @@ describe("memberUnrealized", () => {
     const members = [longLeaps, shortCsp];
     const summed = members.reduce((s, m) => s + (memberUnrealized(m, quoteMap) ?? 0), 0);
     expect(unrealizedCushion(members, quoteMap).total).toBe(summed);
+  });
+});
+
+describe("holdCounterfactual", () => {
+  const baseline = { role: "baseline", status: "closed", ticker: "SOFI", type: "Shares", exitCost: 18, contracts: 3300 };
+
+  it("computes (current - exit) * shares", () => {
+    expect(holdCounterfactual(baseline, 18.56)).toBeCloseTo(1848, 6);
+  });
+
+  it("is negative when current is below the exit price", () => {
+    expect(holdCounterfactual(baseline, 17)).toBeCloseTo(-3300, 6);
+  });
+
+  it("returns null when the baseline or price data is missing", () => {
+    expect(holdCounterfactual(baseline, null)).toBe(null);
+    expect(holdCounterfactual({ exitCost: null, contracts: 3300 }, 18)).toBe(null);
+    expect(holdCounterfactual({ exitCost: 18, contracts: null }, 18)).toBe(null);
+    expect(holdCounterfactual(null, 18)).toBe(null);
   });
 });

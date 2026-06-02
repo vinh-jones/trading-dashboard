@@ -56,6 +56,7 @@ function fromTrade(trade, role) {
     contracts: trade.contracts ?? null,
     capitalFronted: trade.capital_fronted ?? trade.fronted ?? 0,
     entryCost: trade.entry_cost ?? null,
+    exitCost: trade.exit_cost ?? null,
     realized: trade.premium_collected ?? trade.premium ?? 0,
   };
 }
@@ -102,6 +103,19 @@ export function realizedRecovery(members) {
   return members
     .filter(m => m.role === "recovery" && m.status === "closed")
     .reduce((sum, m) => sum + (m.realized ?? 0), 0);
+}
+
+/**
+ * Counterfactual P/L of holding the baseline position instead of closing it:
+ * (currentPrice − exit price) × shares. Used for the "vs. holding X" A/B view.
+ * Returns null when the baseline lacks an exit price / share count or no current
+ * price is available. Assumes a shares baseline (multiplier 1, no ×100).
+ */
+export function holdCounterfactual(baselineMember, currentPrice) {
+  if (!baselineMember) return null;
+  const { exitCost, contracts } = baselineMember;
+  if (exitCost == null || contracts == null || currentPrice == null) return null;
+  return (currentPrice - exitCost) * contracts;
 }
 
 const SHORT_TYPES = new Set(["CSP", "CC"]);
