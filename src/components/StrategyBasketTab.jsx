@@ -17,6 +17,22 @@ function fmtMoney(n) {
   return `${sign}$${Math.abs(Math.round(n)).toLocaleString()}`;
 }
 
+// ISO "YYYY-MM-DD" → "MM/DD/YY". Passes through anything non-ISO unchanged.
+function fmtDate(d) {
+  if (!d) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d));
+  return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : String(d);
+}
+
+// Shared column geometry for the transaction table (header + rows stay aligned).
+const COL = {
+  date:   { width: 64, flexShrink: 0 },
+  ticker: { width: 52, flexShrink: 0 },
+  type:   { width: 60, flexShrink: 0 },
+  detail: { flex: 1, minWidth: 0 },
+  num:    { width: 100, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
+};
+
 function flattenOpen(positions) {
   return [
     ...getOpenCSPs(positions).map(p => ({ ...p, type: "CSP" })),
@@ -126,36 +142,70 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
 
       {/* Transaction log */}
       <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginBottom: theme.space[2], textTransform: "uppercase", letterSpacing: "0.4px" }}>Transactions</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        {members.length === 0 && <div style={{ color: theme.text.muted, fontSize: theme.size.sm }}>No members.</div>}
-        {members.map((m, i) => {
-          // Open recovery members show live G/L (mark-to-market); closed show realized P/L.
-          const open = m.status === "open";
-          const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
-          const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
-          return (
-          <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
+      {members.length === 0 ? (
+        <div style={{ color: theme.text.muted, fontSize: theme.size.sm }}>No members.</div>
+      ) : (
+        <div style={{
+          display: "flex", flexDirection: "column", gap: 1,
+          background: theme.border.default,
+          border: `1px solid ${theme.border.default}`,
+          borderRadius: theme.radius.md, overflow: "hidden",
+        }}>
+          {/* Header */}
+          <div style={{
             display: "flex", alignItems: "center", gap: theme.space[3],
             padding: `${theme.space[2]}px ${theme.space[3]}px`,
-            background: theme.bg.surface, fontSize: theme.size.sm,
+            background: theme.bg.elevated,
+            fontSize: theme.size.xs, color: theme.text.muted,
+            textTransform: "uppercase", letterSpacing: "0.4px",
           }}>
-            <span style={{ width: 70, fontFamily: theme.font.mono, color: theme.text.muted }}>{m.closeDate ?? m.openDate ?? ""}</span>
-            <span style={{ width: 56, fontWeight: 600 }}>{m.ticker}</span>
-            <span style={{ width: 64, color: TYPE_COLORS[m.type]?.text ?? theme.text.secondary }}>{m.type}</span>
-            <span style={{ flex: 1, color: theme.text.subtle }}>
-              {m.role === "baseline" ? "Baseline loss" : open ? "Open" : "Closed"}
-              {m.strike != null ? ` · $${m.strike}` : ""}
-            </span>
-            <span style={{ width: 60, textAlign: "right", fontFamily: theme.font.mono, color: theme.text.subtle }}>
-              {open ? `${fmtMoney(m.capitalFronted)} col` : ""}
-            </span>
-            <span style={{ width: 90, textAlign: "right", fontFamily: theme.font.mono, color: glColor }}>
-              {gl == null ? "—" : fmtMoney(gl)}
-            </span>
+            <span style={COL.date}>Date</span>
+            <span style={COL.ticker}>Ticker</span>
+            <span style={COL.type}>Type</span>
+            <span style={COL.detail}>Detail</span>
+            <span style={COL.num}>Collateral</span>
+            <span style={COL.num}>G/L</span>
           </div>
-          );
-        })}
-      </div>
+
+          {(() => {
+            const baseline = members.filter(m => m.role === "baseline");
+            const recovery = members.filter(m => m.role !== "baseline");
+
+            const Row = (m, i) => {
+              const open = m.status === "open";
+              const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
+              const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
+              const detail = m.role === "baseline"
+                ? "Baseline loss"
+                : `${m.strike != null ? `$${m.strike} · ` : ""}${open ? "open" : "closed"}`;
+              return (
+                <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
+                  display: "flex", alignItems: "center", gap: theme.space[3],
+                  padding: `${theme.space[2]}px ${theme.space[3]}px`,
+                  background: theme.bg.surface, fontSize: theme.size.sm,
+                }}>
+                  <span style={{ ...COL.date, fontFamily: theme.font.mono, color: theme.text.muted }}>{fmtDate(m.closeDate ?? m.openDate)}</span>
+                  <span style={{ ...COL.ticker, fontWeight: 600 }}>{m.ticker}</span>
+                  <span style={{ ...COL.type, color: TYPE_COLORS[m.type]?.text ?? theme.text.secondary }}>{m.type}</span>
+                  <span style={{ ...COL.detail, color: theme.text.subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail}</span>
+                  <span style={{ ...COL.num, color: theme.text.subtle }}>{open ? fmtMoney(m.capitalFronted) : "—"}</span>
+                  <span style={{ ...COL.num, color: glColor }}>{gl == null ? "—" : fmtMoney(gl)}</span>
+                </div>
+              );
+            };
+
+            return (
+              <>
+                {baseline.map(Row)}
+                {baseline.length > 0 && recovery.length > 0 && (
+                  <div style={{ height: 2, background: theme.border.strong }} />
+                )}
+                {recovery.map(Row)}
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

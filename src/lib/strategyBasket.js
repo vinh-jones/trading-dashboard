@@ -14,6 +14,14 @@ function tupleMatch(a, b) {
   );
 }
 
+// Normalize a close date to an ISO "YYYY-MM-DD" string. Accepts the raw DB
+// string (close_date) or normalizeTrade()'s Date object (closeDate).
+function toIsoDate(v) {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
+  return String(v);
+}
+
 function fromOpenPosition(pos, role) {
   return {
     status: "open",
@@ -44,7 +52,7 @@ function fromTrade(trade, role) {
     strike: trade.strike ?? null,
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
-    closeDate: trade.close_date ?? trade.close ?? null,
+    closeDate: toIsoDate(trade.close_date ?? trade.closeDate) ?? trade.close ?? null,
     contracts: trade.contracts ?? null,
     capitalFronted: trade.capital_fronted ?? trade.fronted ?? 0,
     entryCost: trade.entry_cost ?? null,
