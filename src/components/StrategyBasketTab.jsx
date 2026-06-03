@@ -269,12 +269,15 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
               );
             };
 
-            // Totals footer — blended stats across closed recovery legs.
+            // Totals footer — elapsed time since the swap + blended closed-leg stats.
+            const pivotDate   = baseline[0]?.closeDate ?? baseline[0]?.openDate ?? null;
+            const daysIn      = daysSince(pivotDate);
             const closedRec   = recovery.filter(m => m.status === "closed");
             const realizedTot = closedRec.reduce((s, m) => s + (m.realized ?? 0), 0);
             const rois        = closedRec.map(m => m.roi).filter(v => v != null);
             const avgRoR      = rois.length ? rois.reduce((s, v) => s + v, 0) / rois.length : null;
             const pctTgt      = target > 0 ? (realizedTot / target) * 100 : null;
+            const showFooter  = daysIn != null || closedRec.length > 0;
 
             return (
               <>
@@ -283,18 +286,26 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
                 {recovery.map(Row)}
-                {closedRec.length > 0 && (
+                {showFooter && (
                   <div style={{
                     display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
                     padding: `${theme.space[2]}px ${theme.space[3]}px`,
                     background: theme.bg.elevated, fontSize: theme.size.xs,
                     color: theme.text.muted, fontFamily: theme.font.mono,
                   }}>
+                    {daysIn != null && (
+                      <span style={{ color: theme.text.secondary }}>{daysIn} {daysIn === 1 ? "day" : "days"} in</span>
+                    )}
+                    {daysIn != null && <span>·</span>}
                     <span style={{ color: theme.text.secondary }}>{closedRec.length} closed</span>
-                    <span>·</span>
-                    <span style={{ color: realizedTot >= 0 ? theme.green : theme.red }}>{fmtMoney(realizedTot)} realized</span>
-                    {avgRoR != null && (<><span>·</span><span>{fmtPct(avgRoR)} avg RoR</span></>)}
-                    {pctTgt != null && (<><span>·</span><span style={{ color: theme.text.secondary }}>{pctTgt.toFixed(1)}% of target recovered</span></>)}
+                    {closedRec.length > 0 && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: realizedTot >= 0 ? theme.green : theme.red }}>{fmtMoney(realizedTot)} realized</span>
+                        {avgRoR != null && (<><span>·</span><span>{fmtPct(avgRoR)} avg RoR</span></>)}
+                        {pctTgt != null && (<><span>·</span><span style={{ color: theme.text.secondary }}>{pctTgt.toFixed(1)}% of target recovered</span></>)}
+                      </>
+                    )}
                   </div>
                 )}
               </>
