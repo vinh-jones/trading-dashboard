@@ -52,6 +52,13 @@ describe("resolveBasket", () => {
     expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 810 });
   });
 
+  it("carries days held and roi from the trade for closed legs", () => {
+    const t = [{ id: "z", ticker: "ZZ", type: "CSP", strike: 50, expiry_date: "2026-08-01", days_held: 12, roi: 1.45, premium_collected: 300, capital_fronted: 5000 }];
+    const e = [{ tags: ["strategy:z"], trade_id: "z", ticker: "ZZ", type: "CSP", strike: 50, expiry: "2026-08-01" }];
+    const [m] = resolveBasket("strategy:z", { trades: t, entries: e });
+    expect(m).toMatchObject({ daysHeld: 12, roi: 1.45 });
+  });
+
   it("resolves a trade via metadata.trade_id when top-level trade_id is absent", () => {
     const e = [{ tags: ["strategy:m"], trade_id: null, metadata: { trade_id: "rec-1" }, ticker: "COHR", type: "CSP", strike: 999, expiry: "2099-01-01" }];
     const members = resolveBasket("strategy:m", { openPositions: [], trades, entries: e });

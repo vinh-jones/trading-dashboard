@@ -63,6 +63,8 @@ function fromTrade(trade, role) {
     capitalFronted: trade.capital_fronted ?? trade.fronted ?? 0,
     entryCost: trade.entry_cost ?? null,
     exitCost: trade.exit_cost ?? null,
+    daysHeld: trade.days_held ?? trade.days ?? null,
+    roi: trade.roi ?? null,
     realized: trade.premium_collected ?? trade.premium ?? 0,
   };
 }

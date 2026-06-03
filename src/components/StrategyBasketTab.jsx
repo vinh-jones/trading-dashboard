@@ -24,13 +24,29 @@ function fmtDate(d) {
   return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : String(d);
 }
 
+// Signed percent, 2 decimals: 2.61 → "+2.61%", -0.65 → "-0.65%".
+function fmtPct(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${n >= 0 ? "+" : "-"}${Math.abs(n).toFixed(2)}%`;
+}
+
+// Whole days from an ISO date to today (browser-local). Null/invalid → null.
+function daysSince(iso) {
+  if (!iso) return null;
+  const t = Date.parse(`${iso}T12:00:00`);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.round((Date.now() - t) / 86400000));
+}
+
 // Shared column geometry for the transaction table (header + rows stay aligned).
 const COL = {
   date:   { width: 64, flexShrink: 0 },
   ticker: { width: 52, flexShrink: 0 },
-  type:   { width: 60, flexShrink: 0 },
+  type:   { width: 56, flexShrink: 0 },
   detail: { flex: 1, minWidth: 0 },
-  num:    { width: 100, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
+  days:   { width: 40, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
+  ret:    { width: 68, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
+  num:    { width: 96, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
 };
 
 function flattenOpen(positions) {
@@ -202,6 +218,8 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
             <span style={COL.ticker}>Ticker</span>
             <span style={COL.type}>Type</span>
             <span style={COL.detail}>Detail</span>
+            <span style={COL.days}>Days</span>
+            <span style={COL.ret}>Return</span>
             <span style={COL.num}>Collateral</span>
             <span style={COL.num}>G/L</span>
           </div>
@@ -214,9 +232,25 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
               const open = m.status === "open";
               const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
               const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
+
+              // Days: closed → lifespan; open → days held so far.
+              const days = open ? daysSince(m.openDate) : m.daysHeld;
+              // Return %: closed → stored RoR (premium/collateral); open → current unrealized return on capital.
+              const ret = m.role === "baseline"
+                ? null
+                : open
+                  ? (gl != null && m.capitalFronted ? (gl / m.capitalFronted) * 100 : null)
+                  : m.roi;
+              const retColor = ret == null ? theme.text.muted : ret >= 0 ? theme.green : theme.red;
+
+              // Closed recovery legs also show their share of the target in the detail.
+              const pctOfTarget = (!open && m.role === "recovery" && target > 0 && m.realized != null)
+                ? ` · ${((m.realized / target) * 100).toFixed(1)}% of target`
+                : "";
               const detail = m.role === "baseline"
                 ? "Baseline loss"
-                : `${m.strike != null ? `$${m.strike} · ` : ""}${open ? "open" : "closed"}`;
+                : `${m.strike != null ? `$${m.strike} · ` : ""}${open ? "open" : "closed"}${pctOfTarget}`;
+
               return (
                 <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
                   display: "flex", alignItems: "center", gap: theme.space[3],
@@ -227,11 +261,20 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                   <span style={{ ...COL.ticker, fontWeight: 600 }}>{m.ticker}</span>
                   <span style={{ ...COL.type, color: TYPE_COLORS[m.type]?.text ?? theme.text.secondary }}>{m.type}</span>
                   <span style={{ ...COL.detail, color: theme.text.subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail}</span>
+                  <span style={{ ...COL.days, color: theme.text.muted }}>{days != null ? `${days}d` : "—"}</span>
+                  <span style={{ ...COL.ret, color: retColor }}>{ret == null ? "—" : fmtPct(ret)}</span>
                   <span style={{ ...COL.num, color: theme.text.subtle }}>{open ? fmtMoney(m.capitalFronted) : "—"}</span>
                   <span style={{ ...COL.num, color: glColor }}>{gl == null ? "—" : fmtMoney(gl)}</span>
                 </div>
               );
             };
+
+            // Totals footer — blended stats across closed recovery legs.
+            const closedRec   = recovery.filter(m => m.status === "closed");
+            const realizedTot = closedRec.reduce((s, m) => s + (m.realized ?? 0), 0);
+            const rois        = closedRec.map(m => m.roi).filter(v => v != null);
+            const avgRoR      = rois.length ? rois.reduce((s, v) => s + v, 0) / rois.length : null;
+            const pctTgt      = target > 0 ? (realizedTot / target) * 100 : null;
 
             return (
               <>
@@ -240,6 +283,20 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
                 {recovery.map(Row)}
+                {closedRec.length > 0 && (
+                  <div style={{
+                    display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
+                    padding: `${theme.space[2]}px ${theme.space[3]}px`,
+                    background: theme.bg.elevated, fontSize: theme.size.xs,
+                    color: theme.text.muted, fontFamily: theme.font.mono,
+                  }}>
+                    <span style={{ color: theme.text.secondary }}>{closedRec.length} closed</span>
+                    <span>·</span>
+                    <span style={{ color: realizedTot >= 0 ? theme.green : theme.red }}>{fmtMoney(realizedTot)} realized</span>
+                    {avgRoR != null && (<><span>·</span><span>{fmtPct(avgRoR)} avg RoR</span></>)}
+                    {pctTgt != null && (<><span>·</span><span style={{ color: theme.text.secondary }}>{pctTgt.toFixed(1)}% of target recovered</span></>)}
+                  </div>
+                )}
               </>
             );
           })()}
