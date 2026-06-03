@@ -32,11 +32,13 @@ function getSupabase() {
 
 // Fetch last-trade prices from the cached quotes table.
 // Returns { ticker: lastPrice }. Missing tickers are absent from the map.
+// Returns { [symbol]: { last, iv } } for the given tickers. `iv` feeds the
+// recovery gauge (radar/equity IV — no cushion enrichment in this endpoint).
 async function fetchLastPrices(supabase, tickers) {
   if (!tickers || tickers.length === 0) return {};
   const { data, error } = await supabase
     .from("quotes")
-    .select("symbol, last")
+    .select("symbol, last, iv")
     .in("symbol", tickers);
   if (error) {
     console.warn("[api/position-lifespan] quotes fetch failed:", error.message);
@@ -44,7 +46,12 @@ async function fetchLastPrices(supabase, tickers) {
   }
   const map = {};
   for (const q of data ?? []) {
-    if (q?.symbol && q.last != null) map[q.symbol] = parseFloat(q.last);
+    if (q?.symbol && q.last != null) {
+      map[q.symbol] = {
+        last: parseFloat(q.last),
+        iv:   q.iv != null ? parseFloat(q.iv) : null,
+      };
+    }
   }
   return map;
 }
@@ -109,10 +116,12 @@ export default async function handler(req, res) {
         if (lifespan.lifespan_status === "active") {
           const framing = computeDecisionFraming({
             lifespan,
-            currentSpot: prices[tk] ?? null,
+            currentSpot: prices[tk]?.last ?? null,
             baselineRate: cspBaseline.avg_return_per_capital_day,
             ticker: tk,
             today,
+            iv: prices[tk]?.iv ?? null,
+            ivSource: prices[tk]?.iv != null ? "radar" : null,
           });
           if (framing) summary.decision_framing = framing;
         }
@@ -180,10 +189,12 @@ export default async function handler(req, res) {
         const prices = await fetchLastPrices(supabase, [tickerUpper]);
         decisionFraming = computeDecisionFraming({
           lifespan,
-          currentSpot: prices[tickerUpper] ?? null,
+          currentSpot: prices[tickerUpper]?.last ?? null,
           baselineRate: cspBaseline.avg_return_per_capital_day,
           ticker: tickerUpper,
           today,
+          iv: prices[tickerUpper]?.iv ?? null,
+          ivSource: prices[tickerUpper]?.iv != null ? "radar" : null,
         });
       }
 
@@ -216,10 +227,12 @@ export default async function handler(req, res) {
         if (l.lifespan_status === "active") {
           const framing = computeDecisionFraming({
             lifespan: l,
-            currentSpot: prices[tickerUpper] ?? null,
+            currentSpot: prices[tickerUpper]?.last ?? null,
             baselineRate: cspBaseline.avg_return_per_capital_day,
             ticker: tickerUpper,
             today,
+            iv: prices[tickerUpper]?.iv ?? null,
+            ivSource: prices[tickerUpper]?.iv != null ? "radar" : null,
           });
           if (framing) summary.decision_framing = framing;
         }

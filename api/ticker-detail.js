@@ -53,7 +53,7 @@ export default async function handler(req, res) {
         .eq("ticker", ticker),
       supabase
         .from("quotes")
-        .select("symbol, last, mid, prev_close, earnings_date, refreshed_at, instrument_type")
+        .select("symbol, last, mid, prev_close, iv, earnings_date, refreshed_at, instrument_type")
         .eq("symbol", ticker)
         .eq("instrument_type", "EQUITY")
         .maybeSingle(),
@@ -79,6 +79,17 @@ export default async function handler(req, res) {
     // have on this same response — no separate quote fetch needed.
     const rawLifespans = detectLifespans(ticker, trades);
     const currentSpot  = quote?.last != null ? parseFloat(quote.last) : null;
+
+    // Recovery-gauge inputs (per-ticker). IV is the equity quote's iv (same
+    // value the cushion calc uses); label it "cushion" when this ticker has an
+    // open CSP, else "radar". ccDte from the assigned-share's active CC.
+    const tickerIv = quote?.iv != null ? parseFloat(quote.iv) : null;
+    const tickerIvSource = tickerIv == null
+      ? null
+      : (openPositions.csps.length > 0 ? "cushion" : "radar");
+    const tickerCcDte = openPositions.shares.find((s) => s.ticker === ticker)
+      ?.active_cc?.days_to_expiry ?? null;
+
     const lifespans = rawLifespans.map((r) => {
       const built = buildLifespan(r, cspBaseline, today);
       const { _tradeIds, ...rest } = built;
@@ -89,6 +100,9 @@ export default async function handler(req, res) {
           baselineRate: cspBaseline.avg_return_per_capital_day,
           ticker,
           today,
+          iv: tickerIv,
+          ivSource: tickerIvSource,
+          ccDte: tickerCcDte,
         });
         if (framing) rest.decision_framing = framing;
       }

@@ -13,9 +13,11 @@
  *          humanizeDuration, computeTrailingCcRate)
  *
  * Private (not exported): tradeSortPriority, isRedundantSharesSold,
- *   computeBlendedBasis, computeVerdict, round2, round4, round6, daysBetween,
- *   daysBetweenDates, clusterLifespanDecisions
+ *   computeBlendedBasis, computeVerdict, round2, round3, round4, round6,
+ *   daysBetween, daysBetweenDates, clusterLifespanDecisions
  */
+
+import { normCDF } from "../../src/lib/normal.js";
 
 export const DATA_QUALITY_THRESHOLD = "2026-01-01";
 
@@ -739,6 +741,7 @@ function daysBetweenDates(d1, d2) {
 }
 
 function round2(n) { return +n.toFixed(2); }
+function round3(n) { return +n.toFixed(3); }
 function round4(n) { return +n.toFixed(4); }
 function round6(n) { return +n.toFixed(6); }
 
@@ -758,6 +761,110 @@ export function classifyBreakeven(days) {
   if (days < 270) return "decision_zone";
   if (days < 540) return "long_horizon";
   return "effectively_stuck";
+}
+
+// ---------------------------------------------------------------------------
+// Recovery reachability — horizon-scaled sigmas + touch probability
+// (spec: docs/superpowers/specs/SPEC_RECOVERY_SIGMAS_V1.md)
+//
+// Expresses "distance to breakeven" in horizon-scaled sigmas and a touch
+// probability, reusing the same per-name IV the cushion triggers use. This
+// replaces the constant-recovery-rate `days_to_breakeven` on rendered surfaces
+// (which prints its worst reading on the worst days, purely from price noise).
+// ---------------------------------------------------------------------------
+
+// ~3 months of trading sessions — the primary strategic horizon. Tunable.
+export const RECOVERY_HORIZON_TRADING_DAYS = 63;
+const TRADING_DAYS_PER_YEAR = 252;
+
+// Banded on touch_prob: deliberately coarse so the panel reports a *state*,
+// not a screaming decimal.
+function classifyReachability(touchProb) {
+  if (touchProb >= 0.50) return "reachable";
+  if (touchProb >= 0.25) return "plausible";
+  return "distant";
+}
+
+// Coarse horizon label, e.g. 63 trading days → "~3mo" (≈21 trading days/month).
+function horizonLabel(tradingDays) {
+  const months = Math.round(tradingDays / 21);
+  return `~${months}mo`;
+}
+
+// P(path touches an upper barrier K at any point in [0,H]) under a driftless
+// log-normal — the reflection-principle result 2·Φ(−d). The right question for
+// a recovery/call-away (touch), not a terminal probability. Driftless keeps it
+// consistent with the cushion band; mildly optimistic (omits −½σ² drift).
+function touchProbability(recoverySigmas) {
+  return Math.min(1, 2 * normCDF(-recoverySigmas));
+}
+
+// Computes the recovery gauge for an underwater assigned-share position.
+//   spot      — current spot S
+//   breakeven — blended cost basis K (>spot when underwater)
+//   iv        — per-name implied vol (decimal); null/0 → missing
+//   ivSource  — provenance label: "cushion" | "radar" | null
+//   ccDte     — active covered call's days-to-expiry (optional secondary horizon)
+// Returns the `recovery` object described in the spec. Missing/zero IV yields
+// null numeric fields (caller adds the ticker to recovery_missing_iv).
+export function computeRecovery({
+  spot,
+  breakeven,
+  iv,
+  ivSource = null,
+  horizonTradingDays = RECOVERY_HORIZON_TRADING_DAYS,
+  ccDte = null,
+}) {
+  const atOrAbove = spot >= breakeven;
+
+  // Missing IV (no cushion IV, no radar IV) or zero IV (σ_H = 0 guard) →
+  // never divide by zero; render "—" not a guess.
+  if (iv == null || !(iv > 0)) {
+    return {
+      breakeven,
+      spot,
+      iv_used:              null,
+      iv_source:            null,
+      horizon_trading_days: horizonTradingDays,
+      horizon_label:        horizonLabel(horizonTradingDays),
+      sigma_horizon:        null,
+      recovery_sigmas:      null,
+      touch_prob:           null,
+      reachability_band:    null,
+      at_or_above_breakeven: atOrAbove,
+    };
+  }
+
+  const sigmaHorizon = iv * Math.sqrt(horizonTradingDays / TRADING_DAYS_PER_YEAR);
+
+  // At/above breakeven (b ≤ 0): don't feed a negative b into the formula.
+  const b = atOrAbove ? 0 : Math.log(breakeven / spot);
+  const recoverySigmas = atOrAbove ? 0 : b / sigmaHorizon;
+  const touchProb = atOrAbove ? 1.0 : touchProbability(recoverySigmas);
+
+  const recovery = {
+    breakeven,
+    spot,
+    iv_used:              iv,
+    iv_source:            ivSource,
+    horizon_trading_days: horizonTradingDays,
+    horizon_label:        horizonLabel(horizonTradingDays),
+    sigma_horizon:        round4(sigmaHorizon),
+    recovery_sigmas:      round2(recoverySigmas),
+    touch_prob:           round3(touchProb),
+    reachability_band:    classifyReachability(touchProb),
+    at_or_above_breakeven: atOrAbove,
+  };
+
+  // Secondary — "called away THIS cycle?" using the active CC's DTE.
+  if (ccDte != null && ccDte > 0) {
+    const sigmaCc = iv * Math.sqrt(ccDte / TRADING_DAYS_PER_YEAR);
+    const recoverySigmasCc = atOrAbove ? 0 : b / sigmaCc;
+    recovery.cc_dte = ccDte;
+    recovery.touch_prob_cc_cycle = atOrAbove ? 1.0 : round3(touchProbability(recoverySigmasCc));
+  }
+
+  return recovery;
 }
 
 // Most recent CC strike from cc_history (by close_date). Returns null when
@@ -818,7 +925,7 @@ export function computeTrailingCcRate(ccHistory, today, days = 60) {
 // shares held, missing inputs).
 //
 // See spec: docs/superpowers/specs/2026-05-09-decision-framing-active-positions-design.md
-export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ticker, today }) {
+export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ticker, today, iv = null, ivSource = null, ccDte = null }) {
   // Guards
   if (!lifespan || lifespan.lifespan_status !== "active") return null;
   if (!Array.isArray(lifespan.assignment_events) || lifespan.assignment_events.length === 0) return null;
@@ -862,6 +969,14 @@ export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ti
   const drawdownPct  = (currentSpot - cb) / cb;
   const drawdownZone = classifyDrawdown(drawdownPct);
 
+  const recovery = computeRecovery({
+    spot:      currentSpot,
+    breakeven: cb,
+    iv,
+    ivSource,
+    ccDte,
+  });
+
   const detailed_breakdown = {
     cumulative_wheel_pnl:        cumulativeWheelPnl,
     csp_premium_collected:       round2(cspPremium),
@@ -893,6 +1008,7 @@ export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ti
       recovery_date:      null,
       framing_question:   "Wheel currently outperforming cut alternative; no breakeven date.",
       framing_duration:   null,
+      recovery,
       detailed_breakdown,
     };
   }
@@ -909,6 +1025,7 @@ export function computeDecisionFraming({ lifespan, currentSpot, baselineRate, ti
     recovery_date:      recoveryDate,
     framing_question:   `Do you think ${ticker} reaches $${cb.toFixed(2)} (cost basis) by ${recoveryDate}?`,
     framing_duration:   humanizeDuration(daysToBreakeven),
+    recovery,
     detailed_breakdown,
   };
 }

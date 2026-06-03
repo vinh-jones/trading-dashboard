@@ -88,6 +88,25 @@ function pad(s, w) {
   return String(s ?? "").padEnd(w);
 }
 
+// One-line recovery-gauge summary for the EOD debrief. Replaces the old
+// constant-rate "~N months" / recovery_date phrasing with horizon-scaled
+// sigmas + touch odds (band, not a false-precise decimal). Returns null when
+// there is no recovery object to render.
+function formatRecoveryLine(recovery) {
+  if (!recovery) return null;
+  const r = recovery;
+  if (r.recovery_sigmas == null) {
+    return `breakeven $${r.breakeven?.toFixed?.(2) ?? r.breakeven} · recovery — (no IV)`;
+  }
+  const bandLabel = r.reachability_band[0].toUpperCase() + r.reachability_band.slice(1);
+  const touchPct = Math.round(r.touch_prob * 100);
+  let line = `breakeven $${r.breakeven.toFixed(2)} · ${r.recovery_sigmas}σ over ${r.horizon_label} · ${bandLabel} (~${touchPct}%)`;
+  if (r.touch_prob_cc_cycle != null) {
+    line += ` · this cycle ~${Math.round(r.touch_prob_cc_cycle * 100)}%`;
+  }
+  return line;
+}
+
 // Fetch all CSP/CC/Shares trades for the given tickers, used to rebuild
 // per-ticker lifespans for decision_framing computation in the EOD snapshot.
 async function fetchTickerTrades(supabase, tickers) {
@@ -244,11 +263,9 @@ function buildTextBlob({
         .replace("effectively_stuck", "Effectively stuck");
       const drawdownLabel = f.drawdown_zone[0].toUpperCase() + f.drawdown_zone.slice(1);
       lines.push(`${f.ticker} · ${drawdownLabel} / ${breakevenLabel}`);
-      if (f.framing_question && f.framing_duration) {
-        lines.push(`  Q: "${f.framing_question}" (${f.framing_duration})`);
-      } else if (f.framing_question) {
-        lines.push(`  ${f.framing_question}`);
-      }
+      if (f.framing_question) lines.push(`  Q: "${f.framing_question}"`);
+      const recoveryLine = formatRecoveryLine(f.recovery);
+      if (recoveryLine) lines.push(`  ${recoveryLine}`);
     }
 
     // Footer two-line summary
@@ -617,6 +634,20 @@ export default async function handler(req, res) {
   // For each active assigned ticker, rebuild the lifespan and compute framing.
   const assignedTickers = (positions?.assigned_shares ?? []).map((s) => s.ticker);
   const decisionFraming = [];
+  const recoveryMissingIv = [];
+
+  // Recovery-gauge inputs, keyed by ticker. IV source priority (per spec):
+  //   cushion_iv_used on any open CSP for the ticker → else radar iv → else null.
+  const cushionIvByTicker = {};
+  for (const csp of positions?.open_csps ?? []) {
+    if (csp.cushion_iv_used != null && cushionIvByTicker[csp.ticker] == null) {
+      cushionIvByTicker[csp.ticker] = csp.cushion_iv_used;
+    }
+  }
+  const ccDteByTicker = {};
+  for (const s of positions?.assigned_shares ?? []) {
+    if (s.active_cc?.days_to_expiry != null) ccDteByTicker[s.ticker] = s.active_cc.days_to_expiry;
+  }
 
   if (assignedTickers.length > 0) {
     // Fetch CSP baseline (same query/columns as position-lifespan)
@@ -657,14 +688,26 @@ export default async function handler(req, res) {
 
       const built = buildLifespan(activeLifespan, cspBaseline, today);
       const currentSpot = quotesMap[tk]?.last ?? extraPrices[tk] ?? null;
+
+      const cushionIv = cushionIvByTicker[tk] ?? null;
+      const radarIv   = quotesMap[tk]?.iv != null ? parseFloat(quotesMap[tk].iv) : null;
+      const iv        = cushionIv ?? radarIv ?? null;
+      const ivSource  = cushionIv != null ? "cushion" : (radarIv != null ? "radar" : null);
+
       const framing = computeDecisionFraming({
         lifespan: built,
         currentSpot,
         baselineRate: cspBaseline.avg_return_per_capital_day,
         ticker: tk,
         today,
+        iv,
+        ivSource,
+        ccDte: ccDteByTicker[tk] ?? null,
       });
-      if (framing) decisionFraming.push({ ticker: tk, ...framing });
+      if (framing) {
+        decisionFraming.push({ ticker: tk, ...framing });
+        if (framing.recovery?.iv_used == null) recoveryMissingIv.push(tk);
+      }
     }
   }
 
@@ -697,6 +740,7 @@ export default async function handler(req, res) {
     text,
     data_completeness: {
       cushion_missing_iv:      cushionMissingIv,
+      recovery_missing_iv:     recoveryMissingIv,
       cushion_skipped_spreads: [],
     },
     data: {

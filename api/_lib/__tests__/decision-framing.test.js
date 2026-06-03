@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computeDecisionFraming,
+  computeRecovery,
+  RECOVERY_HORIZON_TRADING_DAYS,
   classifyDrawdown,
   classifyBreakeven,
   getRecentCcStrike,
@@ -326,5 +328,150 @@ describe("computeDecisionFraming math", () => {
       currentSpot: 80, baselineRate: 0.00245, ticker: "T", today: "2026-05-09",
     });
     expect(r.detailed_breakdown.trailing_rate_immature).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRecovery — horizon-scaled sigmas + touch probability
+// (spec: docs/superpowers/specs/SPEC_RECOVERY_SIGMAS_V1.md)
+// ---------------------------------------------------------------------------
+
+describe("computeRecovery", () => {
+  it("default horizon constant is 63 trading days (~3 months)", () => {
+    expect(RECOVERY_HORIZON_TRADING_DAYS).toBe(63);
+  });
+
+  it("KTOS worked example: 0.6σ over ~3mo, ~56% touch, reachable", () => {
+    // S=58.40, K=73.50, IV=0.787, H=63
+    //   sigma_horizon  = 0.787 * sqrt(63/252) = 0.787 * 0.5 = 0.3935
+    //   b              = ln(73.50/58.40) = 0.23004
+    //   recovery_sigmas = 0.23004 / 0.3935 ≈ 0.585
+    //   touch_prob     = 2 * Phi(-0.585) ≈ 0.56
+    const r = computeRecovery({
+      spot: 58.40, breakeven: 73.50, iv: 0.787, ivSource: "cushion",
+    });
+    expect(r.breakeven).toBe(73.50);
+    expect(r.spot).toBe(58.40);
+    expect(r.iv_used).toBe(0.787);
+    expect(r.iv_source).toBe("cushion");
+    expect(r.horizon_trading_days).toBe(63);
+    expect(r.horizon_label).toBe("~3mo");
+    expect(r.sigma_horizon).toBeCloseTo(0.3935, 4);
+    expect(r.recovery_sigmas).toBeCloseTo(0.58, 2);
+    expect(r.touch_prob).toBeCloseTo(0.56, 2);
+    expect(r.reachability_band).toBe("reachable");
+    expect(r.at_or_above_breakeven).toBe(false);
+    // no active CC → secondary fields omitted
+    expect(r.cc_dte).toBeUndefined();
+    expect(r.touch_prob_cc_cycle).toBeUndefined();
+  });
+
+  it("low-IV name at same gap is correctly Distant", () => {
+    // Same +26% gap, IV=0.25 → sigma_horizon = 0.125, recovery_sigmas ≈ 1.84,
+    // touch_prob ≈ 0.066 → distant
+    const r = computeRecovery({
+      spot: 58.40, breakeven: 73.50, iv: 0.25, ivSource: "radar",
+    });
+    expect(r.recovery_sigmas).toBeCloseTo(1.84, 2);
+    expect(r.touch_prob).toBeCloseTo(0.066, 2);
+    expect(r.reachability_band).toBe("distant");
+  });
+
+  it("at-or-above breakeven: sigmas=0, touch_prob=1, reachable", () => {
+    const r = computeRecovery({
+      spot: 80, breakeven: 73.50, iv: 0.50, ivSource: "cushion",
+    });
+    expect(r.at_or_above_breakeven).toBe(true);
+    expect(r.recovery_sigmas).toBe(0);
+    expect(r.touch_prob).toBe(1.0);
+    expect(r.reachability_band).toBe("reachable");
+  });
+
+  it("missing IV: numeric fields null, iv_source null", () => {
+    const r = computeRecovery({
+      spot: 58.40, breakeven: 73.50, iv: null, ivSource: null,
+    });
+    expect(r.iv_used).toBeNull();
+    expect(r.iv_source).toBeNull();
+    expect(r.sigma_horizon).toBeNull();
+    expect(r.recovery_sigmas).toBeNull();
+    expect(r.touch_prob).toBeNull();
+    expect(r.reachability_band).toBeNull();
+  });
+
+  it("zero IV is treated as missing (no divide-by-zero)", () => {
+    const r = computeRecovery({
+      spot: 58.40, breakeven: 73.50, iv: 0, ivSource: "radar",
+    });
+    expect(r.sigma_horizon).toBeNull();
+    expect(r.recovery_sigmas).toBeNull();
+    expect(r.touch_prob).toBeNull();
+    expect(r.iv_source).toBeNull();
+  });
+
+  it("active CC cycle: cc_dte + touch_prob_cc_cycle at the CC's DTE", () => {
+    // KTOS with a 15-DTE CC:
+    //   sigma_cc = 0.787 * sqrt(15/252) ≈ 0.192
+    //   recovery_sigmas_cc = 0.23004 / 0.192 ≈ 1.198
+    //   touch_prob_cc = 2 * Phi(-1.198) ≈ 0.23
+    const r = computeRecovery({
+      spot: 58.40, breakeven: 73.50, iv: 0.787, ivSource: "cushion", ccDte: 15,
+    });
+    expect(r.cc_dte).toBe(15);
+    expect(r.touch_prob_cc_cycle).toBeCloseTo(0.23, 2);
+  });
+
+  it("reachability bands hinge on touch_prob thresholds", () => {
+    // plausible band: 0.25 <= touch_prob < 0.50
+    const r = computeRecovery({ spot: 58.40, breakeven: 73.50, iv: 0.45, ivSource: "radar" });
+    expect(r.touch_prob).toBeGreaterThanOrEqual(0.25);
+    expect(r.touch_prob).toBeLessThan(0.50);
+    expect(r.reachability_band).toBe("plausible");
+  });
+});
+
+describe("computeDecisionFraming attaches recovery", () => {
+  it("attaches recovery in the perpetual branch (wheel ahead)", () => {
+    // baseLifespan is wheel_ahead_perpetually at spot=80; recovery is
+    // independent of the wheel-vs-cut math and must still attach.
+    const r = computeDecisionFraming({
+      lifespan: baseLifespan(), currentSpot: 80,
+      baselineRate: 0.00245, ticker: "TEST", today: "2026-05-09",
+      iv: 0.50, ivSource: "cushion",
+    });
+    expect(r.breakeven_zone).toBe("wheel_ahead_perpetually");
+    expect(r.recovery).toBeTruthy();
+    expect(r.recovery.breakeven).toBe(100);   // blended cost basis
+    expect(r.recovery.spot).toBe(80);
+    expect(r.recovery.iv_used).toBe(0.50);
+    expect(r.recovery.iv_source).toBe("cushion");
+    expect(r.recovery.reachability_band).toBeTruthy();
+  });
+
+  it("attaches recovery in the normal breakeven branch", () => {
+    const r = computeDecisionFraming({
+      lifespan: baseLifespan({
+        cc_history: [{ close_date: "2025-01-01", premium_collected: 1, days_held: 100, strike: 100 }],
+        lifespan_metrics: { csp_premium_collected: 200, cc_premium_total: 1, days_active: 128, cc_count_winning: 1, cc_count_losing: 0 },
+      }),
+      currentSpot: 90, baselineRate: 0.05, ticker: "TEST", today: "2026-05-09",
+      iv: 0.50, ivSource: "cushion", ccDte: 15,
+    });
+    expect(r.days_to_breakeven).toBe(3);   // legacy field still present in JSON
+    expect(r.recovery.breakeven).toBe(100);
+    expect(r.recovery.spot).toBe(90);
+    expect(r.recovery.cc_dte).toBe(15);
+    expect(r.recovery.touch_prob_cc_cycle).not.toBeUndefined();
+  });
+
+  it("recovery has null numerics when IV is not provided", () => {
+    const r = computeDecisionFraming({
+      lifespan: baseLifespan(), currentSpot: 80,
+      baselineRate: 0.00245, ticker: "TEST", today: "2026-05-09",
+      // no iv
+    });
+    expect(r.recovery.iv_used).toBeNull();
+    expect(r.recovery.iv_source).toBeNull();
+    expect(r.recovery.touch_prob).toBeNull();
   });
 });

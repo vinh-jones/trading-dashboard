@@ -264,6 +264,25 @@ const BREAKEVEN_LABELS = {
   effectively_stuck:       "Effectively stuck",
 };
 
+const REACHABILITY_COLORS = {
+  reachable: { fg: theme.green,      bg: theme.alert.successBg },
+  plausible: { fg: theme.amber,      bg: theme.alert.dangerBg  },
+  distant:   { fg: theme.text.muted, bg: theme.bg.elevated     },
+};
+
+const REACHABILITY_LABELS = {
+  reachable: "Reachable",
+  plausible: "Plausible",
+  distant:   "Distant",
+};
+
+// Spec §7 — what this is / isn't. Surfaced as the reachability tooltip.
+const RECOVERY_TOOLTIP =
+  "Relative reachability gauge: how many horizon-scaled sigmas breakeven sits " +
+  "away given this name's IV, and the driftless probability the path touches it " +
+  "over the horizon. Single-IV, no skew, no path-dependence. It grounds the " +
+  "judgment — it is NOT a tradeable probability. Do you think it gets there?";
+
 function Badge({ label, color, title }) {
   return (
     <span title={title} style={{
@@ -285,6 +304,30 @@ function BreakdownRow({ label, value, color }) {
   );
 }
 
+// Recovery reachability sub-line: replaces the old constant-rate
+// "~N months · recovery date" phrasing with horizon-scaled sigmas + touch odds.
+function RecoveryReadout({ recovery }) {
+  if (!recovery) return null;
+  const r = recovery;
+
+  // Missing IV — render "—", not a guess.
+  if (r.recovery_sigmas == null) {
+    return (
+      <div title={RECOVERY_TOOLTIP} style={{ marginTop: 4, fontSize: theme.size.xs, color: theme.text.muted }}>
+        Breakeven ${r.breakeven?.toFixed?.(2) ?? r.breakeven} · recovery — IV unavailable
+      </div>
+    );
+  }
+
+  const touchPct = Math.round(r.touch_prob * 100);
+  return (
+    <div title={RECOVERY_TOOLTIP} style={{ marginTop: 4, fontSize: theme.size.xs, color: theme.text.muted, fontFamily: theme.font.mono }}>
+      breakeven ${r.breakeven.toFixed(2)} · {r.recovery_sigmas}σ over {r.horizon_label} · ~{touchPct}% touch
+      {r.touch_prob_cc_cycle != null && ` · this cycle ~${Math.round(r.touch_prob_cc_cycle * 100)}%`}
+    </div>
+  );
+}
+
 function DecisionFramingPanel({ framing, ticker }) {
   const drawdownColor  = DRAWDOWN_COLORS[framing.drawdown_zone]   ?? DRAWDOWN_COLORS.moderate;
   const breakevenColor = BREAKEVEN_COLORS[framing.breakeven_zone] ?? BREAKEVEN_COLORS.long_horizon;
@@ -300,6 +343,7 @@ function DecisionFramingPanel({ framing, ticker }) {
 
   const d = framing.detailed_breakdown ?? {};
   const isPerpetual = framing.breakeven_zone === "wheel_ahead_perpetually";
+  const reachabilityBand = framing.recovery?.reachability_band ?? null;
 
   // Accent border color: severity-driven so the panel reads at a glance.
   const accent =
@@ -330,6 +374,11 @@ function DecisionFramingPanel({ framing, ticker }) {
                  title={isPerpetual
                    ? "Wheel-side daily rate exceeds cut-and-redeploy daily rate; no convergence at current spot"
                    : `Days until cut-and-redeploy alternative would catch up to current wheel state`} />
+          {reachabilityBand && (
+            <Badge label={`Reachability: ${REACHABILITY_LABELS[reachabilityBand]} (~${Math.round(framing.recovery.touch_prob * 100)}%)`}
+                   color={REACHABILITY_COLORS[reachabilityBand]}
+                   title={RECOVERY_TOOLTIP} />
+          )}
           {d.trailing_rate_immature && (
             <Badge
               label="Preliminary"
@@ -342,17 +391,18 @@ function DecisionFramingPanel({ framing, ticker }) {
       {/* Question block */}
       <div style={{ marginTop: theme.space[3] }}>
         {isPerpetual ? (
-          <div style={{ color: theme.green, fontSize: theme.size.sm }}>
-            {framing.framing_question}
-          </div>
+          <>
+            <div style={{ color: theme.green, fontSize: theme.size.sm }}>
+              {framing.framing_question}
+            </div>
+            <RecoveryReadout recovery={framing.recovery} />
+          </>
         ) : (
           <>
             <div style={{ color: theme.text.primary, fontSize: theme.size.md, fontFamily: theme.font.mono, lineHeight: 1.4 }}>
               {framing.framing_question}
             </div>
-            <div style={{ marginTop: 4, fontSize: theme.size.xs, color: theme.text.muted }}>
-              {framing.framing_duration} · recovery date {framing.recovery_date}
-            </div>
+            <RecoveryReadout recovery={framing.recovery} />
           </>
         )}
       </div>
