@@ -24,10 +24,10 @@ function fmtDate(d) {
   return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : String(d);
 }
 
-// Signed percent, 2 decimals: 2.61 → "+2.61%", -0.65 → "-0.65%".
-function fmtPct(n) {
-  if (n == null || Number.isNaN(n)) return "—";
-  return `${n >= 0 ? "+" : "-"}${Math.abs(n).toFixed(2)}%`;
+// Premium-kept fraction → whole percent: 0.5 → "50%", 0.5582 → "56%".
+function fmtKept(frac) {
+  if (frac == null || Number.isNaN(frac)) return "—";
+  return `${Math.round(frac * 100)}%`;
 }
 
 // Whole days from an ISO date to today (browser-local). Null/invalid → null.
@@ -45,7 +45,7 @@ const COL = {
   type:   { width: 56, flexShrink: 0 },
   detail: { flex: 1, minWidth: 0 },
   days:   { width: 40, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
-  ret:    { width: 68, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
+  kept:   { width: 52, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
   num:    { width: 96, flexShrink: 0, textAlign: "right", fontFamily: theme.font.mono },
 };
 
@@ -219,7 +219,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
             <span style={COL.type}>Type</span>
             <span style={COL.detail}>Detail</span>
             <span style={COL.days}>Days</span>
-            <span style={COL.ret}>Return</span>
+            <span style={COL.kept}>Kept</span>
             <span style={COL.num}>Collateral</span>
             <span style={COL.num}>G/L</span>
           </div>
@@ -235,13 +235,17 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
 
               // Days: closed → lifespan; open → days held so far.
               const days = open ? daysSince(m.openDate) : m.daysHeld;
-              // Return %: closed → stored RoR (premium/collateral); open → current unrealized return on capital.
-              const ret = m.role === "baseline"
+              // Kept: closed → stored % of premium kept; open short → premium captured so far
+              // (unrealized P/L ÷ premium collected). Long LEAPS / baseline have no premium → null.
+              const isShort = m.type === "CSP" || m.type === "CC";
+              const kept = m.role === "baseline"
                 ? null
                 : open
-                  ? (gl != null && m.capitalFronted ? (gl / m.capitalFronted) * 100 : null)
-                  : m.roi;
-              const retColor = ret == null ? theme.text.muted : ret >= 0 ? theme.green : theme.red;
+                  ? (isShort && gl != null && m.entryCost && m.contracts
+                      ? gl / (m.entryCost * m.contracts * 100)
+                      : null)
+                  : m.keptPct;
+              const keptColor = kept == null ? theme.text.muted : kept >= 0 ? theme.green : theme.red;
 
               // Closed recovery legs also show their share of the target in the detail.
               const pctOfTarget = (!open && m.role === "recovery" && target > 0 && m.realized != null)
@@ -262,7 +266,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                   <span style={{ ...COL.type, color: TYPE_COLORS[m.type]?.text ?? theme.text.secondary }}>{m.type}</span>
                   <span style={{ ...COL.detail, color: theme.text.subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail}</span>
                   <span style={{ ...COL.days, color: theme.text.muted }}>{days != null ? `${days}d` : "—"}</span>
-                  <span style={{ ...COL.ret, color: retColor }}>{ret == null ? "—" : fmtPct(ret)}</span>
+                  <span style={{ ...COL.kept, color: keptColor }}>{fmtKept(kept)}</span>
                   <span style={{ ...COL.num, color: theme.text.subtle }}>{open ? fmtMoney(m.capitalFronted) : "—"}</span>
                   <span style={{ ...COL.num, color: glColor }}>{gl == null ? "—" : fmtMoney(gl)}</span>
                 </div>
@@ -274,8 +278,8 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
             const daysIn      = daysSince(pivotDate);
             const closedRec   = recovery.filter(m => m.status === "closed");
             const realizedTot = closedRec.reduce((s, m) => s + (m.realized ?? 0), 0);
-            const rois        = closedRec.map(m => m.roi).filter(v => v != null);
-            const avgRoR      = rois.length ? rois.reduce((s, v) => s + v, 0) / rois.length : null;
+            const kepts       = closedRec.map(m => m.keptPct).filter(v => v != null);
+            const avgKept     = kepts.length ? kepts.reduce((s, v) => s + v, 0) / kepts.length : null;
             const pctTgt      = target > 0 ? (realizedTot / target) * 100 : null;
             const showFooter  = daysIn != null || closedRec.length > 0;
 
@@ -302,7 +306,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                       <>
                         <span>·</span>
                         <span style={{ color: realizedTot >= 0 ? theme.green : theme.red }}>{fmtMoney(realizedTot)} realized</span>
-                        {avgRoR != null && (<><span>·</span><span>{fmtPct(avgRoR)} avg RoR</span></>)}
+                        {avgKept != null && (<><span>·</span><span>{fmtKept(avgKept)} avg kept</span></>)}
                         {pctTgt != null && (<><span>·</span><span style={{ color: theme.text.secondary }}>{pctTgt.toFixed(1)}% of target recovered</span></>)}
                       </>
                     )}

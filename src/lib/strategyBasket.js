@@ -65,6 +65,7 @@ function fromTrade(trade, role) {
     exitCost: trade.exit_cost ?? null,
     daysHeld: trade.days_held ?? trade.days ?? null,
     roi: trade.roi ?? null,
+    keptPct: trade.kept_pct ?? null,
     realized: trade.premium_collected ?? trade.premium ?? 0,
   };
 }
