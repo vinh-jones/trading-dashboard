@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { theme } from "../lib/theme";
 import { useRadar } from "../hooks/useRadar";
+import { useWindowWidth } from "../hooks/useWindowWidth";
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { tickerExposure } from "../lib/exposure";
 import { getAssignedShares, getOpenCSPs, getOpenLEAPs } from "../lib/positionSchema";
@@ -112,7 +113,6 @@ function SummaryChip({ label, value, valueColor }) {
       background: theme.bg.surface,
       border: `1px solid ${theme.border.default}`,
       borderRadius: theme.radius.md,
-      minWidth: 120,
     }}>
       <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, textTransform: "uppercase", letterSpacing: "0.4px" }}>
         {label}
@@ -264,6 +264,7 @@ const LEGEND = [
 
 export function AIThesisTab({ positions, account }) {
   const { rows, loading, error } = useRadar();
+  const isMobile = useWindowWidth() < 600;
 
   const { onThesis, offThesisTotal, onThesisTotal, basketsActive } = useMemo(() => {
     const radarMap = new Map((rows || []).map(r => [r.ticker, r]));
@@ -289,7 +290,12 @@ export function AIThesisTab({ positions, account }) {
   return (
     <div>
       {/* Summary strip */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[2], marginBottom: theme.space[3] }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "repeat(5, minmax(0, 1fr))",
+        gap: theme.space[2],
+        marginBottom: theme.space[3],
+      }}>
         <SummaryChip label="On-thesis AI infra" value={`${fmtK(onThesisTotal)}${fmtNavPct(onThesisTotal, nav) ? ` · ${fmtNavPct(onThesisTotal, nav)}` : ""}`} valueColor={theme.green} />
         <SummaryChip label="Off-thesis" value={`${fmtK(offThesisTotal)}${fmtNavPct(offThesisTotal, nav) ? ` · ${fmtNavPct(offThesisTotal, nav)}` : ""}`} valueColor={theme.amber} />
         <SummaryChip label="Cash" value={`${fmtK(cash)}${cashPct != null ? ` · ${(cashPct * 100).toFixed(0)}%` : ""}`} />
@@ -316,7 +322,7 @@ export function AIThesisTab({ positions, account }) {
       {loading ? (
         <div style={{ padding: theme.space[5], color: theme.text.muted, fontSize: theme.size.sm, textAlign: "center" }}>Loading…</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: theme.space[3] }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: theme.space[3] }}>
           {onThesis.map(b => <BasketCard key={b.id} basket={b} nav={nav} />)}
         </div>
       )}
