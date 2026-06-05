@@ -4,6 +4,8 @@ import { theme } from "../lib/theme";
 import { useRadar } from "../hooks/useRadar";
 import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
+import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
+import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
 import { getVixBand } from "../lib/vixBand";
@@ -46,23 +48,8 @@ function scoreLabel(score) {
 }
 
 // ── BB bucket ─────────────────────────────────────────────────────────────────
-
-function bbBucket(pos) {
-  if (pos == null) return null;
-  if (pos < 0)    return "below_band";
-  if (pos < 0.20) return "near_lower";
-  if (pos < 0.80) return "mid_range";
-  if (pos <= 1.0) return "near_upper";
-  return "above_band";
-}
-
-const BB_BUCKET_LABELS = {
-  below_band: "Below Band",
-  near_lower: "Near Lower",
-  mid_range:  "Mid Range",
-  near_upper: "Near Upper",
-  above_band: "Above Band",
-};
+// bbBucket(), BB_BUCKET_LABELS, and BB_BUCKET_COLORS now live in ../lib/bbBucket
+// (shared with the AI Thesis page) and are imported above.
 
 // One-line definitions shown as hover tooltips on the compact-row chips.
 // Longer paragraph explanations live in BB_EXPLANATIONS below for the expanded panel.
@@ -72,15 +59,6 @@ const BB_BUCKET_DEFINITIONS = {
   mid_range:  "Price in the middle of the Bollinger Band range (0.20 ≤ pos < 0.80). No edge from price location — neither fear nor extension.",
   near_upper: "Price approaching the upper Bollinger Band (0.80 ≤ pos ≤ 1.0). Extended to the upside — premium thins and risk/reward inverts.",
   above_band: "Price is above the upper Bollinger Band (>2σ up). Statistically extended — avoid new CSP entries.",
-};
-
-// Hardcoded hex — intentional exception (like TYPE_COLORS)
-const BB_BUCKET_COLORS = {
-  below_band: { bg: "#3d1a1a", text: "#f85149" },
-  near_lower: { bg: "#1a3d1a", text: "#3fb950" },
-  mid_range:  { bg: "#21262d", text: "#8b949e" },
-  near_upper: { bg: "#3d3010", text: "#e3b341" },
-  above_band: { bg: "#2d1f00", text: "#e3b341" },
 };
 
 // Row background — intentional exception
@@ -329,11 +307,7 @@ function vixContextLine(vix, vixBand, ivRank) {
 function concentrationCheck(ticker, sharePos, cspPositions, allLeaps, accountValue) {
   if (!accountValue) return null;
 
-  const sharesExposure = sharePos?.cost_basis_total ?? 0;
-  const cspExposure    = (cspPositions || []).reduce((sum, p) => sum + (p.capital_fronted ?? 0), 0);
-  const leapExposure   = (allLeaps || []).reduce((sum, l) => sum + (l.entry_cost ?? 0), 0);
-
-  const totalExposure     = sharesExposure + cspExposure + leapExposure;
+  const totalExposure     = tickerExposure(sharePos, cspPositions, allLeaps);
   const concentrationPct  = totalExposure / accountValue;
 
   const WARNING_THRESHOLD = 0.10;
