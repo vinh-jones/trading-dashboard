@@ -7,6 +7,7 @@ import { listJournalEntries } from "../lib/journalApi";
 
 const OpenPositionsTab   = lazyNamed(() => import("./OpenPositionsTab"),   "OpenPositionsTab");
 const RadarTab           = lazyNamed(() => import("./RadarTab"),           "RadarTab");
+const AIThesisTab        = lazyNamed(() => import("./AIThesisTab"),        "AIThesisTab");
 const MacroTab           = lazyNamed(() => import("./MacroTab"),           "MacroTab");
 const EarningsTab        = lazyNamed(() => import("./EarningsTab"),        "EarningsTab");
 const TickersTab         = lazyNamed(() => import("./TickersTab"),         "TickersTab");
@@ -116,6 +117,7 @@ export function ExploreView({
         )}
         {active === "tickers"   && <TickersTab onOpenTickerDetail={onOpenTickerDetail} />}
         {active === "radar"     && <RadarTab positions={positions} account={account} />}
+        {active === "ai-thesis" && <AIThesisTab positions={positions} account={account} />}
         {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
         {active === "macro"     && <MacroTab />}
         {active === "baskets" && (
