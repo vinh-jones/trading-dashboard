@@ -78,7 +78,10 @@ function deriveBasket(basket, radarMap, posIndex) {
     const row = radarMap.get(t) || null;
     const last = row?.last ?? null;
     const prev = row?.prev_close ?? null;
-    const dayPct = last != null && prev != null && prev !== 0 ? (last - prev) / prev : null;
+    const rawDay = last != null && prev != null && prev !== 0 ? (last - prev) / prev : null;
+    // Sanity guard: a real single-session move >50% on these names is virtually
+    // always stale/garbage prev_close, not a real gap — show "—" instead.
+    const dayPct = rawDay != null && Math.abs(rawDay) <= 0.5 ? rawDay : null;
 
     const sharePos = posIndex.shares.get(t) ?? null;
     const csps = posIndex.csps.get(t) ?? [];
