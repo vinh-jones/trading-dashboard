@@ -9,17 +9,17 @@ export const SECTOR_GROUPS = {
       'Technology', 'Tech / Data', 'Tech Infra', 'Ecommerce',
       'Networking', 'Cybersecurity', 'Advertising/Social Media/Ai',
       'Search / Cloud', 'Consumer Cloud', 'Enterprise Software / CRM',
-      'Tech/Cloud Infrastructure',
+      'Tech/Cloud Infrastructure', 'AI Infrastructure / Cloud Technology',
     ],
-    tickers: ['MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'PLTR', 'SHOP', 'DELL', 'CSCO', 'FTNT', 'ANET', 'INOD', 'VRT'],
+    tickers: ['MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'PLTR', 'SHOP', 'DELL', 'CSCO', 'FTNT', 'ANET', 'INOD', 'VRT', 'NBIS'],
   },
   'Semiconductors': {
     sectors: [
       'Semiconductors', 'AI / Semiconductors', 'Computer Technology',
       'Electronic Components - Semi', 'Photonics - Semiconductor',
-      'Industrial Machinery',
+      'Industrial Machinery', 'AI - Memory',
     ],
-    tickers: ['AMD', 'NVDA', 'AVGO', 'MU', 'ADI', 'AMAT', 'LRCX', 'APH', 'CRDO', 'COHR', 'TSM', 'WDC', 'STX'],
+    tickers: ['AMD', 'NVDA', 'AVGO', 'MU', 'ADI', 'AMAT', 'LRCX', 'APH', 'CRDO', 'COHR', 'TSM', 'WDC', 'STX', 'DRAM', 'SMH', 'INTC'],
   },
   'Financials': {
     sectors: [
@@ -30,7 +30,7 @@ export const SECTOR_GROUPS = {
   },
   'Energy': {
     sectors: ['Energy / Oil & Gas', 'Natural Gas', 'Energy'],
-    tickers: ['XOM', 'EQT'],
+    tickers: ['XOM', 'EQT', 'CEG'],
   },
   'Materials/Mining': {
     sectors: [
