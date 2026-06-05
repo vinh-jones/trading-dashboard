@@ -49,13 +49,21 @@ async function fetchBB(ticker) {
   const closes    = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
   const meta      = data?.chart?.result?.[0]?.meta;
   const price     = meta?.regularMarketPrice;
-  const prevClose = meta?.chartPreviousClose ?? null;
 
   if (!closes || price == null) {
     throw new Error(`Missing closes or price for ${ticker}`);
   }
 
   const validCloses = closes.filter(c => c !== null && c !== undefined);
+
+  // Previous session close = second-to-last daily close. Do NOT use
+  // meta.chartPreviousClose here: on this range=1y chart Yahoo returns the close
+  // from BEFORE the one-year window (~13 months ago), not yesterday — which made
+  // daily % change read as today-vs-a-year-ago. The final valid close is the
+  // current (live) session, so the prior session is index len-2.
+  const prevClose = validCloses.length >= 2
+    ? validCloses[validCloses.length - 2]
+    : (meta?.chartPreviousClose ?? null);
   if (validCloses.length < 20) {
     throw new Error(`Only ${validCloses.length} valid closes for ${ticker} (need 20)`);
   }
