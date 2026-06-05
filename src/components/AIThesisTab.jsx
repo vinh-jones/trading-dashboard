@@ -152,13 +152,18 @@ function TickerRow({ t }) {
       borderRadius: theme.radius.sm,
     }}>
       <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor }} title={bucket ? BB_BUCKET_LABELS[bucket] : "No BB data"} />
-      <span style={{
-        fontSize: theme.size.sm,
-        fontWeight: t.held ? 700 : 400,
-        color: t.held ? theme.text.primary : theme.text.muted,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}>
-        {t.ticker}
+      <span style={{ display: "flex", alignItems: "center", gap: theme.space[1], minWidth: 0 }}>
+        <span style={{
+          fontSize: theme.size.sm,
+          fontWeight: t.held ? 700 : 400,
+          color: t.held ? theme.text.primary : theme.text.muted,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {t.ticker}
+        </span>
+        {t.held && (
+          <span style={{ fontSize: theme.size.xs, flexShrink: 0 }} title="You hold a position in this name">📌</span>
+        )}
       </span>
       <span style={{ fontSize: theme.size.sm, fontFamily: theme.font.mono, color: dayColor(t.dayPct), textAlign: "right" }}>
         {fmtDay(t.dayPct)}
@@ -304,7 +309,7 @@ export function AIThesisTab({ positions, account }) {
             {label}
           </span>
         ))}
-        <span style={{ color: theme.text.faint }}>· Bold = held</span>
+        <span style={{ color: theme.text.faint }}>· 📌 Bold = held</span>
       </div>
 
       {/* Grid */}
