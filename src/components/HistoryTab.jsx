@@ -171,7 +171,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
       </div>
 
       {/* Ticker bar chart — Q2: gap 8→space[2], marginBottom 20→space[5] */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: theme.space[2], marginBottom: theme.space[5] }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: theme.space[2], marginBottom: theme.space[5] }}>
         {tickerSummary.map((ts) => {
           const isSelected = selectedTicker === ts.ticker;
           const isNeg = ts.premium < 0;
@@ -213,16 +213,17 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
                 const maxP = Math.max(...monthData.map((d) => Math.abs(d.premium)), 1);
                 return (
                   /* Q2: gap 4 → space[1] */
-                  <div style={{ width: "100%", display: "flex", gap: theme.space[1], justifyContent: "center", height: 76, alignItems: "flex-end" }}>
+                  <div style={{ width: "100%", display: "flex", gap: theme.space[1], justifyContent: "center", height: 60, alignItems: "flex-end" }}>
                     {monthData.map((md, mi) => {
                       const h = Math.max(3, (Math.abs(md.premium) / maxP) * 44);
                       const neg = md.premium < 0;
                       return (
-                        /* Q2: gap 3 → space[1] */
-                        <div key={mi} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: theme.space[1], justifyContent: "flex-end" }}>
-                          <div style={{ fontSize: theme.size.xs, color: md.count === 0 ? theme.border.strong : neg ? theme.red : theme.green }}>
-                            {md.count > 0 ? formatDollars(md.premium) : ""}
-                          </div>
+                        /* Q2: gap 3 → space[1]; per-bar $ label dropped, value on hover via title */
+                        <div
+                          key={mi}
+                          title={md.count > 0 ? `${md.label}: ${formatDollars(md.premium)} · ${md.count} trade${md.count === 1 ? "" : "s"}` : `${md.label}: no trades`}
+                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: theme.space[1], justifyContent: "flex-end" }}
+                        >
                           <div style={{
                             width: "70%", height: md.count > 0 ? h : 2,
                             background: md.count === 0 ? theme.border.default : neg
