@@ -66,12 +66,12 @@ Deployment posture is contrarian — high VIX = deploy more, low VIX = hold more
 | ≤12 | Extreme Greed | 40–50% | 50–60% |
 | 12–15 | Greed | 30–40% | 60–70% |
 | 15–18 | Slight Fear | 20–25% | 75–80% |
-| 18–22 | Transition | 15–20% | 80–85% |
-| 22–25 | Fear | 10–15% | 85–90% |
+| 18–20 | Transition | 15–20% | 80–85% |
+| 20–25 | Fear | 10–15% | 85–90% |
 | 25–30 | Very Fearful | 5–10% | 90–95% |
 | ≥30 | Extreme Fear | 0–5% + new cash | 95–100% |
 
-15–25 VIX is the sweet spot (score 5). The 18–22 transition band sits between Slight Fear and Fear — premiums are firming but not yet "deploy aggressively" levels. ≥30 VIX is opportunity, not pure risk-off (score 3, not 1).
+15–25 VIX is the sweet spot (score 5). The 18–20 transition band sits between Slight Fear and Fear — premiums are firming but not yet "deploy aggressively" levels. ≥30 VIX is opportunity, not pure risk-off (score 3, not 1).
 
 **Intentional exceptions** (hardcoded hex is correct, do not replace):
 - `TYPE_COLORS` in `src/lib/constants.js` — CSP/CC/LEAPS/Spread/Shares badge colors
