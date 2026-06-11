@@ -2,7 +2,7 @@ import { theme } from "../lib/theme";
 import { formatDollarsFull } from "../lib/format";
 
 // Selection-tint blue, same rgba(58,130,246,…) family OpenPositionsTab already
-// uses for row highlights (matches theme.blue).
+// uses for row highlights.
 const BAR_BORDER = "rgba(58,130,246,0.40)";
 
 function Stat({ label, value, color }) {
