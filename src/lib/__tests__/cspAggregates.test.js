@@ -60,4 +60,11 @@ describe("computeCspAggregates", () => {
     expect(agg.collateral).toBe(15000); // collateral/premium still computed
     expect(agg.maxPremium).toBe(800);
   });
+
+  it("treats glDollars of 0 as a valid mark, not a missing one", () => {
+    const agg = computeCspAggregates([row(100, 1, 500, 0)], null);
+    expect(agg.missingMarkCount).toBe(0);
+    expect(agg.captured).toBe(0);
+    expect(agg.avgGlPct).toBeCloseTo(0, 5);
+  });
 });
