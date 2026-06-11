@@ -11,6 +11,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
+import { computeCspEntryYieldBenchmark } from "./_lib/cspEntryYieldBenchmark.js";
 import { MONTHLY_TARGETS } from "../src/lib/monthlyTargets.js";
 
 function getSupabase() {
@@ -107,6 +108,11 @@ export default async function handler(req, res) {
       ...reshapePositions(positionRows),
     };
 
+    // Trailing entry-yield benchmark consumed by the per-CSP hold-yield signal
+    // (computed client-side from this + live option marks). See
+    // docs/superpowers/specs/SPEC_HOLD_YIELD_SIGNAL_V2.md.
+    const cspEntryYieldBenchmark = computeCspEntryYieldBenchmark(tradeRows, { today: TODAY });
+
     // Build account object — monthly_targets hardcoded (not yet in DB)
     const account = snapshot ? {
       last_updated:          snapshot.snapshot_date,
@@ -141,7 +147,7 @@ export default async function handler(req, res) {
 
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Content-Type", "application/json");
-    res.status(200).json({ ok: true, trades, positions, account });
+    res.status(200).json({ ok: true, trades, positions, account, csp_entry_yield_benchmark: cspEntryYieldBenchmark });
   } catch (err) {
     console.error("[api/data] Error:", err.message);
     res.status(500).json({ ok: false, error: err.message });
