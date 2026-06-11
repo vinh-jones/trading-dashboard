@@ -17,6 +17,8 @@ import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
+import { computeCspAggregates } from "../lib/cspAggregates";
+import { CspSelectionBar } from "./CspSelectionBar";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
@@ -503,7 +505,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket }) {
+function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket, selectable, selectedKeys, setSelectedKeys, accountValue }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -522,7 +524,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
 
   const numericCols = new Set(["Strike", "% OTM", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
   const colHeader = (label) => {
-    if (!label) return <th key="__chevron__" style={{ width: 30 }} />;
+    if (!label) return <th key="__chevron__" style={{ width: 40 }} />;
     const isActive = sortCol === label;
     const isNumeric = numericCols.has(label);
     return (
@@ -640,6 +642,33 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
     return sortDir === "desc" ? bVal - aVal : aVal - bVal;
   });
 
+  // ── Selection calculator (CSPs tab only) ──────────────────────────────────
+  // Selection is keyed by positionKey so it survives re-sorts and quote
+  // refreshes; a key whose position closed simply stops matching any row.
+  function toggleRow(pos) {
+    const key = positionKey(pos);
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // Expiry-cell quick-select: if every row of this expiry is selected,
+  // deselect them all; otherwise select them all.
+  function toggleExpiry(expiryDate) {
+    const keys = enriched.filter(r => r.pos.expiry_date === expiryDate).map(r => positionKey(r.pos));
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      const allSelected = keys.every(k => next.has(k));
+      keys.forEach(k => { if (allSelected) next.delete(k); else next.add(k); });
+      return next;
+    });
+  }
+
+  const selectedRows = selectable ? enriched.filter(r => selectedKeys.has(positionKey(r.pos))) : [];
+  const selectionAgg = selectable ? computeCspAggregates(selectedRows, accountValue) : null;
+
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
@@ -686,6 +715,9 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
 
             const rowKey   = `${pos.ticker}-${pos.expiry_date}-${pos.strike}`;
             const isExpanded = canExpand && expandedRowKey === rowKey;
+            const isSelected  = selectable && selectedKeys.has(positionKey(pos));
+            const rowBg       = isSelected ? "rgba(58,130,246,0.14)" : highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent";
+            const rowHoverBg  = isSelected ? "rgba(58,130,246,0.18)" : highlightedTicker === pos.ticker ? "rgba(58,130,246,0.15)" : `${TYPE_COLORS.CSP.bg}22`;
 
             const sortedTags = [...(strategicTagsByPos?.get(positionKey(pos)) ?? [])].sort((a, b) => {
               const pa = a.tag.split(":")[0];
@@ -713,14 +745,14 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                 <tr
                   style={{
                     borderBottom: (hasTagRow || isExpanded) ? "none" : `1px solid ${theme.border.default}`,
-                    borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
-                    cursor:       canExpand ? "pointer" : "default",
-                    background:   highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
+                    borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : isSelected ? `3px solid ${theme.blue}` : "3px solid transparent",
+                    cursor:       (selectable || canExpand) ? "pointer" : "default",
+                    background:   rowBg,
                     transition:   "background 0.4s",
                   }}
-                  onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
-                  onMouseEnter={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.15)" : `${TYPE_COLORS.CSP.bg}22`)}
-                  onMouseLeave={e => (e.currentTarget.style.background = highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent")}
+                  onClick={selectable ? () => toggleRow(pos) : canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
+                  onMouseEnter={e => (e.currentTarget.style.background = rowHoverBg)}
+                  onMouseLeave={e => (e.currentTarget.style.background = rowBg)}
                 >
                   {td(
                     <span style={{ display: "flex", alignItems: "center" }}>
@@ -750,7 +782,21 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                       <HoldYieldIndicator hy={holdYield} />
                     </span>
                   )}
-                  {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
+                  {!isMobile && (
+                    <td
+                      onClick={selectable ? (e) => { e.stopPropagation(); toggleExpiry(pos.expiry_date); } : undefined}
+                      title={selectable ? "Select all CSPs with this expiry" : undefined}
+                      style={{
+                        padding: `${theme.space[2]}px ${theme.space[2]}px`,
+                        color: theme.text.muted,
+                        cursor: selectable ? "pointer" : undefined,
+                        textDecoration: selectable ? "underline dotted" : "none",
+                        textUnderlineOffset: 3,
+                      }}
+                    >
+                      {formatExpiry(pos.expiry_date)}
+                    </td>
+                  )}
                   {td(pos.strike != null ? `$${pos.strike}` : "—",                 { color: theme.text.primary, textAlign: "right" })}
                   {!isLeap && td(otmPct != null ? `${otmPct.toFixed(1)}%` : "—",   { color: otmColor, fontWeight: 600, textAlign: "right" })}
                   {!isMobile && td(dte != null ? `${dte}d` : "—", {
@@ -762,20 +808,25 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                   {!isMobile && td(formatDollarsFull(displayValue),                 { color: valueColor, fontWeight: 600, textAlign: "right" })}
                   {!isMobile && td(glDollars != null ? formatDollarsFull(glDollars) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
                   {td(glPct != null ? `${glPct.toFixed(1)}%` : "—",                { color: glColor, fontWeight: 500, textAlign: "right" })}
-                  {canExpand && td(
-                    <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isExpanded ? "▴" : "▾"}</span>,
-                    { width: 30, textAlign: "center", padding: "9px 4px" }
+                  {canExpand && (
+                    <td
+                      onClick={(e) => { e.stopPropagation(); setExpandedRowKey(isExpanded ? null : rowKey); }}
+                      title={isExpanded ? "Collapse" : "Expand details"}
+                      style={{ width: 40, textAlign: "center", padding: "9px 8px", cursor: "pointer" }}
+                    >
+                      <span style={{ color: theme.text.subtle, fontSize: theme.size.sm }}>{isExpanded ? "▴" : "▾"}</span>
+                    </td>
                   )}
                 </tr>
                 {hasTagRow && (
                   <tr
                     style={{
                       borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
-                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
+                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : isSelected ? `3px solid ${theme.blue}` : "3px solid transparent",
                       cursor:       canExpand ? "pointer" : "default",
-                      background:   highlightedTicker === pos.ticker ? "rgba(58,130,246,0.10)" : "transparent",
+                      background:   rowBg,
                     }}
-                    onClick={canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
+                    onClick={selectable ? () => toggleRow(pos) : canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
                   >
                     <td
                       colSpan={isMobile ? 5 : 10}
@@ -845,6 +896,13 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
           })}
         </tbody>
       </table>
+      {selectable && (
+        <CspSelectionBar
+          agg={selectionAgg}
+          isMobile={isMobile}
+          onClear={() => setSelectedKeys(new Set())}
+        />
+      )}
     </div>
   );
 }
@@ -862,6 +920,8 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   const { rollMap, rollLoading, lastCheckedAt, isStale, checkRolls, relativeTime } = useRollAnalysis();
 
   const [positionTab, setPositionTab] = useState("csps");
+  // Selection calculator state — Set of positionKey strings (CSPs tab only).
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [highlightedTicker, setHighlightedTicker] = useState(null);
 
   useEffect(() => {
@@ -1052,7 +1112,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
                 <button
                   key={t.key}
                   style={tabBtnStyle(t.key)}
-                  onClick={() => setPositionTab(t.key)}
+                  onClick={() => { setPositionTab(t.key); setSelectedKeys(new Set()); }}
                   onMouseEnter={e => { if (positionTab !== t.key) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
                   onMouseLeave={e => { if (positionTab !== t.key) e.currentTarget.style.background = theme.bg.elevated; }}
                 >
@@ -1066,6 +1126,10 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
             positionType={positionTab}
             quoteMap={quoteMap}
             cspEntryYieldBenchmark={cspEntryYieldBenchmark}
+            selectable={positionTab === "csps"}
+            selectedKeys={selectedKeys}
+            setSelectedKeys={setSelectedKeys}
+            accountValue={account?.account_value ?? null}
             isMobile={isMobile}
             highlightedTicker={highlightedTicker}
             onOpenTickerDetail={onOpenTickerDetail}
