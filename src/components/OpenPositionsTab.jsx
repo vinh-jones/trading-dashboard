@@ -524,7 +524,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
 
   const numericCols = new Set(["Strike", "% OTM", "DTE", "% DTE Left", "Premium", "Cost", "G/L $", "G/L %"]);
   const colHeader = (label) => {
-    if (!label) return <th key="__chevron__" style={{ width: 30 }} />;
+    if (!label) return <th key="__chevron__" style={{ width: 40 }} />;
     const isActive = sortCol === label;
     const isNumeric = numericCols.has(label);
     return (
@@ -822,7 +822,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                   <tr
                     style={{
                       borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
-                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : "3px solid transparent",
+                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : isSelected ? `3px solid ${theme.blue}` : "3px solid transparent",
                       cursor:       canExpand ? "pointer" : "default",
                       background:   rowBg,
                     }}
