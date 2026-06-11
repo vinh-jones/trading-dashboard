@@ -47,6 +47,18 @@ function scoreLabel(score) {
   return "Weak";
 }
 
+// ── Beta (market sensitivity) ───────────────────────────────────────────────────
+// Beta is a stock-level statistic (not an option Greek): how much a name moves
+// relative to the broader market (S&P 500). >1 amplifies market moves, <1 dampens
+// them, <0 inverts. Slow-moving — sourced from the fundamentals ingest, not live.
+function betaDescriptor(beta) {
+  if (beta == null) return null;
+  if (beta >= 1.3) return { label: "high-beta",    color: theme.amber,      note: "amplifies market moves" };
+  if (beta >= 0.8) return { label: "market-like",  color: theme.text.muted, note: "tracks the market" };
+  if (beta >= 0)   return { label: "low-beta",     color: theme.blue,       note: "dampens market moves" };
+  return                  { label: "inverse",      color: theme.green,      note: "moves opposite the market" };
+}
+
 // ── BB bucket ─────────────────────────────────────────────────────────────────
 // bbBucket(), BB_BUCKET_LABELS, and BB_BUCKET_COLORS now live in ../lib/bbBucket
 // (shared with the AI Thesis page) and are imported above.
@@ -521,7 +533,7 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
 }
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, ma_50, ma_200 } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200 } = row;
   const bucket   = bbBucket(bb_position);
   const score    = scannerScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend);
   const ivComp   = compositeIv(iv, iv_rank);
@@ -679,6 +691,14 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
               P/E: {pe_ttm.toFixed(1)}
             </span>
           )}
+          {beta != null && (
+            <span
+              title={`Beta — market sensitivity vs S&P 500 (${betaDescriptor(beta)?.label})`}
+              style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("beta") }}
+            >
+              β: {beta.toFixed(2)}
+            </span>
+          )}
         </div>
 
         {/* Row 3: sample CSP line */}
@@ -733,7 +753,7 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, ma_50, ma_200 } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200 } = row;
   const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
@@ -1153,6 +1173,39 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>Valuation data pending</div>
       )}
 
+      {/* ── Market Sensitivity (beta) section ── */}
+      {beta != null && (() => {
+        const b = betaDescriptor(beta);
+        return (
+          <>
+            <div style={sectionLabelStyle}>Market Sensitivity</div>
+            <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+              <span style={{ ...monoStyle }}>
+                <span style={{ color: theme.text.subtle }}>Beta: </span>
+                <span style={{ color: b.color, fontWeight: 600 }}>{beta.toFixed(2)}</span>
+                <span style={{ color: theme.text.subtle }}> · {b.label}</span>
+              </span>
+            </div>
+            <div style={{
+              fontSize:     theme.size.sm,
+              color:        theme.text.muted,
+              lineHeight:   1.6,
+              padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+              background:   theme.bg.surface,
+              borderRadius: theme.radius.sm,
+              border:       `1px solid ${theme.border.default}`,
+            }}>
+              {ticker} {b.note} — a 1% market move historically implies roughly a {Math.abs(beta).toFixed(1)}% move in this name (vs the S&P 500).{" "}
+              {beta >= 1.3
+                ? "Elevated assignment risk in a broad selloff; watch concentration across high-beta names — they fall together."
+                : beta >= 0 && beta < 0.8
+                ? "More defensive — tends to hold up better than the market in a drawdown."
+                : "Roughly tracks the index, so it offers little diversification on a market move."}
+            </div>
+          </>
+        );
+      })()}
+
       {/* ── Earnings section ── */}
       <div style={sectionLabelStyle}>Earnings</div>
       {earningsDate ? (
@@ -1212,6 +1265,7 @@ const SORT_DEFAULT_DIR = {
   iv_raw:       "desc",
   iv_composite: "desc",
   pe:           "asc",
+  beta:         "desc",
 };
 
 function SortBtn({ id, label, sortBy, setSortBy }) {
@@ -1366,6 +1420,7 @@ export function RadarTab({ positions = null, account = null }) {
         iv_raw:       r => r.iv,
         iv_composite: r => compositeIv(r.iv, r.iv_rank),
         pe:           r => r.pe_ttm,
+        beta:         r => r.beta,
       }[sortBy.id];
 
       if (getVal) {
@@ -1472,6 +1527,7 @@ export function RadarTab({ positions = null, account = null }) {
           <SortBtn id="iv_raw"       label="Raw IV"        sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="pe"           label="P/E"           sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="beta"         label="Beta"          sortBy={sortBy} setSortBy={setSortBy} />
         </div>
 
         {/* Stats + BB freshness line */}
