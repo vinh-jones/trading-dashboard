@@ -22,14 +22,15 @@ describe("getVixBand", () => {
     expect(getVixBand(18)).toEqual({ label: "15–18", sentiment: "Slight Fear",   floorPct: 0.20, ceilingPct: 0.25 });
   });
 
-  it("returns 18–22 transition band", () => {
-    expect(getVixBand(19)).toEqual({ label: "18–22", sentiment: "Transition",    floorPct: 0.15, ceilingPct: 0.20 });
-    expect(getVixBand(22)).toEqual({ label: "18–22", sentiment: "Transition",    floorPct: 0.15, ceilingPct: 0.20 });
+  it("returns 18–20 transition band", () => {
+    expect(getVixBand(19)).toEqual({ label: "18–20", sentiment: "Transition",    floorPct: 0.15, ceilingPct: 0.20 });
+    expect(getVixBand(20)).toEqual({ label: "18–20", sentiment: "Transition",    floorPct: 0.15, ceilingPct: 0.20 });
   });
 
-  it("returns 22–25 band (narrowed Fear)", () => {
-    expect(getVixBand(23)).toEqual({ label: "22–25", sentiment: "Fear",          floorPct: 0.10, ceilingPct: 0.15 });
-    expect(getVixBand(25)).toEqual({ label: "22–25", sentiment: "Fear",          floorPct: 0.10, ceilingPct: 0.15 });
+  it("returns 20–25 band (Fear starts at 20)", () => {
+    expect(getVixBand(20.67)).toEqual({ label: "20–25", sentiment: "Fear",       floorPct: 0.10, ceilingPct: 0.15 });
+    expect(getVixBand(23)).toEqual({ label: "20–25", sentiment: "Fear",          floorPct: 0.10, ceilingPct: 0.15 });
+    expect(getVixBand(25)).toEqual({ label: "20–25", sentiment: "Fear",          floorPct: 0.10, ceilingPct: 0.15 });
   });
 
   it("returns 25–30 band", () => {

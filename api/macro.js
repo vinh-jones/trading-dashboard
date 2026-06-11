@@ -30,9 +30,9 @@ const VIX_EXPLANATIONS = {
   "Slight Fear":
     `VIX 15–18 — the Goldilocks zone for the wheel strategy. Enough fear to generate meaningful premiums, not so much fear that assignment risk spikes. Ryan targets 20–25% cash and deploys aggressively here. This is the environment where the wheel strategy performs best. Follow Ryan signals, stay within allocation limits.`,
   Transition:
-    `VIX 18–22 — the transition zone between Slight Fear and Fear. Premiums are firming up but not yet at "deploy aggressively" levels. Ryan targets 15–20% cash here as a half-step before the rich-premium Fear zone. Continue deploying, but avoid stretching for size — let VIX confirm direction (toward 22+ = lean in, back toward 18- = ease up).`,
+    `VIX 18–20 — the transition zone between Slight Fear and Fear. Premiums are firming up but not yet at "deploy aggressively" levels. Ryan targets 15–20% cash here as a half-step before the rich-premium Fear zone. Continue deploying, but avoid stretching for size — let VIX confirm direction (toward 20+ = lean in, back toward 18- = ease up).`,
   Fear:
-    `VIX 22–25 — elevated fear creates elevated premiums. Ryan targets 10–15% cash — deploy aggressively. Put premiums are rich, creating better risk/reward for CSPs. High-quality names that have sold off present the best entries. This is when Ryan has historically generated the most premium income.`,
+    `VIX 20–25 — elevated fear creates elevated premiums. Ryan targets 10–15% cash — deploy aggressively. Put premiums are rich, creating better risk/reward for CSPs. High-quality names that have sold off present the best entries. This is when Ryan has historically generated the most premium income.`,
   "Very Fearful":
     `VIX 25–30 — significant market fear. Ryan targets 5–10% cash — nearly all-in. Premiums are very elevated. Be selective about quality (stick to Tier 1 names), but do not hesitate to deploy. The temptation to hold cash "until things calm down" is the exact mistake to avoid at this VIX level.`,
   "Extreme Fear":
@@ -133,7 +133,7 @@ function labelVix(value) {
     score = 3; label = "Greed"; cashTarget = "30–40%"; investedTarget = "60–70%";
   } else if (value <= 18) {
     score = 5; label = "Slight Fear"; cashTarget = "20–25%"; investedTarget = "75–80%";
-  } else if (value <= 22) {
+  } else if (value <= 20) {
     score = 5; label = "Transition"; cashTarget = "15–20%"; investedTarget = "80–85%";
   } else if (value <= 25) {
     score = 5; label = "Fear"; cashTarget = "10–15%"; investedTarget = "85–90%";
