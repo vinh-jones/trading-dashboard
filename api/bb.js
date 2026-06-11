@@ -2,7 +2,7 @@
  * api/bb.js — Vercel serverless function
  *
  * GET /api/bb
- * GET /api/bb?force=1   — bypass the 2h stale gate (manual refresh escape hatch)
+ * GET /api/bb?force=1   — bypass the 15m stale gate (manual refresh escape hatch)
  *
  * Fetches 20-day Bollinger Band data from Yahoo Finance for all approved
  * tickers and stores results in the quotes table. No market hours gate —
@@ -11,7 +11,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const STALE_MS = 15 * 60 * 1000; // 15 minutes — keeps `last`/`prev_close` fresh enough for intraday DAY% on the Radar / AI Thesis pages (BB's 20-day SMA itself only changes daily, but these columns drive live day-change).
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 

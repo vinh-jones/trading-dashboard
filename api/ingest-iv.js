@@ -25,7 +25,7 @@
  *
  * last and prev_close are optional for backward compat. When provided they
  * keep the Radar row's price + change % fresh at the ingest cadence (~15 min)
- * rather than waiting for /api/bb's 2h refresh.
+ * rather than waiting for /api/bb's 15m refresh.
  */
 
 import { createClient } from "@supabase/supabase-js";
