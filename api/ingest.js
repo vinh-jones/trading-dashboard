@@ -14,7 +14,7 @@
  *     asOf:         string (ISO timestamp)   — required
  *     positions:    array                    — required
  *     macroEvents:  array                    — required
- *     fundamentals: array (optional)         — [{ ticker, pe_ttm, pe_annual, eps_ttm, eps_annual }]
+ *     fundamentals: array (optional)         — [{ ticker, pe_ttm, pe_annual, eps_ttm, eps_annual, beta }]
  *     source?:      object                   — ignored, not stored
  *   }
  *
@@ -77,6 +77,7 @@ export default async function handler(req, res) {
         pe_annual:    f.pe_annual ?? null,
         eps_ttm:      f.eps_ttm   ?? null,
         eps_annual:   f.eps_annual ?? null,
+        beta:         f.beta      ?? null,
         refreshed_at: now,
       }));
 

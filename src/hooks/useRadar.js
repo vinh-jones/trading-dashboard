@@ -34,7 +34,7 @@ export function useRadar() {
             .in("symbol", approvedTickers),
           supabase
             .from("fundamentals")
-            .select("ticker, pe_ttm, pe_annual, eps_ttm")
+            .select("ticker, pe_ttm, pe_annual, eps_ttm, beta")
             .in("ticker", approvedTickers),
         ]);
 
@@ -77,6 +77,7 @@ export function useRadar() {
             pe_ttm:                f.pe_ttm           ?? null,
             pe_annual:             f.pe_annual        ?? null,
             eps_ttm:               f.eps_ttm          ?? null,
+            beta:                  f.beta             ?? null,
           };
         });
 
