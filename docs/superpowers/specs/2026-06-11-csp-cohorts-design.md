@@ -69,7 +69,7 @@ Header: breadcrumb `Open Positions ▸ Cohorts ▸ <name>`, created date, `✕ d
 
 **Evolution chart** (below roster):
 - Inline SVG line (hand-rolled, like the allocation chart — no chart library): cohort capture % over time.
-- Series from `api/cohort-history.js` (new endpoint): for each `daily_snapshots` row, pull each member's `capturePct` from `forecast_per_position` (tuple-matched); cohort value for the day = premium-weighted mean. After a member closes, it contributes its final realized capture (flatline). Days where a member has no snapshot entry and isn't closed yet are skipped for that member.
+- Series from `api/cohort-history.js` (new endpoint): for each `daily_snapshots` row, pull each member's `current_profit_pct` (mark-to-market capture fraction: (premium at open − current mid) ÷ premium at open) and `premium_at_open` from `forecast_per_position` (tuple-matched; stored `type` is lowercase `csp` — match case-insensitively). NOT `capture_pct`, which is the forecast model's *expected final* capture, not actual progress. Cohort value for the day = premium-weighted mean. After a member closes, it contributes its final realized capture (`kept_pct`, flatline). Days where a member has no snapshot entry and isn't closed yet are skipped for that member.
 - Days before the v2 snapshot wiring began simply don't plot. Empty series → "no history yet" placeholder.
 
 ## Math (pure module `src/lib/cohorts.js`)
@@ -81,7 +81,7 @@ Header: breadcrumb `Open Positions ▸ Cohorts ▸ <name>`, created date, `✕ d
 
 ## API
 
-`api/cohort-history.js` (GET, `?tag=cohort:<slug>`): resolves the cohort's member tuples **server-side** (journal entries with the tag — no client-supplied member list, keeping the endpoint self-contained and uncheatable), queries `daily_snapshots` for `snapshot_date, forecast_per_position`, filters each day's array to those tuples, returns `[{date, members: [{ticker, type, strike, expiry, capturePct}]}]`. Keeps `daily_snapshots` internals server-side, consistent with other `api/*` aggregation endpoints. Vercel Pro: no function-count concern.
+`api/cohort-history.js` (GET, `?tag=cohort:<slug>`): resolves the cohort's member tuples **server-side** (journal entries with the tag — no client-supplied member list, keeping the endpoint self-contained and uncheatable), queries `daily_snapshots` for `snapshot_date, forecast_per_position`, filters each day's array to those tuples, returns `[{date, members: [{ticker, type, strike, expiry, current_profit_pct, premium_at_open}]}]`. Keeps `daily_snapshots` internals server-side, consistent with other `api/*` aggregation endpoints. Vercel Pro: no function-count concern.
 
 ## Edge cases
 
