@@ -71,20 +71,40 @@ export default async function handler(req, res) {
 
     // Optional: upsert fundamentals if included
     if (Array.isArray(body.fundamentals) && body.fundamentals.length > 0) {
+      // Base fundamentals — the generator emits these as full rows every run,
+      // so overwriting them wholesale is fine.
+      //
+      // `beta` is deliberately NOT in this object. It's sourced separately and
+      // may be missing for some tickers; if it rode this upsert, a null/omitted
+      // beta would clobber a previously-good value (ON CONFLICT sets every
+      // column in the payload). Beta is applied below, non-null only, so an
+      // absent beta leaves any existing value untouched.
       const rows = body.fundamentals.map(f => ({
         ticker:       f.ticker,
         pe_ttm:       f.pe_ttm    ?? null,
         pe_annual:    f.pe_annual ?? null,
         eps_ttm:      f.eps_ttm   ?? null,
         eps_annual:   f.eps_annual ?? null,
-        beta:         f.beta      ?? null,
         refreshed_at: now,
       }));
 
+      // Only the rows that actually carry a finite beta. These get applied as a
+      // second, beta-only upsert after the base rows exist — a pure update that
+      // never writes null over a good value.
+      const betaRows = body.fundamentals
+        .filter(f => f.beta != null && Number.isFinite(Number(f.beta)))
+        .map(f => ({ ticker: f.ticker, beta: Number(f.beta) }));
+
       tasks.push(
-        supabase.from("fundamentals").upsert(rows, { onConflict: "ticker" }).then(({ error }) => {
+        supabase.from("fundamentals").upsert(rows, { onConflict: "ticker" }).then(async ({ error }) => {
           if (error) throw new Error(`fundamentals upsert failed: ${error.message}`);
-          console.log(`[api/ingest] fundamentals upserted: ${rows.length} rows`);
+          if (betaRows.length > 0) {
+            const { error: betaErr } = await supabase
+              .from("fundamentals")
+              .upsert(betaRows, { onConflict: "ticker" });
+            if (betaErr) throw new Error(`fundamentals beta upsert failed: ${betaErr.message}`);
+          }
+          console.log(`[api/ingest] fundamentals upserted: ${rows.length} rows (beta set: ${betaRows.length})`);
           return { type: "fundamentals", count: rows.length };
         })
       );

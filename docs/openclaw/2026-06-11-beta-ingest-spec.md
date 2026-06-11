@@ -25,26 +25,47 @@ fundamentals lane, not the ~15-min IV/quote pipeline.
 ## Non-goals
 
 - No changes to the IV pipeline (`/api/ingest-iv`) or earnings ingest.
-- No live/intraday beta. A weekly refresh is plenty.
+- No live/intraday beta. Daily-or-slower is plenty.
+- No separate cron. Beta rides the **existing** fundamentals generator (which
+  already calls Finnhub `/stock/metric` for P/E and EPS), so it's emitted
+  whenever that payload runs. See "Cadence" below.
 
 ## Summary of change
 
 | # | Change | Endpoint | Frequency |
 |---|---|---|---|
-| 1 | Add `beta` to the fundamentals payload | existing `POST /api/ingest` | weekly |
+| 1 | Add `beta` to the existing fundamentals payload | existing `POST /api/ingest` | whatever the fundamentals generator already runs at |
 
 Same auth header the fundamentals ingest already uses
 (`X-Ingest-Secret: $MARKET_CONTEXT_INGEST_SECRET`).
 
-## App-side changes (shipping in v1.123.0)
+## App-side changes (shipped, v1.125.1)
 
 1. Migration `2026-06-11-fundamentals-beta.sql` adds a nullable `beta numeric`
    column to `fundamentals`.
-2. `POST /api/ingest` now reads `beta` off each `fundamentals[]` row and upserts
-   it (missing/NULL is tolerated — treated as "unknown, no penalty").
+2. `POST /api/ingest` reads `beta` off each `fundamentals[]` row. **Beta is
+   applied as a separate, non-null-only update** — a row that omits beta (or
+   sends `null`) leaves any existing beta untouched. It can NOT clobber a
+   previously-good value. (The base fields — P/E, EPS — are still a full
+   overwrite, since the generator always emits them.)
 3. Radar surfaces it: a `β:` chip on the compact row, a "Market Sensitivity"
    section in the expanded panel (with a plain-English interpretation), and a
    **Beta** sort button.
+
+## Answers to the implementation questions
+
+- **Existing generator vs separate weekly path?** Use the **existing**
+  fundamentals generator. Add beta next to the P/E/EPS it already pulls from
+  Finnhub and send it in the same payload. No new cron, no "weekly" framing —
+  the app's non-clobber upsert makes frequency a non-issue, and beta barely
+  moves day to day.
+- **Missing beta — omit or `null`?** **Omit the field.** It's the cleaner
+  contract. (The server now also treats an explicit `null` as no-op, so either
+  is safe — but omit is preferred.)
+- **Yahoo fallback scope?** Optional, and only worth it for tickers Finnhub
+  *persistently* lacks beta on. On a Finnhub request failure / rate-limit, just
+  **omit beta for that run** — the next run refreshes it and nothing was lost.
+  Don't add fallback complexity to cover transient errors.
 
 ## Payload diff
 
@@ -69,7 +90,7 @@ The fundamentals array gains one optional field:
 
 | Field | Required | Notes |
 |---|---|---|
-| `beta` | ❌ | Number. Trailing market beta vs the S&P 500. Omit (or send `null`) if unavailable — the app leaves any prior value untouched and treats unknown beta as no-penalty. |
+| `beta` | ❌ | Number. Trailing market beta vs the S&P 500. **Omit when unavailable** (preferred); an explicit `null` is also tolerated. Either way the app leaves any prior value untouched — it never clobbers a good beta with a missing one. |
 
 ## Source — Finnhub `/stock/metric` (recommended)
 
@@ -81,28 +102,32 @@ GET https://finnhub.io/api/v1/stock/metric?symbol=PLTR&metric=all&token=<KEY>
 → { "metric": { "beta": 1.83, "52WeekHigh": ..., ... }, ... }
 ```
 
-- Free tier (60 req/min), one request per ticker → ~50 calls.
-- Run **weekly** (e.g. Sunday). Map `metric.beta` → `fundamentals[].beta`, send
-  alongside the P/E values already being pushed.
+- Free tier (60 req/min), one request per ticker — already in the per-ticker
+  loop that fetches P/E and EPS, so beta is essentially free to add.
+- Map `metric.beta` → `fundamentals[].beta` in the same row you already build.
+  No new request, no new cron.
 
-### Fallback
+### Fallback (optional)
 
 Yahoo `quoteSummary` `defaultKeyStatistics.beta` — the same Yahoo source
-OpenClaw already uses for price/BB and the lazy earnings fallback. Free and
-batchable through the residential IPs; slightly more fragile (unofficial), so
-use it only if Finnhub's value is missing.
+OpenClaw already uses for price/BB and the lazy earnings fallback. Only worth
+reaching for on tickers Finnhub *persistently* lacks beta on. On a transient
+Finnhub failure/rate-limit, skip it — omit beta for that ticker this run and let
+the next run recover.
 
-## Recommended cadence
+## Cadence
 
-**Once per week.** Beta is stable; a missed week surfaces nothing bad (the app
-shows `—` / hides the chip when beta is NULL).
+Whatever the fundamentals generator already runs at (daily is fine). Beta is
+stable, and the non-clobber upsert means a skipped run just keeps the last good
+value — nothing decays to `—` from a missed cycle.
 
 ## Failure modes
 
 | Scenario | App behavior |
 |---|---|
-| `beta` omitted from payload | Prior value left untouched; if never set, Radar hides the chip and the Market Sensitivity section for that ticker. |
-| Finnhub + Yahoo both unavailable | No beta written; Radar simply omits it. No error surfaced. |
+| `beta` omitted from payload | Prior value left untouched (non-clobber). If never set, Radar hides the chip + Market Sensitivity section for that ticker. |
+| `beta` sent as `null` | Same as omitted — treated as no-op, prior value kept. |
+| Finnhub + Yahoo both unavailable | Beta omitted; Radar simply hides it. No error surfaced. |
 
 The design goal matches the existing ingest specs: OpenClaw going quiet doesn't
 break Radar — beta is purely additive context.
