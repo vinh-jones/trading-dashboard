@@ -40,11 +40,13 @@ export default function TradeDashboard() {
   const [trades,    setTrades]    = useState(() => tradesData.trades.map(normalizeTrade));
   const [positions, setPositions] = useState(() => positionsData);
   const [account,   setAccount]   = useState(() => accountData);
+  const [cspEntryYieldBenchmark, setCspEntryYieldBenchmark] = useState(null);
 
   function refreshData(data) {
     if (data.trades)    setTrades(data.trades.map(normalizeTrade));
     if (data.positions) setPositions(data.positions);
     if (data.account)   setAccount(prev => ({ ...prev, ...data.account }));
+    if (data.csp_entry_yield_benchmark) setCspEntryYieldBenchmark(data.csp_entry_yield_benchmark);
   }
 
   async function deleteTrade(trade) {
@@ -188,7 +190,7 @@ export default function TradeDashboard() {
     (selectedTicker || selectedType || selectedDuration != null);
 
   return (
-    <DataContext.Provider value={{ trades, positions, account, refreshData, deleteTrade }}>
+    <DataContext.Provider value={{ trades, positions, account, cspEntryYieldBenchmark, refreshData, deleteTrade }}>
       <div style={{
         fontFamily: theme.font.mono,
         background: theme.bg.base,

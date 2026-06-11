@@ -16,6 +16,7 @@ import {
 import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
+import { computeHoldYield } from "../lib/holdYield";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
@@ -265,6 +266,90 @@ function CushionPanel({ cushion, dte }) {
   );
 }
 
+// ── Hold-yield signal (green CSPs) ─────────────────────────────────────────────
+// "Am I still paid my normal rate to carry this assignment risk?" Risk-shedding
+// framing only — never redeploy. See SPEC_HOLD_YIELD_SIGNAL_V2.md.
+
+function holdYieldCopy(hy) {
+  const pct = hy.ratio != null ? Math.round(hy.ratio * 100) : null;
+  switch (hy.hold_yield_state) {
+    case "underpaid_to_hold":
+      return hy.priority === "HIGH"
+        ? `Paid ~${pct}% of your normal entry rate to hold this, and it's near the strike — shedding the risk is reasonable.`
+        : "Below-normal pay to hold, but it's safe — optional cleanup, no urgency.";
+    case "below_average": return "Below your normal rate to keep holding — soft watch.";
+    case "fairly_paid":   return "Still paying your normal rate — hold.";
+    case "fully_captured":return "Fully captured — nothing left to earn, close it.";
+    case "late_cycle_let_ride": return "Late in the cycle — let it resolve.";
+    case "no_benchmark":  return "Not enough closed-CSP history yet to benchmark against.";
+    default: return "";
+  }
+}
+
+// Collapsed-row indicator. HIGH = visible chip; LOW / fully_captured = muted dot;
+// everything else is silent (the detail still shows on expand).
+function HoldYieldIndicator({ hy }) {
+  if (!hy || hy.skipped) return null;
+  if (hy.hold_yield_state === "underpaid_to_hold" && hy.priority === "HIGH") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${theme.amber}22`, color: theme.amber, border: `1px solid ${theme.amber}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>underpaid</span>
+    );
+  }
+  if ((hy.hold_yield_state === "underpaid_to_hold" && hy.priority === "LOW") || hy.hold_yield_state === "fully_captured") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], width: 6, height: 6, borderRadius: "50%",
+        background: theme.text.subtle, display: "inline-block", flexShrink: 0,
+      }} />
+    );
+  }
+  return null;
+}
+
+function HoldYieldPanel({ hy }) {
+  if (!hy || hy.skipped || hy.hold_yield_state === "no_benchmark") return null;
+
+  const isHigh = hy.priority === "HIGH";
+  const color  = isHigh ? theme.amber : theme.text.muted;
+  const pct = (v) => v != null ? `${(v * 100).toFixed(1)}%` : "—";
+
+  const labelStyle = {
+    fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase",
+    letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[1],
+  };
+  const cell = (label, value, valueColor) => (
+    <div>
+      <div style={labelStyle}>{label}</div>
+      <div style={{ color: valueColor ?? theme.text.primary }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: isHigh ? `${theme.amber}11` : theme.bg.surface,
+      borderTop: `1px solid ${isHigh ? `${theme.amber}44` : theme.border.default}`,
+      borderBottom: `1px solid ${theme.border.default}`,
+      padding: `${theme.space[3]}px ${theme.space[4]}px`,
+    }}>
+      <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
+        <span style={{ fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
+          Hold yield
+        </span>
+        {holdYieldCopy(hy)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.sm }}>
+        {cell("Forward yield", pct(hy.forward_yield_ann), color)}
+        {cell("Your typical entry", pct(hy.avg_csp_entry_yield_ann))}
+        {cell("Ratio", hy.ratio != null ? `${hy.ratio.toFixed(2)}×` : "—", color)}
+      </div>
+    </div>
+  );
+}
+
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
 function PriceTargetPanel({ targets, position, stockPrice }) {
@@ -418,7 +503,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket }) {
+function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -478,16 +563,16 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
     const dte    = calcDTE(pos.expiry_date);
     const dtePct = dtePctRemaining({ openDateIso: pos.open_date, expiryDateIso: pos.expiry_date, dte });
 
-    let glDollars = null, glPct = null;
+    let glDollars = null, glPct = null, optionMid = null;
     if (pos.expiry_date && pos.strike != null && pos.contracts) {
       const sym = buildOccSymbol(pos.ticker, pos.expiry_date, isCC || isLeap, pos.strike);
-      const mid = quoteMap.get(sym)?.mid ?? null;
+      optionMid = quoteMap.get(sym)?.mid ?? null;
       if (isLeap) {
-        glDollars = leapGlDollars({ capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
-        glPct     = leapGlPct({     capitalFronted: pos.capital_fronted, optionMid: mid, contracts: pos.contracts });
+        glDollars = leapGlDollars({ capitalFronted: pos.capital_fronted, optionMid, contracts: pos.contracts });
+        glPct     = leapGlPct({     capitalFronted: pos.capital_fronted, optionMid, contracts: pos.contracts });
       } else {
-        glDollars = shortOptionGlDollars({ premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
-        glPct     = shortOptionGlPct({     premiumCollected: pos.premium_collected, optionMid: mid, contracts: pos.contracts });
+        glDollars = shortOptionGlDollars({ premiumCollected: pos.premium_collected, optionMid, contracts: pos.contracts });
+        glPct     = shortOptionGlPct({     premiumCollected: pos.premium_collected, optionMid, contracts: pos.contracts });
       }
     }
 
@@ -506,13 +591,28 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
     // Compute cushion fields client-side for CSP positions (not LEAPs, not CCs)
     const isCsp = !isLeap && pos.type === "CSP";
     let enrichedPos = pos;
+    let holdYield = null;
     if (isCsp) {
       const stockMid = quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null;
       const iv       = quoteMap.get(pos.ticker)?.iv  ?? null;
       enrichedPos    = { ...pos, ...computeCushion(pos.strike, stockMid, iv) };
+
+      // Hold-yield signal — green CSPs only (computeHoldYield self-skips underwater
+      // / missing-mid). Benchmark may be null in dev (no /api/data) → no_benchmark.
+      holdYield = computeHoldYield({
+        premiumCollected: pos.premium_collected,
+        optionMid,
+        contracts:        pos.contracts,
+        capitalFronted:   pos.capital_fronted,
+        daysToExpiry:     dte,
+        openDate:         pos.open_date,
+        today:            new Date().toISOString().slice(0, 10),
+        cushionState:     enrichedPos.cushion_state,
+        benchmark:        cspEntryYieldBenchmark?.avg_csp_entry_yield_ann ?? null,
+      });
     }
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -560,7 +660,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -647,6 +747,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                       {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
+                      <HoldYieldIndicator hy={holdYield} />
                     </span>
                   )}
                   {!isMobile && td(formatExpiry(pos.expiry_date),                   { color: theme.text.muted })}
@@ -732,6 +833,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
+                      <HoldYieldPanel hy={holdYield} />
                       {priceTargets && (
                         <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                       )}
@@ -752,7 +854,7 @@ function PositionsTable({ rows, positionType, quoteMap, isMobile, highlightedTic
 const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 
 export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition, onOpenBasket }) {
-  const { positions, account } = useData();
+  const { positions, account, cspEntryYieldBenchmark } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
   const { assigned_shares, open_csps, open_leaps } = positions;
@@ -963,6 +1065,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
             rows={activeTab?.rows ?? []}
             positionType={positionTab}
             quoteMap={quoteMap}
+            cspEntryYieldBenchmark={cspEntryYieldBenchmark}
             isMobile={isMobile}
             highlightedTicker={highlightedTicker}
             onOpenTickerDetail={onOpenTickerDetail}
