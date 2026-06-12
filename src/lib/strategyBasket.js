@@ -5,7 +5,7 @@ import { buildOccSymbol } from "./trading";
 
 const BASELINE_TAG = "role:makeup-baseline";
 
-function tupleMatch(a, b) {
+export function tupleMatch(a, b) {
   // Prefer the ISO `expiry_date` over `expiry`. Journal entries carry the ISO
   // date in `expiry`; open positions carry it in `expiry_date`. But a CLOSED
   // leg goes through normalizeTrade(), which adds an MM/DD `expiry` ("07/02")

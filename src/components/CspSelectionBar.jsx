@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { theme } from "../lib/theme";
 import { formatDollarsFull } from "../lib/format";
 
@@ -23,10 +24,30 @@ function Stat({ label, value, color }) {
 
 // Sticky aggregate readout for the CSP selection calculator. Renders nothing
 // until ≥1 row is selected. Desktop: one line of stats. Mobile: count + clear
-// line, then a 2×2 stat grid. Right side intentionally ends with the clear
-// button — a future "Save as cohort" action slots in before it.
-export function CspSelectionBar({ agg, isMobile, onClear }) {
+// line, then a 2×2 stat grid. When `onSaveCohort` is provided, a save-as-cohort
+// control renders before the clear button (inline name input on click).
+export function CspSelectionBar({ agg, isMobile, onClear, onSaveCohort }) {
+  const [naming, setNaming]   = useState(false);
+  const [name, setName]       = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
   if (!agg || agg.count === 0) return null;
+
+  async function handleSave() {
+    if (saving || !name.trim()) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSaveCohort(name.trim());
+      setNaming(false);
+      setName("");
+    } catch (err) {
+      setSaveError(err?.message || "save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const capturedColor = agg.captured == null ? theme.text.muted
     : agg.captured >= 0 ? theme.green : theme.red;
@@ -61,6 +82,55 @@ export function CspSelectionBar({ agg, isMobile, onClear }) {
     </button>
   );
 
+  const saveControl = onSaveCohort && (
+    naming ? (
+      <span style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
+        <input
+          autoFocus
+          value={name}
+          disabled={saving}
+          placeholder="cohort name"
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") { setNaming(false); setName(""); setSaveError(null); }
+          }}
+          style={{
+            background: theme.bg.surface, color: theme.text.primary,
+            border: `1px solid ${BAR_BORDER}`, borderRadius: theme.radius.sm,
+            padding: "3px 8px", fontSize: theme.size.sm, fontFamily: "inherit", width: 140,
+          }}
+        />
+        <button
+          onClick={handleSave}
+          disabled={saving || !name.trim()}
+          style={{
+            background: "transparent", border: "none", padding: 0,
+            color: theme.blue, cursor: saving ? "default" : "pointer",
+            fontSize: theme.size.sm, fontFamily: "inherit", whiteSpace: "nowrap",
+            opacity: saving || !name.trim() ? 0.5 : 1,
+          }}
+        >
+          {saving ? "saving…" : "save"}
+        </button>
+        {saveError && (
+          <span style={{ fontSize: theme.size.xs, color: theme.red, whiteSpace: "nowrap" }}>{saveError}</span>
+        )}
+      </span>
+    ) : (
+      <button
+        onClick={() => setNaming(true)}
+        style={{
+          background: "transparent", border: "none", padding: 0,
+          color: theme.blue, cursor: "pointer",
+          fontSize: theme.size.sm, fontFamily: "inherit", whiteSpace: "nowrap",
+        }}
+      >
+        ⊕ Save as cohort
+      </button>
+    )
+  );
+
   const shell = {
     position:     "fixed",
     left:         "50%",
@@ -90,6 +160,11 @@ export function CspSelectionBar({ agg, isMobile, onClear }) {
           <Stat label="Captured"    value={capturedValue} color={capturedColor} />
           <Stat label="Avg G/L"     value={avgGlValue} color={capturedColor} />
         </div>
+        {saveControl && (
+          <div style={{ marginTop: theme.space[2], display: "flex", justifyContent: "flex-end" }}>
+            {saveControl}
+          </div>
+        )}
       </div>
     );
   }
@@ -102,6 +177,7 @@ export function CspSelectionBar({ agg, isMobile, onClear }) {
       <Stat label="Captured"    value={capturedValue} color={capturedColor} />
       <Stat label="Avg G/L"     value={avgGlValue} color={capturedColor} />
       {markNote}
+      {saveControl}
       {clearBtn}
     </div>
   );

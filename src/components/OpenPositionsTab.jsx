@@ -19,6 +19,8 @@ import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
+import { CohortsPanel } from "./CohortsPanel";
+import { slugifyCohortName } from "../lib/cohorts";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
 import { theme } from "../lib/theme";
@@ -505,7 +507,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket, selectable, selectedKeys, setSelectedKeys, accountValue }) {
+function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket, selectable, selectedKeys, setSelectedKeys, accountValue, onSaveCohort, onOpenCohort }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -849,7 +851,9 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                             tag={t.tag}
                             compact={false}
                             onClick={
-                              t.tag.startsWith("strategy:") && onOpenBasket
+                              t.tag.startsWith("cohort:") && onOpenCohort
+                                ? () => onOpenCohort(t.tag)
+                                : t.tag.startsWith("strategy:") && onOpenBasket
                                 ? () => onOpenBasket(t.tag)
                                 : () => onShowJournalEntry?.(t.entryId)
                             }
@@ -901,6 +905,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
           agg={selectionAgg}
           isMobile={isMobile}
           onClear={() => setSelectedKeys(new Set())}
+          onSaveCohort={onSaveCohort}
         />
       )}
     </div>
@@ -912,7 +917,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
 const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 
 export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition, onOpenBasket }) {
-  const { positions, account, cspEntryYieldBenchmark } = useData();
+  const { positions, account, cspEntryYieldBenchmark, trades } = useData();
   const { quoteMap } = useQuotes();
   const isMobile = useWindowWidth() < 600;
   const { assigned_shares, open_csps, open_leaps } = positions;
@@ -923,6 +928,75 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   // Selection calculator state — Set of positionKey strings (CSPs tab only).
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [highlightedTicker, setHighlightedTicker] = useState(null);
+
+  // ── Cohorts (tag-based; journal entries are the source of truth) ──────────
+  const [selectedCohortTag, setSelectedCohortTag] = useState(null);
+  const [cohortEntries, setCohortEntries] = useState([]);
+  const [cohortRefreshKey, setCohortRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await listJournalEntries({ hasTags: "1" });
+        if (cancelled) return;
+        setCohortEntries((data ?? []).filter(e =>
+          Array.isArray(e.tags) && e.tags.some(t => typeof t === "string" && t.startsWith("cohort:"))
+        ));
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("[OpenPositionsTab] cohort entry fetch failed:", err.message);
+        setCohortEntries([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cohortRefreshKey]);
+
+  const cohortCount = new Set(
+    cohortEntries.flatMap(e => (e.tags ?? []).filter(t => t.startsWith("cohort:")))
+  ).size;
+
+  // Writes one journal entry per selected CSP with the cohort tag, mirroring
+  // the JournalQuickAdd POST payload. `source` stays null — a non-null source
+  // would propagate to the linked position via the API.
+  async function handleSaveCohort(name) {
+    const slug = slugifyCohortName(name);
+    if (!slug) throw new Error("Name needs letters or digits");
+    const tag = `cohort:${slug}`;
+    const selected = open_csps.filter(p => selectedKeys.has(positionKey(p)));
+    if (!selected.length) throw new Error("Nothing selected");
+    const now = new Date().toISOString();
+    for (const pos of selected) {
+      const payload = {
+        entry_type: "position_note", // NOT NULL column, no default — POST fails without it
+        trade_id: null,
+        position_id: pos.id ?? null,
+        entry_date: now.slice(0, 10),
+        ticker: pos.ticker,
+        type: pos.type,
+        strike: pos.strike,
+        expiry: pos.expiry_date,
+        title: `Cohort: ${slug}`,
+        body: "",
+        tags: [tag],
+        source: null,
+        mood: null,
+        metadata: null,
+        focus_snapshot: null,
+        created_at: now,
+        updated_at: now,
+      };
+      const resp = await fetch("/api/journal-entry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok || !json?.ok) throw new Error(json?.error || `HTTP ${resp.status}`);
+    }
+    setCohortRefreshKey(k => k + 1);
+    setSelectedKeys(new Set());
+  }
 
   useEffect(() => {
     if (!positionIntent) return;
@@ -962,7 +1036,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
       setStrategicTagsByPos(groupStrategicTagsByPosition(data ?? [], { open_csps, open_leaps, assigned_shares }));
     })();
     return () => { cancelled = true; };
-  }, [open_csps, open_leaps, assigned_shares]);
+  }, [open_csps, open_leaps, assigned_shares, cohortRefreshKey]);
   const [threshold, setThreshold]     = useState(25);
   const [thresholdInput, setThresholdInput] = useState("25");
   const [thresholdError, setThresholdError] = useState(null);
@@ -1056,9 +1130,10 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   });
 
   const positionTabs = [
-    { key: "csps",  label: `CSPs (${open_csps.length})`,      rows: open_csps     },
-    { key: "ccs",   label: `CCs (${open_ccs.length})`,        rows: open_ccs      },
-    { key: "leaps", label: `LEAPs (${allOpenLeaps.length})`,  rows: allOpenLeaps  },
+    { key: "csps",    label: `CSPs (${open_csps.length})`,      rows: open_csps     },
+    { key: "ccs",     label: `CCs (${open_ccs.length})`,        rows: open_ccs      },
+    { key: "leaps",   label: `LEAPs (${allOpenLeaps.length})`,  rows: allOpenLeaps  },
+    { key: "cohorts", label: `Cohorts (${cohortCount})`,        rows: []            },
   ];
   const activeTab = positionTabs.find(t => t.key === positionTab);
 
@@ -1112,7 +1187,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
                 <button
                   key={t.key}
                   style={tabBtnStyle(t.key)}
-                  onClick={() => { setPositionTab(t.key); setSelectedKeys(new Set()); }}
+                  onClick={() => { setPositionTab(t.key); setSelectedKeys(new Set()); setSelectedCohortTag(null); }}
                   onMouseEnter={e => { if (positionTab !== t.key) e.currentTarget.style.background = "rgba(58,130,246,0.06)"; }}
                   onMouseLeave={e => { if (positionTab !== t.key) e.currentTarget.style.background = theme.bg.elevated; }}
                 >
@@ -1121,23 +1196,39 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               ))}
             </div>
           </div>
-          <PositionsTable
-            rows={activeTab?.rows ?? []}
-            positionType={positionTab}
-            quoteMap={quoteMap}
-            cspEntryYieldBenchmark={cspEntryYieldBenchmark}
-            selectable={positionTab === "csps"}
-            selectedKeys={selectedKeys}
-            setSelectedKeys={setSelectedKeys}
-            accountValue={account?.account_value ?? null}
-            isMobile={isMobile}
-            highlightedTicker={highlightedTicker}
-            onOpenTickerDetail={onOpenTickerDetail}
-            strategicTagsByPos={strategicTagsByPos}
-            onShowJournalEntry={onShowJournalEntry}
-            onTagPosition={onTagPosition}
-            onOpenBasket={onOpenBasket}
-          />
+          {positionTab === "cohorts" ? (
+            <CohortsPanel
+              cohortEntries={cohortEntries}
+              openCsps={open_csps}
+              trades={trades}
+              quoteMap={quoteMap}
+              accountValue={account?.account_value ?? null}
+              isMobile={isMobile}
+              selectedTag={selectedCohortTag}
+              onSelectTag={setSelectedCohortTag}
+              onCohortsChanged={() => setCohortRefreshKey(k => k + 1)}
+            />
+          ) : (
+            <PositionsTable
+              rows={activeTab?.rows ?? []}
+              positionType={positionTab}
+              quoteMap={quoteMap}
+              cspEntryYieldBenchmark={cspEntryYieldBenchmark}
+              selectable={positionTab === "csps"}
+              selectedKeys={selectedKeys}
+              setSelectedKeys={setSelectedKeys}
+              accountValue={account?.account_value ?? null}
+              onSaveCohort={handleSaveCohort}
+              onOpenCohort={(tag) => { setPositionTab("cohorts"); setSelectedKeys(new Set()); setSelectedCohortTag(tag); }}
+              isMobile={isMobile}
+              highlightedTicker={highlightedTicker}
+              onOpenTickerDetail={onOpenTickerDetail}
+              strategicTagsByPos={strategicTagsByPos}
+              onShowJournalEntry={onShowJournalEntry}
+              onTagPosition={onTagPosition}
+              onOpenBasket={onOpenBasket}
+            />
+          )}
         </>
       )}
 
