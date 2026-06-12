@@ -4,6 +4,8 @@
 // resolving after close. See docs/superpowers/specs/2026-06-11-csp-cohorts-design.md.
 
 import { tupleMatch } from "./strategyBasket";
+import { buildOccSymbol } from "./trading";
+import { shortOptionGlDollars, shortOptionGlPct } from "./positionMetrics";
 
 export function slugifyCohortName(name) {
   return String(name ?? "")
@@ -49,8 +51,9 @@ function memberFromTrade(trade) {
   };
 }
 
-function memberKey(m) {
-  return `${m.ticker}|${m.type}|${m.strike}|${m.expiry_date ?? m.expiry}`;
+// Keyed on journal-entry fields; entries carry their ISO expiry in `expiry`.
+function entryTupleKey(e) {
+  return `${e.ticker}|${e.type}|${e.strike}|${e.expiry}`;
 }
 
 /**
@@ -67,7 +70,7 @@ export function resolveCohort(tag, { openPositions = [], trades = [], entries = 
     if (!Array.isArray(e.tags) || !e.tags.includes(tag)) continue;
     if (e.created_at && (createdAt == null || e.created_at < createdAt)) createdAt = e.created_at;
 
-    const key = memberKey(e);
+    const key = entryTupleKey(e);
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -79,4 +82,132 @@ export function resolveCohort(tag, { openPositions = [], trades = [], entries = 
   }
 
   return { members, unresolved, createdAt };
+}
+
+function optionMidFor(member, quoteMap) {
+  if (!member.expiry || member.strike == null || !member.contracts) return null;
+  const sym = buildOccSymbol(member.ticker, member.expiry, false, member.strike);
+  return quoteMap?.get(sym)?.mid ?? null;
+}
+
+/**
+ * Roster capture % for one member (percent units, null when unmarked/unkept).
+ */
+export function memberCapturePct(member, quoteMap) {
+  if (member.status === "closed") {
+    return member.keptPct != null ? member.keptPct * 100 : null;
+  }
+  const optionMid = optionMidFor(member, quoteMap);
+  return shortOptionGlPct({
+    premiumCollected: member.premiumCollected,
+    optionMid,
+    contracts: member.contracts,
+  });
+}
+
+/**
+ * Scoreboard: collateral from OPEN members only (closed collateral is freed);
+ * premium and capture across all members. Capture = unrealized (open, live
+ * marks — same math as the selection calculator) + realized (closed, kept_pct).
+ * capturePct's denominator covers contributing rows only, mirroring
+ * computeCspAggregates' internally-consistent ratio rule.
+ */
+export function cohortScoreboard(members, quoteMap, accountValue) {
+  const open = members.filter(m => m.status === "open");
+  const closed = members.filter(m => m.status === "closed");
+
+  let collateral = 0, openPremium = 0, openCaptured = 0, openMarkedPremium = 0, openMissing = 0;
+  let hasOpenCapture = false;
+  for (const m of open) {
+    collateral  += (m.strike ?? 0) * 100 * (m.contracts ?? 0);
+    openPremium += m.premiumCollected ?? 0;
+    const gl = shortOptionGlDollars({
+      premiumCollected: m.premiumCollected,
+      optionMid: optionMidFor(m, quoteMap),
+      contracts: m.contracts,
+    });
+    if (gl == null) { openMissing += 1; continue; }
+    hasOpenCapture     = true;
+    openCaptured      += gl;
+    openMarkedPremium += m.premiumCollected ?? 0;
+  }
+
+  let closedKept = 0, closedKeptPremium = 0, closedMissing = 0, closedPremium = 0;
+  for (const m of closed) {
+    closedPremium += m.premiumCollected ?? 0;
+    if (m.keptPct == null) { closedMissing += 1; continue; }
+    closedKept        += (m.premiumCollected ?? 0) * m.keptPct;
+    closedKeptPremium += m.premiumCollected ?? 0;
+  }
+
+  const hasClosedCapture = closedKeptPremium > 0;
+  const captured = hasOpenCapture || hasClosedCapture ? openCaptured + closedKept : null;
+  const captureDenominator = openMarkedPremium + closedKeptPremium;
+
+  return {
+    memberCount: members.length,
+    openCount: open.length,
+    collateral,
+    collateralPct: accountValue && open.length ? (collateral / accountValue) * 100 : null,
+    maxPremium: openPremium + closedPremium,
+    captured,
+    capturePct: captured != null && captureDenominator > 0
+      ? (captured / captureDenominator) * 100
+      : null,
+    missingMarkCount: openMissing + closedMissing,
+  };
+}
+
+// Case-insensitive tuple match between a cohort member and a serialized
+// snapshot row (daily_snapshots.forecast_per_position stores type as 'csp').
+function snapMatch(member, snap) {
+  return (
+    member.ticker === snap.ticker &&
+    String(member.type).toLowerCase() === String(snap.type).toLowerCase() &&
+    String(member.strike) === String(snap.strike) &&
+    String(member.expiry) === String(snap.expiry)
+  );
+}
+
+/**
+ * Premium-weighted cohort capture % per snapshot day.
+ * Open members contribute current_profit_pct (fraction) weighted by
+ * premium_at_open; closed members flatline at kept_pct from closeDate.
+ * Days with no contributors are skipped; an all-closed cohort's series is
+ * trimmed after the latest closeDate.
+ * @param {Array} members - resolveCohort members
+ * @param {Array<{date: string, members: Array}>} history - api/cohort-history data
+ * @returns {Array<{date: string, capturePct: number}>}
+ */
+export function cohortCaptureSeries(members, history) {
+  if (!members?.length || !history?.length) return [];
+
+  const allClosed = members.every(m => m.status === "closed");
+  const lastClose = allClosed
+    ? members.reduce((max, m) => (m.closeDate && m.closeDate > max ? m.closeDate : max), "")
+    : null;
+
+  const series = [];
+  let passedClose = false;
+  for (const day of history) {
+    if (lastClose && day.date >= lastClose && passedClose) continue;
+    if (lastClose && day.date >= lastClose) passedClose = true;
+    let num = 0, den = 0;
+    for (const m of members) {
+      if (m.status === "closed" && m.closeDate && day.date >= m.closeDate) {
+        if (m.keptPct == null) continue;
+        const w = m.premiumCollected ?? 0;
+        num += m.keptPct * w;
+        den += w;
+        continue;
+      }
+      const snap = (day.members ?? []).find(s => snapMatch(m, s));
+      if (!snap || snap.current_profit_pct == null) continue;
+      const w = snap.premium_at_open ?? m.premiumCollected ?? 0;
+      num += snap.current_profit_pct * w;
+      den += w;
+    }
+    if (den > 0) series.push({ date: day.date, capturePct: (num / den) * 100 });
+  }
+  return series;
 }
