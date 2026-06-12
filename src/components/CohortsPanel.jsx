@@ -63,6 +63,9 @@ function EvolutionChart({ series }) {
         <line x1={PAD} x2={W - PAD} y1={y(0)} y2={y(0)} stroke={theme.border.strong} strokeWidth="1" />
         <line x1={PAD} x2={W - PAD} y1={y(100)} y2={y(100)} stroke={theme.border.default} strokeWidth="1" strokeDasharray="4 4" />
         <polyline points={points} fill="none" stroke={theme.blue} strokeWidth="2" />
+        {series.length === 1 && (
+          <circle cx={x(0)} cy={y(series[0].capturePct)} r="3" fill={theme.blue} />
+        )}
       </svg>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: theme.size.xs, color: theme.text.subtle }}>
         <span>{series[0].date}</span>
@@ -180,7 +183,7 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
               const cap = memberCapturePct(m, quoteMap);
               const capColor = cap == null ? theme.text.muted : cap >= 0 ? theme.green : theme.red;
               return (
-                <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
+                <tr key={`${m.ticker}|${m.strike}|${m.expiry}`} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                   {cell(
                     <span style={{ fontWeight: 700, color: theme.text.primary }}>
                       {m.ticker} ${m.strike} {!isMobile && m.expiry ? formatExpiry(m.expiry) : ""}
@@ -198,7 +201,7 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
               );
             })}
             {cohort.unresolved.map((u, i) => (
-              <tr key={`u-${i}`} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
+              <tr key={`u-${u.ticker}|${u.strike}|${u.expiry}`} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                 {cell(<span style={{ color: theme.text.muted }}>{u.ticker} ${u.strike}</span>)}
                 {cell(<span style={{ color: theme.amber, fontSize: theme.size.sm }}>unresolved</span>, { textAlign: "right" })}
                 {cell("—", { textAlign: "right", color: theme.text.muted })}
@@ -250,7 +253,7 @@ export function CohortsPanel({ cohortEntries, openCsps, trades, quoteMap, accoun
   async function handleDelete() {
     if (!selected) return;
     const entryCount = cohortEntries.filter(e => (e.tags ?? []).includes(selected.tag)).length;
-    if (!window.confirm(`Delete cohort "${selected.name}"? This removes its tag from ${entryCount} journal entr${entryCount === 1 ? "y" : "ies"}.`)) return;
+    if (!window.confirm(`Delete cohort "${selected.name}"? This removes its tag from ${entryCount} journal entr${entryCount === 1 ? "y" : "ies"} (entries with no other tags are deleted).`)) return;
     setDeleting(true);
     try {
       const memberEntries = cohortEntries.filter(e => (e.tags ?? []).includes(selected.tag));
@@ -272,10 +275,10 @@ export function CohortsPanel({ cohortEntries, openCsps, trades, quoteMap, accoun
         }
       }
       onSelectTag(null);
-      onCohortsChanged();
     } catch (err) {
       window.alert(`Delete failed: ${err.message}`);
     } finally {
+      onCohortsChanged();
       setDeleting(false);
     }
   }
