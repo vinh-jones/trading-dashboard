@@ -24,8 +24,8 @@ function Stat({ label, value, color }) {
 
 // Sticky aggregate readout for the CSP selection calculator. Renders nothing
 // until ≥1 row is selected. Desktop: one line of stats. Mobile: count + clear
-// line, then a 2×2 stat grid. Right side intentionally ends with the clear
-// button — a future "Save as cohort" action slots in before it.
+// line, then a 2×2 stat grid. When `onSaveCohort` is provided, a save-as-cohort
+// control renders before the clear button (inline name input on click).
 export function CspSelectionBar({ agg, isMobile, onClear, onSaveCohort }) {
   const [naming, setNaming]   = useState(false);
   const [name, setName]       = useState("");
@@ -39,11 +39,11 @@ export function CspSelectionBar({ agg, isMobile, onClear, onSaveCohort }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await onSaveCohort(name);
+      await onSaveCohort(name.trim());
       setNaming(false);
       setName("");
     } catch (err) {
-      setSaveError(err.message);
+      setSaveError(err?.message || "save failed");
     } finally {
       setSaving(false);
     }
