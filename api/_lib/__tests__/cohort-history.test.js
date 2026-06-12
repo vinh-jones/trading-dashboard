@@ -32,4 +32,17 @@ describe("buildCohortHistory", () => {
     expect(out).toHaveLength(1);
     expect(buildCohortHistory([snapRow("2026-06-01", [pp()])], [])).toEqual([]);
   });
+
+  it("excludes rows with a different expiry", () => {
+    const out = buildCohortHistory([snapRow("2026-06-01", [pp({ expiry: "2026-07-03" })])], [tuple]);
+    expect(out).toEqual([]);
+  });
+
+  it("projects missing capture fields as null", () => {
+    const out = buildCohortHistory(
+      [snapRow("2026-06-01", [pp({ current_profit_pct: undefined, premium_at_open: undefined })])],
+      [tuple],
+    );
+    expect(out[0].members[0]).toMatchObject({ current_profit_pct: null, premium_at_open: null });
+  });
 });

@@ -160,6 +160,8 @@ export function cohortScoreboard(members, quoteMap, accountValue) {
 
 // Case-insensitive tuple match between a cohort member and a serialized
 // snapshot row (daily_snapshots.forecast_per_position stores type as 'csp').
+// The matching backend copy is `tupleMatches` in api/_lib/cohortHistory.js —
+// keep the two in sync.
 function snapMatch(member, snap) {
   return (
     member.ticker === snap.ticker &&

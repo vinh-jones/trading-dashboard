@@ -2,6 +2,8 @@
 // subset matching a cohort's member tuples. Snapshot rows store type as
 // lowercase 'csp' (serializePerPosition in computeForecastV2.js); journal
 // entries/positions use 'CSP' — hence the case-insensitive compare.
+// The matching client-side copy is `snapMatch` in src/lib/cohorts.js — keep
+// the two in sync.
 
 function tupleMatches(member, row) {
   return (
