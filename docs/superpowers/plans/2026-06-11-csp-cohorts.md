@@ -16,7 +16,7 @@
 
 - **Journal API** (`api/journal-entry.js`, gated by `middleware.js` matcher `/api/:path*` — new endpoints are auto-gated):
   - GET params: `tickers`, `tag` (exact contains), `hasTags=1`, etc. Client helper: `listJournalEntries(params)` in `src/lib/journalApi.js`.
-  - POST body = full entry payload, inserted as-is, NO tag-vocabulary validation. Payload shape used by JournalQuickAdd: `{trade_id, position_id, entry_date, ticker, type, strike, expiry, title, body, tags, source, mood, metadata, focus_snapshot, created_at, updated_at}`.
+  - POST body = full entry payload, inserted as-is, NO tag-vocabulary validation. Payload shape used by JournalQuickAdd: `{entry_type, trade_id, position_id, entry_date, ticker, type, strike, expiry, title, body, tags, source, mood, metadata, focus_snapshot, created_at, updated_at}`. **`entry_type` is a NOT NULL column with no default** — omitting it fails every insert (caught in final review; cohort saves use `"position_note"`).
   - PATCH body = `{id, fields}`. CAUTION: if `fields` contains `source`, the API propagates it to the linked position — cohort code must NEVER include `source` in PATCH fields, and uses `source: null` on POST.
   - DELETE: `/api/journal-entry?id=<id>`.
 - **Basket resolution** (`src/lib/strategyBasket.js`): private `tupleMatch(a, b)` compares ticker / `String(type)` / `String(strike)` / `expiry_date ?? expiry` (ISO preferred — normalizeTrade adds an MM/DD `expiry` ALONGSIDE ISO `expiry_date` on closed trades; reading `expiry` first silently fails). Task 1 exports it for reuse.

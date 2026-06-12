@@ -968,6 +968,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
     const now = new Date().toISOString();
     for (const pos of selected) {
       const payload = {
+        entry_type: "position_note", // NOT NULL column, no default — POST fails without it
         trade_id: null,
         position_id: pos.id ?? null,
         entry_date: now.slice(0, 10),
