@@ -173,8 +173,10 @@ function snapMatch(member, snap) {
  * Premium-weighted cohort capture % per snapshot day.
  * Open members contribute current_profit_pct (fraction) weighted by
  * premium_at_open; closed members flatline at kept_pct from closeDate.
- * Days with no contributors are skipped; an all-closed cohort's series is
- * trimmed after the latest closeDate.
+ * Days with no contributors are skipped. For an all-closed cohort the series
+ * keeps the FIRST snapshot day at-or-after the last close (so the final
+ * flatline point appears even when the close falls on a non-snapshot day)
+ * and trims everything after. `history` must be sorted ascending by date.
  * @param {Array} members - resolveCohort members
  * @param {Array<{date: string, members: Array}>} history - api/cohort-history data
  * @returns {Array<{date: string, capturePct: number}>}
@@ -190,8 +192,10 @@ export function cohortCaptureSeries(members, history) {
   const series = [];
   let passedClose = false;
   for (const day of history) {
-    if (lastClose && day.date >= lastClose && passedClose) continue;
-    if (lastClose && day.date >= lastClose) passedClose = true;
+    if (lastClose && day.date >= lastClose) {
+      if (passedClose) continue;
+      passedClose = true;
+    }
     let num = 0, den = 0;
     for (const m of members) {
       if (m.status === "closed" && m.closeDate && day.date >= m.closeDate) {

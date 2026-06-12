@@ -222,4 +222,23 @@ describe("cohortCaptureSeries", () => {
     expect(cohortCaptureSeries([], [])).toEqual([]);
     expect(cohortCaptureSeries([openMember()], [])).toEqual([]);
   });
+
+  it("keeps exactly one snapshot day after an off-snapshot close, trims the rest", () => {
+    const closed = closedMember(); // closeDate 2026-06-05 (not a snapshot day)
+    const history = [
+      { date: "2026-06-04", members: [snap("WDC", 450, "2026-06-26", 0.6, 800)] },
+      { date: "2026-06-06", members: [] },
+      { date: "2026-06-07", members: [] },
+    ];
+    const series = cohortCaptureSeries([closed], history);
+    expect(series.map(p => p.date)).toEqual(["2026-06-04", "2026-06-06"]);
+  });
+
+  it("passes negative capture through unclamped (underwater cohort)", () => {
+    const m = openMember();
+    const history = [
+      { date: "2026-06-01", members: [snap("CCJ", 107, "2026-06-26", -1.5, 500)] },
+    ];
+    expect(cohortCaptureSeries([m], history)[0].capturePct).toBeCloseTo(-150, 5);
+  });
 });
