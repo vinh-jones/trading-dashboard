@@ -20,6 +20,7 @@ import { computeHoldYield } from "../lib/holdYield";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
 import { CohortsPanel } from "./CohortsPanel";
+import { PositionHistoryPanel } from "./PositionHistoryPanel";
 import { slugifyCohortName } from "../lib/cohorts";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
@@ -892,6 +893,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                       {priceTargets && (
                         <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                       )}
+                      <PositionHistoryPanel position={pos} />
                     </td>
                   </tr>
                 )}
