@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugifyCohortName, resolveCohort, cohortScoreboard, memberCapturePct, cohortCaptureSeries } from "../cohorts";
+import { slugifyCohortName, resolveCohort, cohortScoreboard, memberCapturePct, memberGlDollars, cohortCaptureSeries } from "../cohorts";
 import { buildOccSymbol } from "../trading";
 
 const entry = (ticker, strike, expiry, tags, extra = {}) => ({
@@ -172,6 +172,22 @@ describe("memberCapturePct", () => {
   it("uses kept_pct for closed members", () => {
     expect(memberCapturePct(closedMember(), new Map())).toBeCloseTo(75, 5);
     expect(memberCapturePct(closedMember({ keptPct: null }), new Map())).toBeNull();
+  });
+});
+
+describe("memberGlDollars", () => {
+  it("uses unrealized mark-to-market dollars for open members", () => {
+    const m = openMember(); // premium 500, 1 contract, mid 2.5 → 500 - 250 = 250
+    expect(memberGlDollars(m, quoteMapFor(m, 2.5))).toBeCloseTo(250, 5);
+    expect(memberGlDollars(m, new Map())).toBeNull(); // no mark
+  });
+  it("uses realized kept dollars for closed members (premium × kept_pct)", () => {
+    expect(memberGlDollars(closedMember(), new Map())).toBeCloseTo(600, 5); // 800 × 0.75
+    expect(memberGlDollars(closedMember({ keptPct: null }), new Map())).toBeNull();
+  });
+  it("goes negative for an underwater open member", () => {
+    const m = openMember(); // premium 500, mid 8.0 → 500 - 800 = -300
+    expect(memberGlDollars(m, quoteMapFor(m, 8.0))).toBeCloseTo(-300, 5);
   });
 });
 

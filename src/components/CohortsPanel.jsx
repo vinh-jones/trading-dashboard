@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { theme } from "../lib/theme";
 import { formatDollarsFull, formatExpiry } from "../lib/format";
-import { resolveCohort, cohortScoreboard, memberCapturePct, cohortCaptureSeries } from "../lib/cohorts";
+import { resolveCohort, cohortScoreboard, memberCapturePct, memberGlDollars, cohortCaptureSeries } from "../lib/cohorts";
 import { niceTicks } from "../lib/chartTicks";
 
 const BLUE_BORDER = "rgba(58,130,246,0.40)";
@@ -95,9 +95,9 @@ function EvolutionChart({ series }) {
               strokeWidth="1"
             />
             <text
-              x={GUTTER - 6} y={y(t) + 3}
+              x={GUTTER - 6} y={y(t) + 2.5}
               textAnchor="end"
-              style={{ fontSize: 10, fill: theme.text.muted, fontFamily: theme.font.mono }}
+              style={{ fontSize: 7.5, fill: theme.text.muted, fontFamily: theme.font.mono }}
             >
               {t}%
             </text>
@@ -117,7 +117,7 @@ function EvolutionChart({ series }) {
               x={x(activeIdx) + (activeIdx < series.length / 2 ? 8 : -8)}
               y={Math.max(y(active.capturePct) - 8, 12)}
               textAnchor={activeIdx < series.length / 2 ? "start" : "end"}
-              style={{ fontSize: 11, fill: theme.text.primary, fontFamily: theme.font.mono, fontWeight: 600 }}
+              style={{ fontSize: 9, fill: theme.text.primary, fontFamily: theme.font.mono, fontWeight: 600 }}
             >
               {active.date.slice(5)} · {fmtPct(active.capturePct)}
             </text>
@@ -228,7 +228,7 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
-              {["Member", "Status", "Premium", "Capture"].map(h => (
+              {["Member", "Status", "Premium", "G/L $", "Capture"].map(h => (
                 <th key={h} style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontSize: theme.size.xs, color: theme.text.muted, fontWeight: 500, letterSpacing: "0.5px", textAlign: h === "Member" ? "left" : "right", textTransform: "uppercase" }}>
                   {h}
                 </th>
@@ -239,6 +239,8 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
             {cohort.members.map((m, i) => {
               const cap = memberCapturePct(m, quoteMap);
               const capColor = cap == null ? theme.text.muted : cap >= 0 ? theme.green : theme.red;
+              const gl = memberGlDollars(m, quoteMap);
+              const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
               return (
                 <tr key={`${m.ticker}|${m.strike}|${m.expiry}`} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                   {cell(
@@ -253,6 +255,7 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
                     { textAlign: "right" }
                   )}
                   {cell(formatDollarsFull(m.premiumCollected), { color: theme.green, fontWeight: 600, textAlign: "right" })}
+                  {cell(gl != null ? formatDollarsFull(gl) : "—", { color: glColor, fontWeight: 600, textAlign: "right" })}
                   {cell(cap != null ? `${cap.toFixed(1)}%` : "—", { color: capColor, fontWeight: 600, textAlign: "right" })}
                 </tr>
               );
@@ -261,6 +264,7 @@ function CohortDetail({ cohort, quoteMap, isMobile, onBack, onDelete, deleting }
               <tr key={`u-${u.ticker}|${u.strike}|${u.expiry}`} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                 {cell(<span style={{ color: theme.text.muted }}>{u.ticker} ${u.strike}</span>)}
                 {cell(<span style={{ color: theme.amber, fontSize: theme.size.sm }}>unresolved</span>, { textAlign: "right" })}
+                {cell("—", { textAlign: "right", color: theme.text.muted })}
                 {cell("—", { textAlign: "right", color: theme.text.muted })}
                 {cell("—", { textAlign: "right", color: theme.text.muted })}
               </tr>
