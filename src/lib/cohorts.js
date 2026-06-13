@@ -106,6 +106,24 @@ export function memberCapturePct(member, quoteMap) {
 }
 
 /**
+ * Roster G/L in dollars for one member — the dollar partner of
+ * memberCapturePct, matching the scoreboard's captured math. Open: unrealized
+ * mark-to-market $ from live marks; closed: realized kept $ (premium × kept_pct).
+ * Null when an open member has no mark or a closed member has no kept_pct.
+ */
+export function memberGlDollars(member, quoteMap) {
+  if (member.status === "closed") {
+    return member.keptPct != null ? member.premiumCollected * member.keptPct : null;
+  }
+  const optionMid = optionMidFor(member, quoteMap);
+  return shortOptionGlDollars({
+    premiumCollected: member.premiumCollected,
+    optionMid,
+    contracts: member.contracts,
+  });
+}
+
+/**
  * Scoreboard: collateral from OPEN members only (closed collateral is freed);
  * premium and capture across all members. Capture = unrealized (open, live
  * marks — same math as the selection calculator) + realized (closed, kept_pct).
