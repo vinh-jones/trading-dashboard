@@ -239,6 +239,19 @@ describe("cohortCaptureSeries", () => {
     expect(cohortCaptureSeries([openMember()], [])).toEqual([]);
   });
 
+  it("yields a single open member's own current_profit_pct line", () => {
+    const m = openMember(); // CCJ 107, premium 500
+    const history = [
+      { date: "2026-06-01", members: [snap("CCJ", 107, "2026-06-26", 0.12, 500)] },
+      { date: "2026-06-02", members: [snap("CCJ", 107, "2026-06-26", -0.30, 500)] },
+    ];
+    const series = cohortCaptureSeries([m], history);
+    expect(series).toEqual([
+      { date: "2026-06-01", capturePct: 12 },
+      { date: "2026-06-02", capturePct: -30 },
+    ]);
+  });
+
   it("keeps exactly one snapshot day after an off-snapshot close, trims the rest", () => {
     const closed = closedMember(); // closeDate 2026-06-05 (not a snapshot day)
     const history = [
