@@ -58,6 +58,7 @@ export function normalizeTrade(t) {
     days: t.days_held ?? null,
     premium: t.premium_collected ?? 0,
     kept: keptStr,
+    kept_pct: t.kept_pct ?? null,   // numeric fraction (kept is the display string); cohort/basket resolution needs this
     fronted: t.capital_fronted ?? null,
     expiry_date: t.expiry_date ?? null,
     open_date:   t.open_date   ?? null,
