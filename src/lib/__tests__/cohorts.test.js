@@ -53,8 +53,10 @@ describe("resolveCohort", () => {
     });
     expect(members).toHaveLength(1);
     expect(members[0]).toMatchObject({
-      status: "closed", closeDate: "2026-06-05", premiumCollected: 800, keptPct: 0.82,
+      status: "closed", closeDate: "2026-06-05", realized: 800, keptPct: 0.82,
     });
+    // No entry_cost on this fixture → gross premium reconstructs from realized/kept.
+    expect(members[0].premiumCollected).toBeCloseTo(800 / 0.82, 2);
   });
 
   it("ignores entries without the tag and reports unresolved tuples", () => {
@@ -119,10 +121,11 @@ const openMember = (over = {}) => ({
   openDate: "2026-05-28", closeDate: null, contracts: 1, premiumCollected: 500,
   keptPct: null, ...over,
 });
+// premiumCollected = GROSS premium ($800); realized = net P&L ($600 = 0.75 × gross).
 const closedMember = (over = {}) => ({
   status: "closed", ticker: "WDC", type: "CSP", strike: 450, expiry: "2026-06-26",
   openDate: "2026-05-20", closeDate: "2026-06-05", contracts: 1, premiumCollected: 800,
-  keptPct: 0.75, ...over,
+  realized: 600, keptPct: 0.75, ...over,
 });
 // quoteMap with the open member's put marked at 2.50 → unrealized = 500 - 250 = 250 (50%)
 const quoteMapFor = (m, mid) =>
@@ -136,15 +139,15 @@ describe("cohortScoreboard", () => {
     expect(sb.openCount).toBe(1);
     expect(sb.collateral).toBe(107 * 100);            // open only
     expect(sb.collateralPct).toBeCloseTo(10.7, 5);
-    expect(sb.maxPremium).toBe(1300);                  // 500 + 800
-    expect(sb.captured).toBeCloseTo(250 + 600, 5);     // unrealized 250 + kept 0.75×800
+    expect(sb.maxPremium).toBe(1300);                  // gross 500 + gross 800
+    expect(sb.captured).toBeCloseTo(250 + 600, 5);     // unrealized 250 + realized 600
     expect(sb.capturePct).toBeCloseTo(((250 + 600) / 1300) * 100, 5);
     expect(sb.missingMarkCount).toBe(0);
   });
 
-  it("excludes unmarked open members and null-kept closed members from capture, counts them", () => {
+  it("excludes unmarked open members and no-realized closed members from capture, counts them", () => {
     const sb = cohortScoreboard(
-      [openMember(), closedMember({ keptPct: null })],
+      [openMember(), closedMember({ realized: null })],
       new Map(), // no quotes → open member unmarked
       null,
     );
@@ -181,9 +184,9 @@ describe("memberGlDollars", () => {
     expect(memberGlDollars(m, quoteMapFor(m, 2.5))).toBeCloseTo(250, 5);
     expect(memberGlDollars(m, new Map())).toBeNull(); // no mark
   });
-  it("uses realized kept dollars for closed members (premium × kept_pct)", () => {
-    expect(memberGlDollars(closedMember(), new Map())).toBeCloseTo(600, 5); // 800 × 0.75
-    expect(memberGlDollars(closedMember({ keptPct: null }), new Map())).toBeNull();
+  it("returns the net realized P&L directly for closed members (not premium × kept_pct)", () => {
+    expect(memberGlDollars(closedMember(), new Map())).toBeCloseTo(600, 5); // realized, not 800×0.75 re-discounted
+    expect(memberGlDollars(closedMember({ realized: null }), new Map())).toBeNull();
   });
   it("goes negative for an underwater open member", () => {
     const m = openMember(); // premium 500, mid 8.0 → 500 - 800 = -300
@@ -276,11 +279,14 @@ describe("cohortCaptureSeries", () => {
 // resolveCohort. normalizeTrade must carry the numeric kept_pct through, or
 // every closed cohort member resolves with keptPct null ("—" / no mark).
 describe("resolveCohort with normalizeTrade output", () => {
-  it("resolves numeric keptPct from a normalized closed trade", () => {
+  // On a CLOSED trade premium_collected is NET realized P&L; gross premium is
+  // entry_cost × 100 × contracts. The member must split these: premiumCollected
+  // = gross (max), realized = net, and G/L $ = realized (NOT realized × kept_pct).
+  it("splits gross premium and net realized from a normalized closed trade", () => {
     const raw = {
       ticker: "COHR", type: "CSP", strike: 350, expiry_date: "2026-06-26",
       open_date: "2026-06-09", close_date: "2026-06-15",
-      premium_collected: 1285, kept_pct: 0.6005, contracts: 1,
+      premium_collected: 1285, entry_cost: 21.4, kept_pct: 0.6005, contracts: 1,
     };
     const TAG = "cohort:x";
     const { members } = resolveCohort(TAG, {
@@ -289,9 +295,29 @@ describe("resolveCohort with normalizeTrade output", () => {
       entries: [{ id: "e1", ticker: "COHR", type: "CSP", strike: 350, expiry: "2026-06-26", tags: [TAG] }],
     });
     expect(members).toHaveLength(1);
-    expect(members[0].status).toBe("closed");
-    expect(members[0].closeDate).toBe("2026-06-15");
-    expect(members[0].premiumCollected).toBe(1285);
-    expect(members[0].keptPct).toBeCloseTo(0.6005, 6);
+    const m = members[0];
+    expect(m.status).toBe("closed");
+    expect(m.closeDate).toBe("2026-06-15");
+    expect(m.premiumCollected).toBeCloseTo(2140, 5); // gross = 21.4 × 100 × 1
+    expect(m.realized).toBe(1285);                   // net realized P&L
+    expect(m.keptPct).toBeCloseTo(0.6005, 6);
+    expect(memberGlDollars(m, new Map())).toBe(1285); // G/L $ = realized, not 1285 × 0.6005
+    expect(memberCapturePct(m, new Map())).toBeCloseTo(60.05, 2);
+  });
+
+  it("reconstructs gross premium from realized / kept_pct when entry_cost is absent", () => {
+    const raw = {
+      ticker: "CDE", type: "CSP", strike: 18, expiry_date: "2026-06-26",
+      open_date: "2026-06-01", close_date: "2026-06-15",
+      premium_collected: 660, kept_pct: 0.5593, contracts: 10, // no entry_cost
+    };
+    const TAG = "cohort:y";
+    const { members } = resolveCohort(TAG, {
+      openPositions: [],
+      trades: [normalizeTrade(raw)],
+      entries: [{ id: "e1", ticker: "CDE", type: "CSP", strike: 18, expiry: "2026-06-26", tags: [TAG] }],
+    });
+    expect(members[0].realized).toBe(660);
+    expect(members[0].premiumCollected).toBeCloseTo(660 / 0.5593, 2); // ≈ 1180
   });
 });
