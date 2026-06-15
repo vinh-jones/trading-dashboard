@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { slugifyCohortName, resolveCohort, cohortScoreboard, memberCapturePct, memberGlDollars, cohortCaptureSeries } from "../cohorts";
-import { buildOccSymbol } from "../trading";
+import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const entry = (ticker, strike, expiry, tags, extra = {}) => ({
   id: `e-${ticker}-${strike}`, ticker, type: "CSP", strike, expiry, tags,
@@ -269,5 +269,29 @@ describe("cohortCaptureSeries", () => {
       { date: "2026-06-01", members: [snap("CCJ", 107, "2026-06-26", -1.5, 500)] },
     ];
     expect(cohortCaptureSeries([m], history)[0].capturePct).toBeCloseTo(-150, 5);
+  });
+});
+
+// Regression: production passes normalizeTrade() output (not raw DB rows) into
+// resolveCohort. normalizeTrade must carry the numeric kept_pct through, or
+// every closed cohort member resolves with keptPct null ("—" / no mark).
+describe("resolveCohort with normalizeTrade output", () => {
+  it("resolves numeric keptPct from a normalized closed trade", () => {
+    const raw = {
+      ticker: "COHR", type: "CSP", strike: 350, expiry_date: "2026-06-26",
+      open_date: "2026-06-09", close_date: "2026-06-15",
+      premium_collected: 1285, kept_pct: 0.6005, contracts: 1,
+    };
+    const TAG = "cohort:x";
+    const { members } = resolveCohort(TAG, {
+      openPositions: [],
+      trades: [normalizeTrade(raw)],
+      entries: [{ id: "e1", ticker: "COHR", type: "CSP", strike: 350, expiry: "2026-06-26", tags: [TAG] }],
+    });
+    expect(members).toHaveLength(1);
+    expect(members[0].status).toBe("closed");
+    expect(members[0].closeDate).toBe("2026-06-15");
+    expect(members[0].premiumCollected).toBe(1285);
+    expect(members[0].keptPct).toBeCloseTo(0.6005, 6);
   });
 });
