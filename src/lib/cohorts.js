@@ -30,13 +30,31 @@ function memberFromOpen(pos) {
     openDate: pos.open_date ?? null,
     closeDate: null,
     contracts: pos.contracts ?? null,
-    premiumCollected: pos.premium_collected ?? 0,
+    premiumCollected: pos.premium_collected ?? 0,   // OPEN: premium_collected IS gross premium
+    realized: null,                                  // unrealized until closed
     keptPct: null,
   };
 }
 
 // Accepts raw DB trade rows and normalizeTrade() output (premium_collected→premium).
+// CRITICAL: on a CLOSED trade `premium_collected` is NET realized P&L, not gross
+// premium (the column flips meaning open→closed — see normalizeTrade / pipeline
+// lessons). So `realized` = that net value directly, and the gross premium (the
+// "max" capturable, used as the capture-% denominator) is reconstructed from the
+// per-share entry premium: entry_cost × 100 × contracts. Fallbacks: realized /
+// kept_pct, then realized.
 function memberFromTrade(trade) {
+  const realized = trade.premium_collected ?? trade.premium ?? 0;
+  const keptPct  = trade.kept_pct ?? null;
+  const contracts = trade.contracts ?? null;
+  let grossPremium;
+  if (trade.entry_cost != null && contracts != null) {
+    grossPremium = trade.entry_cost * 100 * contracts;
+  } else if (keptPct) {
+    grossPremium = realized / keptPct;
+  } else {
+    grossPremium = realized;
+  }
   return {
     status: "closed",
     ticker: trade.ticker,
@@ -45,9 +63,10 @@ function memberFromTrade(trade) {
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
     closeDate: toIsoDate(trade.close_date ?? trade.closeDate) ?? null,
-    contracts: trade.contracts ?? null,
-    premiumCollected: trade.premium_collected ?? trade.premium ?? 0,
-    keptPct: trade.kept_pct ?? null,
+    contracts,
+    premiumCollected: grossPremium,   // gross premium (max capturable)
+    realized,                          // NET realized P&L — already kept; do NOT × keptPct
+    keptPct,
   };
 }
 
@@ -108,12 +127,13 @@ export function memberCapturePct(member, quoteMap) {
 /**
  * Roster G/L in dollars for one member — the dollar partner of
  * memberCapturePct, matching the scoreboard's captured math. Open: unrealized
- * mark-to-market $ from live marks; closed: realized kept $ (premium × kept_pct).
- * Null when an open member has no mark or a closed member has no kept_pct.
+ * mark-to-market $ from live marks; closed: realized P&L directly (the net
+ * `premium_collected` — already kept, NOT multiplied by kept_pct).
+ * Null when an open member has no mark or a closed member has no realized value.
  */
 export function memberGlDollars(member, quoteMap) {
   if (member.status === "closed") {
-    return member.keptPct != null ? member.premiumCollected * member.keptPct : null;
+    return member.realized ?? null;
   }
   const optionMid = optionMidFor(member, quoteMap);
   return shortOptionGlDollars({
@@ -125,10 +145,10 @@ export function memberGlDollars(member, quoteMap) {
 
 /**
  * Scoreboard: collateral from OPEN members only (closed collateral is freed);
- * premium and capture across all members. Capture = unrealized (open, live
- * marks — same math as the selection calculator) + realized (closed, kept_pct).
- * capturePct's denominator covers contributing rows only, mirroring
- * computeCspAggregates' internally-consistent ratio rule.
+ * gross premium and capture across all members. Captured = unrealized (open,
+ * live marks) + realized (closed, the net P&L directly — NOT × kept_pct).
+ * capturePct's denominator is the GROSS premium of contributing rows, so it
+ * stays internally consistent (captured ÷ max premium).
  */
 export function cohortScoreboard(members, quoteMap, accountValue) {
   const open = members.filter(m => m.status === "open");
@@ -150,17 +170,18 @@ export function cohortScoreboard(members, quoteMap, accountValue) {
     openMarkedPremium += m.premiumCollected ?? 0;
   }
 
-  let closedKept = 0, closedKeptPremium = 0, closedMissing = 0, closedPremium = 0;
+  let closedRealized = 0, closedGross = 0, closedMissing = 0, closedPremium = 0;
+  let hasClosedCapture = false;
   for (const m of closed) {
-    closedPremium += m.premiumCollected ?? 0;
-    if (m.keptPct == null) { closedMissing += 1; continue; }
-    closedKept        += (m.premiumCollected ?? 0) * m.keptPct;
-    closedKeptPremium += m.premiumCollected ?? 0;
+    closedPremium += m.premiumCollected ?? 0;          // gross
+    if (m.realized == null) { closedMissing += 1; continue; }
+    hasClosedCapture = true;
+    closedRealized += m.realized;                      // net realized — already kept
+    closedGross    += m.premiumCollected ?? 0;
   }
 
-  const hasClosedCapture = closedKeptPremium > 0;
-  const captured = hasOpenCapture || hasClosedCapture ? openCaptured + closedKept : null;
-  const captureDenominator = openMarkedPremium + closedKeptPremium;
+  const captured = hasOpenCapture || hasClosedCapture ? openCaptured + closedRealized : null;
+  const captureDenominator = openMarkedPremium + closedGross;
 
   return {
     memberCount: members.length,
