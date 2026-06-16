@@ -284,19 +284,34 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                 default:           return null;
               }
             };
-            const sortedRecovery = sort.col
-              ? [...recovery].sort((a, b) => {
-                  const va = sortValue(a, sort.col);
-                  const vb = sortValue(b, sort.col);
-                  if (va == null && vb == null) return 0;
-                  if (va == null) return 1;
-                  if (vb == null) return -1;
-                  const cmp = (typeof va === "number" && typeof vb === "number")
-                    ? va - vb
-                    : String(va).localeCompare(String(vb));
-                  return sort.dir === "asc" ? cmp : -cmp;
-                })
-              : recovery;
+            // Compare two members by the active sort column (nulls/blanks sink to the bottom).
+            const compareBySort = (a, b) => {
+              const va = sortValue(a, sort.col);
+              const vb = sortValue(b, sort.col);
+              if (va == null && vb == null) return 0;
+              if (va == null) return 1;
+              if (vb == null) return -1;
+              const cmp = (typeof va === "number" && typeof vb === "number")
+                ? va - vb
+                : String(va).localeCompare(String(vb));
+              return sort.dir === "asc" ? cmp : -cmp;
+            };
+            const sortGroup = (arr) => sort.col ? [...arr].sort(compareBySort) : arr;
+
+            // Open legs always sit above closed legs; the active column sorts within each group.
+            const openRecovery   = sortGroup(recovery.filter(m => m.status === "open"));
+            const closedRecovery = sortGroup(recovery.filter(m => m.status !== "open"));
+            const showGroupLabels = openRecovery.length > 0 && closedRecovery.length > 0;
+            const GroupLabel = (text, count) => (
+              <div style={{
+                display: "flex", gap: theme.space[2], alignItems: "center",
+                padding: `${theme.space[1]}px ${theme.space[3]}px`,
+                background: theme.bg.elevated, fontSize: theme.size.xs,
+                color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.4px",
+              }}>
+                {text}<span style={{ color: theme.text.subtle }}>· {count}</span>
+              </div>
+            );
 
             const Row = (m, i) => {
               const { open, gl, days, kept } = derive(m);
@@ -312,7 +327,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                 : `${m.strike != null ? `$${m.strike} · ` : ""}${open ? "open" : "closed"}${pctOfTarget}`;
 
               return (
-                <div key={`${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
+                <div key={`${m.status}-${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
                   display: "flex", alignItems: "center", gap: theme.space[3],
                   padding: `${theme.space[2]}px ${theme.space[3]}px`,
                   background: theme.bg.surface, fontSize: theme.size.sm,
@@ -345,7 +360,10 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                 {baseline.length > 0 && recovery.length > 0 && (
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
-                {sortedRecovery.map(Row)}
+                {showGroupLabels && openRecovery.length > 0 && GroupLabel("Open", openRecovery.length)}
+                {openRecovery.map(Row)}
+                {showGroupLabels && closedRecovery.length > 0 && GroupLabel("Closed", closedRecovery.length)}
+                {closedRecovery.map(Row)}
                 {showFooter && (
                   <div style={{
                     display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
