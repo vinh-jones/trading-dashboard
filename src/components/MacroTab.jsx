@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { theme } from "../lib/theme";
+import { formatRateMoves } from "../lib/rateExpectations";
 import { useMacro } from "../hooks/useMacro";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 
@@ -535,7 +536,7 @@ export function MacroTab() {
           return (
             <SignalCard
               name="Rate Expectations"
-              value={fedWatch?.cutsPricedIn != null ? `${fedWatch.cutsPricedIn.toFixed(1)} cuts` : null}
+              value={formatRateMoves(fedWatch?.cutsPricedIn)}
               label={fedWatch?.label}
               color={fedWatch?.color}
               direction={fedWatch?.directionLabel ? `${fedWatch.directionArrow} ${fedWatch.directionLabel}${fedWatch.weeklyChangeBps != null ? ` (${fedWatch.weeklyChangeBps > 0 ? "+" : ""}${fedWatch.weeklyChangeBps} bps vs last week)` : ""}` : null}
