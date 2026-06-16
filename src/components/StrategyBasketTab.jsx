@@ -99,6 +99,28 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
   const realized  = realizedRecovery(members);
   const cushion   = unrealizedCushion(members, quoteMap);
 
+  // Transaction-table sort. col=null → natural order (baseline pinned, recovery as resolved).
+  // Clicking a header cycles that column asc → desc → back to natural.
+  const [sort, setSort] = useState({ col: null, dir: "asc" });
+  const toggleSort = (col) => setSort(s =>
+    s.col !== col      ? { col, dir: "asc" }
+    : s.dir === "asc"  ? { col, dir: "desc" }
+    :                    { col: null, dir: "asc" }
+  );
+  // Sortable header cell — click to sort, arrow shows the active column/direction.
+  const Th = (col, label, colStyle, sortable = true) => {
+    if (!sortable) return <span style={colStyle}>{label}</span>;
+    const active = sort.col === col;
+    return (
+      <span
+        onClick={() => toggleSort(col)}
+        style={{ ...colStyle, cursor: "pointer", userSelect: "none", color: active ? theme.text.secondary : undefined }}
+      >
+        {label}{active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+      </span>
+    );
+  };
+
   // Stacked progress: locked-in realized fill + paper unrealized fill toward target.
   const clampPct = (v) => Math.max(0, Math.min(100, v));
   const realizedFill   = target > 0 ? clampPct((Math.max(0, realized) / target) * 100) : 0;
@@ -214,29 +236,28 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
             fontSize: theme.size.xs, color: theme.text.muted,
             textTransform: "uppercase", letterSpacing: "0.4px",
           }}>
-            <span style={COL.date}>Date</span>
-            <span style={COL.ticker}>Ticker</span>
-            <span style={COL.type}>Type</span>
-            <span style={COL.detail}>Detail</span>
-            <span style={COL.days}>Days</span>
-            <span style={COL.kept}>Kept</span>
-            <span style={COL.num}>Collateral</span>
-            <span style={COL.num}>G/L</span>
+            {Th("date", "Date", COL.date)}
+            {Th("ticker", "Ticker", COL.ticker)}
+            {Th("type", "Type", COL.type)}
+            {Th("detail", "Detail", COL.detail, false)}
+            {Th("days", "Days", COL.days)}
+            {Th("kept", "Kept", COL.kept)}
+            {Th("collateral", "Collateral", COL.num)}
+            {Th("gl", "G/L", COL.num)}
           </div>
 
           {(() => {
             const baseline = members.filter(m => m.role === "baseline");
             const recovery = members.filter(m => m.role !== "baseline");
 
-            const Row = (m, i) => {
+            // Derived values shared by row rendering and column sorting.
+            // Days: closed → lifespan; open → days held so far.
+            // Kept: closed → stored % of premium kept; open short → premium captured so far
+            // (unrealized P/L ÷ premium collected). Long LEAPS / baseline have no premium → null.
+            const derive = (m) => {
               const open = m.status === "open";
               const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
-              const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
-
-              // Days: closed → lifespan; open → days held so far.
               const days = open ? daysSince(m.openDate) : m.daysHeld;
-              // Kept: closed → stored % of premium kept; open short → premium captured so far
-              // (unrealized P/L ÷ premium collected). Long LEAPS / baseline have no premium → null.
               const isShort = m.type === "CSP" || m.type === "CC";
               const kept = m.role === "baseline"
                 ? null
@@ -245,6 +266,41 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                       ? gl / (m.entryCost * m.contracts * 100)
                       : null)
                   : m.keptPct;
+              const collateral = open ? m.capitalFronted : null;
+              return { open, gl, days, kept, collateral };
+            };
+
+            // Sort the recovery legs by the active column; baseline stays pinned on top.
+            // Nulls/blanks always sink to the bottom regardless of direction.
+            const sortValue = (m, col) => {
+              switch (col) {
+                case "date":       return m.closeDate ?? m.openDate ?? null;
+                case "ticker":     return m.ticker ?? null;
+                case "type":       return m.type ?? null;
+                case "days":       return derive(m).days;
+                case "kept":       return derive(m).kept;
+                case "collateral": return derive(m).collateral;
+                case "gl":         return derive(m).gl;
+                default:           return null;
+              }
+            };
+            const sortedRecovery = sort.col
+              ? [...recovery].sort((a, b) => {
+                  const va = sortValue(a, sort.col);
+                  const vb = sortValue(b, sort.col);
+                  if (va == null && vb == null) return 0;
+                  if (va == null) return 1;
+                  if (vb == null) return -1;
+                  const cmp = (typeof va === "number" && typeof vb === "number")
+                    ? va - vb
+                    : String(va).localeCompare(String(vb));
+                  return sort.dir === "asc" ? cmp : -cmp;
+                })
+              : recovery;
+
+            const Row = (m, i) => {
+              const { open, gl, days, kept } = derive(m);
+              const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
               const keptColor = kept == null ? theme.text.muted : kept >= 0 ? theme.green : theme.red;
 
               // Closed recovery legs also show their share of the target in the detail.
@@ -289,7 +345,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
                 {baseline.length > 0 && recovery.length > 0 && (
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
-                {recovery.map(Row)}
+                {sortedRecovery.map(Row)}
                 {showFooter && (
                   <div style={{
                     display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
