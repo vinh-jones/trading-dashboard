@@ -473,21 +473,15 @@ async function fetchS5fi() {
   return scrapeS5fiFinviz();
 }
 
-async function fetchFedWatch() {
-  const res = await fetchWithTimeout("https://rateprobability.com/api/latest", {
-    headers: { "User-Agent": UA },
-  });
-
-  if (!res.ok) throw new Error(`rateprobability returned ${res.status}`);
-
-  const data = await res.json();
-  const todayRows = data?.today?.rows;
-  const weekAgoRows = data?.ago_1w?.rows;
-
+// Pure rate-expectations math over rateprobability-shaped rows. Kept separate
+// from I/O so the same computation runs whether the rows come from the Supabase
+// cache or a live fetch. Date-sensitive fields (daysToNextMeeting, the 12-month
+// window, the December reference) are recomputed here from `new Date()`, so a
+// day-old cached snapshot still reports a fresh horizon.
+export function computeFedWatch({ currentRate, todayRows, weekAgoRows }) {
   if (!todayRows || !todayRows.length)
     throw new Error("Missing FedWatch rows");
 
-  const currentRate = data.today.midpoint;
   const nextMeetingDate = todayRows[0].meeting_iso;
   const probMovePct = todayRows[0].prob_move_pct ?? null;
   const probIsCut = todayRows[0].prob_is_cut ?? false;
@@ -562,6 +556,49 @@ async function fetchFedWatch() {
     isWithinWeek,
     threshold55Met,
   };
+}
+
+// Direct fetch from rateprobability.com. Works from residential IPs (local dev),
+// but its Cloudflare 403s Vercel's datacenter IPs — so in prod this is only the
+// fallback; the Supabase cache below (fed by OpenClaw via /api/ingest-fedwatch)
+// is the real source.
+async function fetchFedWatchRaw() {
+  const res = await fetchWithTimeout("https://rateprobability.com/api/latest", {
+    headers: { "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`rateprobability returned ${res.status}`);
+  const data = await res.json();
+  return {
+    currentRate: data?.today?.midpoint,
+    todayRows: data?.today?.rows,
+    weekAgoRows: data?.ago_1w?.rows ?? null,
+  };
+}
+
+async function fetchFedWatch() {
+  // Cache-first: read the latest OpenClaw-ingested snapshot (scraped on a
+  // residential IP), then fall back to a direct fetch (works locally, 403s on
+  // Vercel). Mirrors fetchS5fi.
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("fedwatch")
+      .select("midpoint, today_rows, week_ago_rows")
+      .order("as_of", { ascending: false })
+      .limit(1)
+      .single();
+    if (error && error.code !== "PGRST116") throw new Error(error.message);
+    if (data && data.today_rows) {
+      return computeFedWatch({
+        currentRate: Number(data.midpoint),
+        todayRows: data.today_rows,
+        weekAgoRows: data.week_ago_rows,
+      });
+    }
+  } catch (err) {
+    console.warn("[macro fetchFedWatch] Supabase read failed, falling back to direct fetch:", err.message);
+  }
+  return computeFedWatch(await fetchFedWatchRaw());
 }
 
 async function fetchCrudeOil() {
