@@ -182,6 +182,28 @@ describe("memberUnrealized", () => {
   });
 });
 
+describe("Shares marking", () => {
+  const sharesLot = { status: "open", role: "recovery", ticker: "GLW", type: "Shares", strike: null, expiry: null, contracts: 100, entryCost: 190 };
+
+  it("marks a Shares lot off the equity ticker quote with a x1 multiplier", () => {
+    const quoteMap = new Map([["GLW", { mid: 176.92 }]]);
+    expect(memberUnrealized(sharesLot, quoteMap)).toBeCloseTo((176.92 - 190) * 100, 6); // -1308
+  });
+
+  it("falls back to last, and is unmarked without a ticker quote", () => {
+    expect(memberUnrealized(sharesLot, new Map([["GLW", { last: 180 }]]))).toBeCloseTo((180 - 190) * 100, 6);
+    expect(memberUnrealized(sharesLot, new Map())).toBe(null);
+  });
+
+  it("unrealizedCushion includes the Shares lot in total and marked count", () => {
+    const quoteMap = new Map([["GLW", { mid: 200 }]]);
+    const { total, marked, unmarked } = unrealizedCushion([sharesLot], quoteMap);
+    expect(total).toBeCloseTo((200 - 190) * 100, 6); // 1000
+    expect(marked).toBe(1);
+    expect(unmarked).toBe(0);
+  });
+});
+
 describe("holdCounterfactual", () => {
   const baseline = { role: "baseline", status: "closed", ticker: "SOFI", type: "Shares", exitCost: 18, contracts: 3300 };
 

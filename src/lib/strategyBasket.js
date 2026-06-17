@@ -161,9 +161,15 @@ export function holdCounterfactual(baselineMember, currentPrice) {
 
 const SHORT_TYPES = new Set(["CSP", "CC"]);
 const LONG_OPTION_TYPES = new Set(["LEAPS"]);
+const SHARES_TYPES = new Set(["Shares"]);
 const CALL_TYPES = new Set(["LEAPS", "CC"]);
 
 function markFor(member, quoteMap) {
+  // Shares mark off the equity quote (keyed by plain ticker), not an OCC symbol.
+  if (SHARES_TYPES.has(member.type)) {
+    const q = quoteMap.get(member.ticker);
+    return q ? (q.mid ?? q.last ?? null) : null;
+  }
   const isCall = CALL_TYPES.has(member.type);
   const sym = buildOccSymbol(member.ticker, member.expiry, isCall, member.strike);
   const q = quoteMap.get(sym);
@@ -180,9 +186,12 @@ function markFor(member, quoteMap) {
  */
 export function memberUnrealized(member, quoteMap) {
   if (member.status !== "open" || member.role !== "recovery") return null;
-  if (!LONG_OPTION_TYPES.has(member.type) && !SHORT_TYPES.has(member.type)) return null;
+  const isShares = SHARES_TYPES.has(member.type);
+  if (!isShares && !LONG_OPTION_TYPES.has(member.type) && !SHORT_TYPES.has(member.type)) return null;
   const mark = markFor(member, quoteMap);
   if (mark == null) return null;
+  // Shares are delta-1 longs: (mark - basis) * shares — no ×100 option multiplier.
+  if (isShares) return (mark - member.entryCost) * (member.contracts ?? 0);
   const mult = (member.contracts ?? 0) * 100;
   return SHORT_TYPES.has(member.type)
     ? (member.entryCost - mark) * mult
@@ -197,7 +206,7 @@ export function unrealizedCushion(members, quoteMap) {
   let total = 0, marked = 0, unmarked = 0;
   for (const m of members) {
     if (m.status !== "open" || m.role !== "recovery") continue;
-    if (!LONG_OPTION_TYPES.has(m.type) && !SHORT_TYPES.has(m.type)) { continue; }
+    if (!SHARES_TYPES.has(m.type) && !LONG_OPTION_TYPES.has(m.type) && !SHORT_TYPES.has(m.type)) { continue; }
     const pnl = memberUnrealized(m, quoteMap);
     if (pnl == null) { unmarked += 1; continue; }
     total += pnl;
