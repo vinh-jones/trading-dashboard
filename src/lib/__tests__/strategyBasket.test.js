@@ -79,6 +79,28 @@ describe("resolveBasket", () => {
     expect(members[0]).toMatchObject({ status: "closed", role: "baseline", realized: -26400, capitalFronted: 85800, closeDate: "2026-06-01" });
     expect(basketTarget(members)).toBe(26400);
   });
+
+  it("resolves an open recovery Shares lot from metadata, ignoring the blended position", () => {
+    // A blended 300-share GLW position in the feed must NOT be what the basket counts.
+    const blended = [
+      { ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 300, capital_fronted: 54000, entry_cost: 180 },
+    ];
+    const e = [
+      { tags: ["strategy:g"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, entry_date: "2026-06-17", metadata: { shares: 100, basis: 190 } },
+    ];
+    const members = resolveBasket("strategy:g", { openPositions: blended, trades: [], entries: e });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({
+      status: "open", role: "recovery", ticker: "GLW", type: "Shares",
+      contracts: 100, entryCost: 190, capitalFronted: 19000, openDate: "2026-06-17",
+    });
+  });
+
+  it("baseline Shares (no metadata.shares) still resolves via trade_id, not the declaration path", () => {
+    const members = resolveBasket("strategy:sofi-makeup", { openPositions, trades, entries });
+    const baseline = members.find(m => m.role === "baseline");
+    expect(baseline).toMatchObject({ status: "closed", ticker: "SOFI", realized: -26400 });
+  });
 });
 
 describe("reducers", () => {

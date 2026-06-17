@@ -70,6 +70,29 @@ function fromTrade(trade, role) {
   };
 }
 
+// An open recovery shares lot declared directly on a tagged journal entry.
+// The basket slice is ASSERTED via metadata (shares + basis), never derived from
+// the blended broker position — so a partial or multi-basis lot stays honest, and
+// the null-strike/null-expiry tuple-match landmine is avoided entirely.
+function fromDeclaredShares(entry, role, meta) {
+  const shares = meta.shares;
+  const basis = meta.basis;
+  return {
+    status: "open",
+    role,
+    ticker: entry.ticker,
+    type: "Shares",
+    strike: null,
+    expiry: null,
+    openDate: entry.entry_date ?? null,
+    closeDate: null,
+    contracts: shares,
+    capitalFronted: shares * basis,
+    entryCost: basis,
+    realized: null,
+  };
+}
+
 /**
  * Resolve a strategy tag into a normalized member list.
  * @param {string} tag
@@ -81,6 +104,15 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
   for (const entry of entries) {
     if (!Array.isArray(entry.tags) || !entry.tags.includes(tag)) continue;
     const role = entry.tags.includes(BASELINE_TAG) ? "baseline" : "recovery";
+
+    // Declared shares lot: a tagged Shares entry carrying its own share-count +
+    // basis in metadata resolves directly. Baseline Shares carry no
+    // metadata.shares and fall through to the trade_id path below.
+    const meta = entry.metadata ?? {};
+    if (entry.type === "Shares" && meta.shares != null && meta.basis != null) {
+      members.push(fromDeclaredShares(entry, role, meta));
+      continue;
+    }
 
     const tradeId = entry.trade_id ?? entry.metadata?.trade_id;
     if (tradeId) {
