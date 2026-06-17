@@ -1,7 +1,26 @@
 # Makeup Basket — Recording Assigned Shares & Covered Calls
 
 **Date:** 2026-06-17
-**Status:** Approved design (reconciliation deferred — see Open Questions)
+**Status:** Approved design, revised 2026-06-17 to fit the write architecture
+(reconciliation deferred — see Open Questions)
+
+## Write-architecture constraint (drives the design)
+
+`trades` and `positions` are **read-only from the app** — they are sourced from the
+user's Google Sheet via `/api/sync`, which is the source of truth. There is no endpoint to
+close a CSP or write an assigned-shares row from the UI. The **only** client-writable store
+is `journal_entries` (`POST/PATCH/DELETE /api/journal-entry`), and that table has **no
+`contracts` or `entry_cost` columns** — extra structured fields live in its `metadata`
+JSONB.
+
+Consequences:
+- The CSP→Assigned close is **not** written by the app. The user marks it Assigned in the
+  Sheet and syncs; the basket then auto-reflects it because the CSP's tagged entry stops
+  tuple-matching the open position and starts matching the now-closed trade (full premium →
+  Realized Recovery, unrealized mark wiped). **No code is needed for the CSP leg.**
+- The declared shares lot's share-count and basis are stored in the entry's `metadata`,
+  not dedicated columns.
+- The only genuinely new client write is **creating the tagged Shares declaration entry**.
 
 ## Problem
 
@@ -56,28 +75,32 @@ Approaches considered and rejected:
 
 ### 1. Declaration entry shape
 
-A makeup shares lot is one journal entry:
+A makeup shares lot is one journal entry, with share-count and basis in `metadata`:
 
 ```js
-{ type: "Shares", ticker: "GLW", contracts: 100, entry_cost: 190,
-  tags: ["strategy:sofi-makeup"] }
+{ entry_type: "position_note", ticker: "GLW", type: "Shares",
+  entry_date: "2026-06-17", strike: null, expiry: null,
+  tags: ["strategy:sofi-makeup"],
+  metadata: { shares: 100, basis: 190 } }
 ```
 
-- `contracts` = **share count** (consistent with the SOFI baseline, which uses 3300).
-- `entry_cost` = **per-share basis** (the assignment strike, $190 — never the
+- `metadata.shares` = **share count** (resolves to the member's `contracts`, consistent
+  with the SOFI baseline, which uses 3300).
+- `metadata.basis` = **per-share basis** (the assignment strike, $190 — never the
   premium-reduced effective basis).
-- `capitalFronted` derives as `contracts × entry_cost` = $19,000.
+- `capitalFronted` derives as `shares × basis` = $19,000.
 
 ### 2. Resolver change — [src/lib/strategyBasket.js:79](../../../src/lib/strategyBasket.js)
 
-Add a `fromEntry` path: when a tagged entry's `type === "Shares"` **and** it carries
-`contracts` + `entry_cost`, build the member straight from the entry (status `open`, role
-`recovery`) and **skip tuple-matching entirely**. This closes the null-strike/null-expiry
-landmine.
+Add a declaration path at the top of the resolve loop: when a tagged entry has
+`type === "Shares"` **and** carries `metadata.shares` + `metadata.basis`, build the member
+straight from the entry (status `open`, role `recovery`, `contracts = metadata.shares`,
+`entryCost = metadata.basis`, `capitalFronted = shares × basis`) and **skip tuple-matching
+entirely**. This closes the null-strike/null-expiry landmine.
 
 Baseline Shares (the SOFI loss) continue to resolve from their closed trade row via
-`trade_id` / tuple match — unchanged. Only *open recovery* Shares lots use the new
-declaration path.
+`trade_id` (they carry no `metadata.shares`) — unchanged. Only *open recovery* Shares lots
+use the new declaration path.
 
 ### 3. Marking math — [src/lib/strategyBasket.js:149](../../../src/lib/strategyBasket.js)
 
@@ -90,15 +113,22 @@ Add a `SHARES_TYPES` branch to `memberUnrealized` / `unrealizedCushion`:
 they will pick up the declared lot's `capitalFronted` (open) and any closed Shares trade's
 `realized`.
 
-### 4. "Record assignment" affordance
+### 4. "Add assigned shares to basket" affordance
 
-An action on an open CSP basket row that performs **both legs atomically**:
+A UI action in `StrategyBasketTab` that creates **only** the §1 declaration entry via
+`POST /api/journal-entry` (the one new client write). When invoked from an open CSP basket
+row it pre-fills `shares = csp.contracts × 100`, `basis = csp.strike`, and the active
+`strategy:*` tag; the user can also enter the lot manually (ticker, shares, basis).
 
-- **(a) Close the CSP** as `subtype: "Assigned"` with `premium_collected` = the full
-  credit collected. Effect: the unrealized mark is wiped, the full premium lands in
-  Realized Recovery.
-- **(b) Create the declaration entry** (§1) with `contracts = csp.contracts × 100`,
-  `entry_cost = csp.strike`, and the same `strategy:*` tag pre-filled.
+The **CSP-close leg is not written by the app** — the user marks the CSP Assigned in the
+Sheet and syncs, and the basket auto-reflects it (see the Write-architecture constraint).
+The affordance copy should remind the user of that second step.
+
+After the POST succeeds, the basket must refresh. `ExploreView` currently loads
+`strategyEntries` once when the Baskets subview activates
+([src/components/ExploreView.jsx:80](../../../src/components/ExploreView.jsx)) with no
+refresh path. The plan extracts that load into a reusable callback and passes it to
+`StrategyBasketTab` as `onEntriesChanged`, which the affordance calls after writing.
 
 ### 5. Over-allocation soft warning
 
@@ -109,23 +139,33 @@ ticker. If CC coverage exceeds declared shares, render a **non-blocking** warnin
 This also covers the **CC-written-before-assignment** case: the warning shows while shares
 = 0 and clears once the assignment is recorded.
 
-### 6. Exit / partial sell
+### 6. Exit / partial sell (no dedicated affordance in v1)
 
-Selling the lot (or it being called away) is the mirror of §4: a "Close/reduce lot" action
-books a closed `Shares` trade with `realized = (exit − entryCost) × shares`, moving that
-P/L into Realized Recovery and reducing or closing the declaration entry.
+The app can't write trades, so there is no "close lot" button in this iteration. The
+manual flow: when the shares are sold (recorded in the Sheet), the user edits the
+declaration entry's `metadata.shares` down via `PATCH /api/journal-entry` (partial) or
+deletes it via `DELETE` (full) to stop marking the sold portion. The realized sale P/L
+books through the normal closed-trade → basket-tagging flow (a tagged entry resolving the
+closed `Shares` trade by `trade_id`, mirroring the baseline).
+
+A dedicated exit/reduce affordance is deferred (see Open Questions).
 
 Rolling a tagged CC needs no special handling — close one (realizes its premium), open the
 next, same tag.
 
 ### 7. Testing — [src/lib/__tests__/strategyBasket.test.js](../../../src/lib/__tests__/strategyBasket.test.js)
 
-- A declared Shares member resolves from its own fields and **never** from a blended
-  positions row (assert it ignores a conflicting GLW position in the feed).
-- Equity-marking math uses the ×1 multiplier and the ticker quote.
-- Over-allocation detection fires when CC contracts × 100 > declared shares.
-- The assignment transition: full premium realized + lot created at strike basis + mark
-  wiped.
+The resolver, marking, and over-allocation logic are pure functions — fully unit-tested:
+
+- A declared Shares member resolves from `metadata.shares`/`metadata.basis` and **never**
+  from a blended positions row (assert it ignores a conflicting GLW position in the feed).
+- The baseline Shares entry (no `metadata.shares`) still resolves via `trade_id`.
+- Equity-marking math uses the ×1 multiplier and the ticker quote (`mid ?? last`); unmarked
+  when no ticker quote.
+- Over-allocation detection fires when tagged CC contracts × 100 > declared shares.
+
+The affordance is UI + a journal POST; **local dev does not serve `/api`**, so it is
+verified via `npm run build` + the unit-tested helpers, not a local browser run.
 
 ## Out of scope (YAGNI)
 
@@ -139,6 +179,9 @@ next, same tag.
   iteration; revisit once the need is concrete. The declaration-driven design does not
   block adding a reconciliation/display layer on top later (this is essentially deferred
   Approach C).
+- **Dedicated exit / reduce-lot affordance.** v1 handles exit by manually editing/deleting
+  the declaration entry (§6). A one-click reduce/close action is deferred — it pairs
+  naturally with reconciliation.
 
 ## Worked example (GLW, as of 2026-06-17)
 
