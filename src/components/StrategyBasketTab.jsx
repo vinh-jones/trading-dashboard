@@ -7,7 +7,9 @@ import { getOpenCSPs, getOpenCCs, getOpenLEAPs } from "../lib/positionSchema";
 import {
   resolveBasket, basketTarget, capitalDeployed,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
+  shareCoverageWarnings,
 } from "../lib/strategyBasket";
+import { createJournalEntry } from "../lib/journalApi";
 
 const STRATEGY_PREFIX = "strategy:";
 
@@ -71,7 +73,7 @@ function Card({ label, value, sub, valueColor }) {
   );
 }
 
-export function StrategyBasketTab({ initialTag = null, entries = [] }) {
+export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesChanged }) {
   const { positions, trades } = useData();
   const { quoteMap } = useQuotes();
 
@@ -98,6 +100,48 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
   const deployed  = capitalDeployed(members);
   const realized  = realizedRecovery(members);
   const cushion   = unrealizedCushion(members, quoteMap);
+
+  const coverageWarnings = useMemo(() => shareCoverageWarnings(members), [members]);
+
+  // "Add assigned shares" affordance state.
+  const [showAddShares, setShowAddShares] = useState(false);
+  const [addForm, setAddForm] = useState({ ticker: "", shares: "", basis: "" });
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState(null);
+
+  const submitAddShares = async () => {
+    const ticker = addForm.ticker.trim().toUpperCase();
+    const shares = Number(addForm.shares);
+    const basis = Number(addForm.basis);
+    if (!ticker || !Number.isFinite(shares) || shares <= 0 || !Number.isFinite(basis) || basis <= 0) {
+      setAddError("Enter a ticker, a positive share count, and a positive basis.");
+      return;
+    }
+    if (!activeTag) { setAddError("No active basket tag."); return; }
+    setAddBusy(true);
+    setAddError(null);
+    try {
+      await createJournalEntry({
+        entry_type: "position_note",
+        ticker,
+        type: "Shares",
+        strike: null,
+        expiry: null,
+        entry_date: new Date().toISOString().slice(0, 10),
+        tags: [activeTag],
+        body: `Assigned ${shares} ${ticker} shares @ $${basis} basis (makeup lot)`,
+        source: "Self",
+        metadata: { shares, basis },
+      });
+      setAddForm({ ticker: "", shares: "", basis: "" });
+      setShowAddShares(false);
+      if (onEntriesChanged) await onEntriesChanged();
+    } catch (err) {
+      setAddError(err.message || "Failed to add shares.");
+    } finally {
+      setAddBusy(false);
+    }
+  };
 
   // Transaction-table sort. col=null → natural order (baseline pinned, recovery as resolved).
   // Clicking a header cycles that column asc → desc → back to natural.
@@ -216,6 +260,57 @@ export function StrategyBasketTab({ initialTag = null, entries = [] }) {
           </div>
         );
       })()}
+
+      {/* Over-allocation warning: tagged CCs exceed declared shares for a ticker */}
+      {coverageWarnings.map(w => (
+        <div key={`warn-${w.ticker}`} style={{
+          marginBottom: theme.space[2], padding: theme.space[2],
+          background: theme.alert.dangerBg, border: `1px solid ${theme.alert.dangerBorder}`,
+          borderRadius: theme.radius.sm, fontSize: theme.size.xs, color: theme.text.secondary,
+        }}>
+          ⚠ {w.ticker}: {w.ccContracts} CC{w.ccContracts > 1 ? "s" : ""} tagged ({w.coveredShares} shares) but only {w.declaredShares} shares declared — over-allocated.
+        </div>
+      ))}
+
+      {/* Add-assigned-shares affordance */}
+      <div style={{ marginBottom: theme.space[3] }}>
+        {!showAddShares ? (
+          <button onClick={() => { setShowAddShares(true); setAddError(null); }} style={{
+            padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+            background: theme.bg.surface, color: theme.text.secondary,
+            border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+          }}>+ Add assigned shares</button>
+        ) : (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: theme.space[2], alignItems: "center",
+            padding: theme.space[3], background: theme.bg.surface,
+            border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md,
+          }}>
+            <input value={addForm.ticker} placeholder="Ticker"
+              onChange={e => setAddForm(f => ({ ...f, ticker: e.target.value }))}
+              style={{ width: 80, padding: "6px 8px", fontFamily: "inherit", fontSize: theme.size.sm, background: theme.bg.base, color: theme.text.primary, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm }} />
+            <input value={addForm.shares} placeholder="Shares" inputMode="numeric"
+              onChange={e => setAddForm(f => ({ ...f, shares: e.target.value }))}
+              style={{ width: 80, padding: "6px 8px", fontFamily: theme.font.mono, fontSize: theme.size.sm, background: theme.bg.base, color: theme.text.primary, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm }} />
+            <input value={addForm.basis} placeholder="Basis $" inputMode="decimal"
+              onChange={e => setAddForm(f => ({ ...f, basis: e.target.value }))}
+              style={{ width: 90, padding: "6px 8px", fontFamily: theme.font.mono, fontSize: theme.size.sm, background: theme.bg.base, color: theme.text.primary, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm }} />
+            <button onClick={submitAddShares} disabled={addBusy} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, cursor: addBusy ? "default" : "pointer", fontFamily: "inherit",
+              background: theme.bg.elevated, color: theme.blue,
+              border: `1px solid ${theme.blue}`, borderRadius: theme.radius.sm, opacity: addBusy ? 0.6 : 1,
+            }}>{addBusy ? "Adding…" : "Add to basket"}</button>
+            <button onClick={() => { setShowAddShares(false); setAddError(null); }} disabled={addBusy} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+              background: "transparent", color: theme.text.muted,
+              border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+            }}>Cancel</button>
+            <span style={{ flexBasis: "100%", fontSize: theme.size.xs, color: addError ? theme.red : theme.text.subtle }}>
+              {addError || `Basis = full assignment strike (premium is booked separately). Then close the CSP as Assigned in your sheet and sync to book the premium.`}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Transaction log */}
       <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginBottom: theme.space[2], textTransform: "uppercase", letterSpacing: "0.4px" }}>Transactions</div>
