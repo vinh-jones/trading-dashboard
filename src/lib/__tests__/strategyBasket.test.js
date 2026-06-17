@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings } from "../strategyBasket";
 import { buildOccSymbol } from "../trading";
 
 const openPositions = [
@@ -220,5 +220,42 @@ describe("holdCounterfactual", () => {
     expect(holdCounterfactual({ exitCost: null, contracts: 3300 }, 18)).toBe(null);
     expect(holdCounterfactual({ exitCost: 18, contracts: null }, 18)).toBe(null);
     expect(holdCounterfactual(null, 18)).toBe(null);
+  });
+});
+
+describe("shareCoverageWarnings", () => {
+  it("warns when tagged CC contracts exceed declared shares", () => {
+    const members = [
+      { status: "open", role: "recovery", ticker: "GLW", type: "Shares", contracts: 100 },
+      { status: "open", role: "recovery", ticker: "GLW", type: "CC", contracts: 2 },
+    ];
+    expect(shareCoverageWarnings(members)).toEqual([
+      { ticker: "GLW", declaredShares: 100, ccContracts: 2, coveredShares: 200 },
+    ]);
+  });
+
+  it("no warning when CCs are covered by declared shares", () => {
+    const members = [
+      { status: "open", role: "recovery", ticker: "GLW", type: "Shares", contracts: 200 },
+      { status: "open", role: "recovery", ticker: "GLW", type: "CC", contracts: 2 },
+    ];
+    expect(shareCoverageWarnings(members)).toEqual([]);
+  });
+
+  it("warns when a CC is tagged before any shares are declared", () => {
+    const members = [
+      { status: "open", role: "recovery", ticker: "GLW", type: "CC", contracts: 1 },
+    ];
+    expect(shareCoverageWarnings(members)).toEqual([
+      { ticker: "GLW", declaredShares: 0, ccContracts: 1, coveredShares: 100 },
+    ]);
+  });
+
+  it("ignores closed and baseline members", () => {
+    const members = [
+      { status: "closed", role: "recovery", ticker: "GLW", type: "CC", contracts: 5 },
+      { status: "open", role: "baseline", ticker: "GLW", type: "Shares", contracts: 0 },
+    ];
+    expect(shareCoverageWarnings(members)).toEqual([]);
   });
 });

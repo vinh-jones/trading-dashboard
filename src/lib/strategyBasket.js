@@ -214,3 +214,28 @@ export function unrealizedCushion(members, quoteMap) {
   }
   return { total, marked, unmarked };
 }
+
+/**
+ * Over-allocation check: a basket may tag more covered-call contracts than its
+ * declared open shares cover (the broker holds a blended lot, so the basket
+ * can't enforce this structurally). Returns one entry per ticker where tagged
+ * open CC contracts × 100 exceed declared open shares. Empty array = all clear.
+ * @returns {Array<{ticker:string, declaredShares:number, ccContracts:number, coveredShares:number}>}
+ */
+export function shareCoverageWarnings(members) {
+  const byTicker = new Map();
+  for (const m of members) {
+    if (m.status !== "open" || m.role !== "recovery") continue;
+    const slot = byTicker.get(m.ticker) ?? { shares: 0, ccContracts: 0 };
+    if (m.type === "Shares") slot.shares += m.contracts ?? 0;
+    else if (m.type === "CC") slot.ccContracts += m.contracts ?? 0;
+    byTicker.set(m.ticker, slot);
+  }
+  const warnings = [];
+  for (const [ticker, { shares, ccContracts }] of byTicker) {
+    if (ccContracts > 0 && ccContracts * 100 > shares) {
+      warnings.push({ ticker, declaredShares: shares, ccContracts, coveredShares: ccContracts * 100 });
+    }
+  }
+  return warnings;
+}
