@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useData } from "../hooks/useData";
 import { EXPLORE_SUBVIEWS, SUBVIEW_LABELS, isValidSubView } from "../lib/modes";
 import { theme } from "../lib/theme";
@@ -78,15 +78,15 @@ export function ExploreView({
   const active = isValidSubView("explore", subView) && subView !== "ticker-detail" ? subView : "positions";
 
   const [strategyEntries, setStrategyEntries] = useState([]);
+  const loadStrategyEntries = useCallback(() => {
+    return listJournalEntries({})
+      .then(rows => setStrategyEntries((rows ?? []).filter(r => (r.tags ?? []).some(t => t.startsWith("strategy:")))))
+      .catch(() => setStrategyEntries([]));
+  }, []);
   useEffect(() => {
     if (active !== "baskets") return;
-    let cancelled = false;
-    listJournalEntries({}).then(rows => {
-      if (cancelled) return;
-      setStrategyEntries((rows ?? []).filter(r => (r.tags ?? []).some(t => t.startsWith("strategy:"))));
-    }).catch(() => { if (!cancelled) setStrategyEntries([]); });
-    return () => { cancelled = true; };
-  }, [active]);
+    loadStrategyEntries();
+  }, [active, loadStrategyEntries]);
 
   return (
     <div>
@@ -121,7 +121,7 @@ export function ExploreView({
         {active === "earnings"  && <EarningsTab positions={positions} account={account} trades={trades} />}
         {active === "macro"     && <MacroTab />}
         {active === "baskets" && (
-          <StrategyBasketTab initialTag={basketTag} entries={strategyEntries} />
+          <StrategyBasketTab initialTag={basketTag} entries={strategyEntries} onEntriesChanged={loadStrategyEntries} />
         )}
       </Suspense>
     </div>
