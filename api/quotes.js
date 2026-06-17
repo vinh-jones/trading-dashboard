@@ -110,9 +110,13 @@ async function fetchPublicQuotes(token, instruments, attempt = 1) {
 
 // ── Build instrument list from positions ──────────────────────────────────────
 
-function buildInstruments(rows) {
+function buildInstruments(rows, extraEquityTickers = []) {
   const equitySymbols = new Set();
   const optionSymbols = new Set();
+
+  // Equity tickers with no position row of their own (e.g. a strategy-basket
+  // shares lot whose CSP was assigned and synced away) still need a live mark.
+  for (const t of extraEquityTickers) if (t) equitySymbols.add(t);
 
   for (const row of rows) {
     const { ticker, type, strike, expiry_date, position_type } = row;
@@ -198,9 +202,23 @@ async function refreshQuotes(supabase) {
     .select("ticker, type, strike, expiry_date, position_type");
 
   if (error) throw new Error(`Supabase positions fetch failed: ${error.message}`);
-  if (!rows?.length) return [];
 
-  const { equityInstruments, optionInstruments } = buildInstruments(rows);
+  // Also mark strategy-tagged shares lots declared in journal entries. These can
+  // exist without any open position row (after a CSP is assigned and synced
+  // closed), so the basket needs their underlying equity quote to mark the lot.
+  const { data: shareEntries } = await supabase
+    .from("journal_entries")
+    .select("ticker, tags")
+    .eq("type", "Shares")
+    .not("tags", "is", null);
+  const declaredShareTickers = (shareEntries ?? [])
+    .filter(e => (e.tags ?? []).some(t => t.startsWith("strategy:")))
+    .map(e => e.ticker)
+    .filter(Boolean);
+
+  if (!rows?.length && !declaredShareTickers.length) return [];
+
+  const { equityInstruments, optionInstruments } = buildInstruments(rows ?? [], declaredShareTickers);
 
   // 2. Authenticate (uses cached 24h token, fetches new one only if expired)
   const token = await getPublicAccessToken(supabase);
