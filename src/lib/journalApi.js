@@ -21,3 +21,21 @@ export async function listJournalEntries(params = {}) {
   }
   return json.data ?? [];
 }
+
+export async function createJournalEntry(payload) {
+  const res = await fetch("/api/journal-entry", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    /* non-JSON response */
+  }
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || `journal create failed (HTTP ${res.status})`);
+  }
+  return json.data;
+}
