@@ -17,6 +17,7 @@ import { TYPE_COLORS, SUBTYPE_LABELS } from "../lib/constants";
 import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
+import { computeRedeploySignal } from "../lib/redeploySignal";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
 import { CohortsPanel } from "./CohortsPanel";
@@ -355,6 +356,91 @@ function HoldYieldPanel({ hy }) {
   );
 }
 
+// ── Redeploy signal (green CSPs) ───────────────────────────────────────────────
+// "Is the leftover premium still decaying fast enough to keep this capital here,
+// or would a fresh CSP pay more?" The redeploy complement to hold-yield's risk
+// lens. ratio = (1 − %premium kept) / (1 − %time elapsed); below the close line
+// the remaining premium pays so slowly that redeploying wins net of churn.
+
+function redeployCopy(rd) {
+  const ratioStr = rd.ratio != null ? `${rd.ratio.toFixed(2)}×` : "—";
+  switch (rd.redeploy_state) {
+    case "redeploy":
+      return `Leftover premium is decaying at ${ratioStr} the pace of a fresh CSP — closing to redeploy this capital wins even after churn costs.`;
+    case "watch":
+      return `Premium captured is running ahead of time elapsed (${ratioStr} of a fresh trade) — approaching the redeploy line, watch the mark.`;
+    case "hold":
+      return "Remaining premium still decays as fast as a fresh trade would pay — hold.";
+    case "underwater":
+      return "Mark is above your entry — this is a roll / assignment call, not a redeploy one.";
+    default: return "";
+  }
+}
+
+// Collapsed-row indicator. redeploy = visible chip; watch = muted ratio;
+// hold / underwater are silent (the detail still shows on expand).
+function RedeployIndicator({ rd }) {
+  if (!rd || rd.skipped) return null;
+  if (rd.redeploy_state === "redeploy") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${theme.blue}22`, color: theme.blue, border: `1px solid ${theme.blue}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>↻ {rd.ratio.toFixed(2)}×</span>
+    );
+  }
+  if (rd.redeploy_state === "watch") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], color: theme.blue, opacity: 0.75,
+        fontSize: theme.size.xs, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap",
+      }}>{rd.ratio.toFixed(2)}×</span>
+    );
+  }
+  return null;
+}
+
+function RedeployPanel({ rd }) {
+  if (!rd || rd.skipped || rd.redeploy_state === "underwater") return null;
+
+  const actionable = rd.redeploy_state === "redeploy";
+  const color = (actionable || rd.redeploy_state === "watch") ? theme.blue : theme.text.muted;
+
+  const labelStyle = {
+    fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase",
+    letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[1],
+  };
+  const cell = (label, value, valueColor) => (
+    <div>
+      <div style={labelStyle}>{label}</div>
+      <div style={{ color: valueColor ?? theme.text.primary }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: actionable ? `${theme.blue}11` : theme.bg.surface,
+      borderTop: `1px solid ${actionable ? `${theme.blue}44` : theme.border.default}`,
+      borderBottom: `1px solid ${theme.border.default}`,
+      padding: `${theme.space[3]}px ${theme.space[4]}px`,
+    }}>
+      <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
+        <span style={{ fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
+          Redeploy
+        </span>
+        {redeployCopy(rd)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.sm }}>
+        {cell("Ratio vs fresh", `${rd.ratio.toFixed(2)}×`, color)}
+        {cell("Premium kept", `${Math.round(rd.kept_pct * 100)}%`)}
+        {cell("Time left", `${Math.round(rd.frac_time_left * 100)}% · ${rd.days_remaining}d`)}
+        {cell("Close trigger", `≤ $${rd.trigger_mark.toFixed(2)}`, actionable ? theme.blue : undefined)}
+      </div>
+    </div>
+  );
+}
+
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
 function PriceTargetPanel({ targets, position, stockPrice }) {
@@ -597,10 +683,13 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
     const isCsp = !isLeap && pos.type === "CSP";
     let enrichedPos = pos;
     let holdYield = null;
+    let redeploy = null;
     if (isCsp) {
       const stockMid = quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null;
       const iv       = quoteMap.get(pos.ticker)?.iv  ?? null;
       enrichedPos    = { ...pos, ...computeCushion(pos.strike, stockMid, iv) };
+
+      const todayIso = new Date().toISOString().slice(0, 10);
 
       // Hold-yield signal — green CSPs only (computeHoldYield self-skips underwater
       // / missing-mid). Benchmark may be null in dev (no /api/data) → no_benchmark.
@@ -611,13 +700,24 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
         capitalFronted:   pos.capital_fronted,
         daysToExpiry:     dte,
         openDate:         pos.open_date,
-        today:            new Date().toISOString().slice(0, 10),
+        today:            todayIso,
         cushionState:     enrichedPos.cushion_state,
         benchmark:        cspEntryYieldBenchmark?.avg_csp_entry_yield_ann ?? null,
       });
+
+      // Redeploy signal — is the leftover premium still worth more here than in a
+      // fresh CSP? Self-contained per position (no benchmark needed).
+      redeploy = computeRedeploySignal({
+        premiumCollected: pos.premium_collected,
+        optionMid,
+        contracts:        pos.contracts,
+        daysToExpiry:     dte,
+        openDate:         pos.open_date,
+        today:            todayIso,
+      });
     }
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -692,7 +792,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -783,6 +883,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
                       <HoldYieldIndicator hy={holdYield} />
+                      <RedeployIndicator rd={redeploy} />
                     </span>
                   )}
                   {!isMobile && (
@@ -890,6 +991,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
                       <HoldYieldPanel hy={holdYield} />
+                      <RedeployPanel rd={redeploy} />
                       {priceTargets && (
                         <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                       )}
