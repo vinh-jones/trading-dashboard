@@ -884,7 +884,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                       )}
                       <HoldYieldIndicator hy={holdYield} />
                       <RedeployIndicator rd={redeploy} />
-                      {hasTagRow && !isExpanded && (
+                      {hasTagRow && !isExpanded && !isMobile && (
                         <span
                           onClick={canExpand ? (e) => { e.stopPropagation(); setExpandedRowKey(rowKey); } : undefined}
                           title={`${sortedTags.length} tag${sortedTags.length === 1 ? "" : "s"} — expand to view`}
