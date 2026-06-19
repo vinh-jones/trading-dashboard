@@ -91,7 +91,13 @@ export function TickerAllTimeStats({ data }) {
         <Card
           label="Capital efficiency"
           value={stats.capitalEfficiencyPct != null ? `${stats.capitalEfficiencyPct.toFixed(1)}%` : "—"}
-          sub="annualized return on avg capital"
+          sub="annualized · on total secured capital"
+          large
+        />
+        <Card
+          label="On assigned capital"
+          value={stats.capitalEfficiencyAssignedPct != null ? `${stats.capitalEfficiencyAssignedPct.toFixed(1)}%` : "—"}
+          sub="excludes never-assigned CSP collateral"
           large
         />
       </div>

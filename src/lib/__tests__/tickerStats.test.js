@@ -169,11 +169,11 @@ describe("computeTickerStats — below-cost CC absorption", () => {
 });
 
 describe("computeTickerStats — capital efficiency", () => {
-  it("returns realized_pnl / avg_capital_deployed annualized when data present", () => {
-    // realized $1000, avg capital $50,000, days span 365 → 2% annualized
+  it("secondary metric annualizes realized P&L over assigned-only capital", () => {
+    // realized $1000, assigned capital $50,000 over 365 days → 2% annualized
     const r = computeTickerStats({
       trades: [
-        trade({ premium_collected: 1000, close_date: "2026-01-15", data_quality: "trusted" }),
+        trade({ premium_collected: 1000, capital_fronted: 0, days_held: 0, close_date: "2026-01-15", data_quality: "trusted" }),
       ],
       lifespans: [
         lifespan({
@@ -182,15 +182,48 @@ describe("computeTickerStats — capital efficiency", () => {
         }),
       ],
     });
+    expect(r.capitalEfficiencyAssignedPct).toBeCloseTo(2.0, 1);
+    // No CSP collateral, so the secured (primary) metric equals the assigned one.
     expect(r.capitalEfficiencyPct).toBeCloseTo(2.0, 1);
   });
 
-  it("returns null when no lifespan capital", () => {
+  it("primary metric folds never-assigned CSP collateral into the denominator", () => {
+    // assigned capital-days 50,000 × 365 = 18,250,000
+    // CSP collateral-days    5,000 × 10  =     50,000  → secured 18,300,000
+    // 1000 / 18,300,000 × 365 × 100 ≈ 1.995% secured vs 2.0% assigned-only
     const r = computeTickerStats({
-      trades: [trade({ premium_collected: 100 })],
+      trades: [
+        trade({ premium_collected: 1000, capital_fronted: 5000, days_held: 10, close_date: "2026-01-15" }),
+      ],
+      lifespans: [
+        lifespan({
+          total_capital_committed: 50_000,
+          lifespan_metrics: { days_active: 365, total_lifespan_pnl: 1000, csp_premium_collected: 0, cc_premium_total: 0, share_disposal_pnl: 0 },
+        }),
+      ],
+    });
+    expect(r.capitalEfficiencyPct).toBeCloseTo(1.99, 2);
+    expect(r.capitalEfficiencyAssignedPct).toBeCloseTo(2.0, 2);
+  });
+
+  it("counts a never-assigned CSP's collateral even with no lifespan", () => {
+    // CSP collateral 5,000 × 10 = 50,000 capital-days; realized $100
+    // 100 / 50,000 × 365 × 100 = 73%
+    const r = computeTickerStats({
+      trades: [trade({ premium_collected: 100, capital_fronted: 5000, days_held: 10 })],
+      lifespans: [],
+    });
+    expect(r.capitalEfficiencyPct).toBeCloseTo(73.0, 1);
+    expect(r.capitalEfficiencyAssignedPct).toBeNull();
+  });
+
+  it("returns null when there is no secured capital at all", () => {
+    const r = computeTickerStats({
+      trades: [trade({ premium_collected: 100, capital_fronted: 0, days_held: 0 })],
       lifespans: [],
     });
     expect(r.capitalEfficiencyPct).toBeNull();
+    expect(r.capitalEfficiencyAssignedPct).toBeNull();
   });
 });
 
