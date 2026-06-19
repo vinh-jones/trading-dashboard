@@ -847,7 +847,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
               <React.Fragment key={i}>
                 <tr
                   style={{
-                    borderBottom: (hasTagRow || isExpanded) ? "none" : `1px solid ${theme.border.default}`,
+                    borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
                     borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : isSelected ? `3px solid ${theme.blue}` : "3px solid transparent",
                     cursor:       (selectable || canExpand) ? "pointer" : "default",
                     background:   rowBg,
@@ -884,6 +884,21 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                       )}
                       <HoldYieldIndicator hy={holdYield} />
                       <RedeployIndicator rd={redeploy} />
+                      {hasTagRow && !isExpanded && (
+                        <span
+                          onClick={canExpand ? (e) => { e.stopPropagation(); setExpandedRowKey(rowKey); } : undefined}
+                          title={`${sortedTags.length} tag${sortedTags.length === 1 ? "" : "s"} — expand to view`}
+                          style={{
+                            display: "inline-flex", alignItems: "center",
+                            marginLeft: theme.space[1], padding: "1px 7px",
+                            fontSize: theme.size.xs, fontFamily: theme.font.mono,
+                            color: theme.text.muted, background: theme.bg.elevated,
+                            border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.pill,
+                            lineHeight: 1.3, flexShrink: 0, whiteSpace: "nowrap",
+                            cursor: canExpand ? "pointer" : "default",
+                          }}
+                        >{sortedTags.length} tag{sortedTags.length === 1 ? "" : "s"}</span>
+                      )}
                     </span>
                   )}
                   {!isMobile && (
@@ -922,69 +937,44 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                     </td>
                   )}
                 </tr>
-                {hasTagRow && (
-                  <tr
-                    style={{
-                      borderBottom: isExpanded ? "none" : `1px solid ${theme.border.default}`,
-                      borderLeft:   rowHighlightColor ? `3px solid ${rowHighlightColor}` : isSelected ? `3px solid ${theme.blue}` : "3px solid transparent",
-                      cursor:       canExpand ? "pointer" : "default",
-                      background:   rowBg,
-                    }}
-                    onClick={selectable ? () => toggleRow(pos) : canExpand ? () => setExpandedRowKey(isExpanded ? null : rowKey) : undefined}
-                  >
-                    <td
-                      colSpan={isMobile ? 5 : 10}
-                      style={{ padding: `0 ${theme.space[2]}px ${theme.space[2]}px ${theme.space[3]}px` }}
-                    >
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[1], alignItems: "center" }}>
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            color:      theme.text.faint,
-                            fontSize:   theme.size.md,
-                            lineHeight: 1,
-                            marginRight: theme.space[1],
-                            userSelect: "none",
-                          }}
-                        >↳</span>
-                        {sortedTags.map(t => (
-                          <PositionTagChip
-                            key={t.tag}
-                            tag={t.tag}
-                            compact={false}
-                            onClick={
-                              t.tag.startsWith("cohort:") && onOpenCohort
-                                ? () => onOpenCohort(t.tag)
-                                : t.tag.startsWith("strategy:") && onOpenBasket
-                                ? () => onOpenBasket(t.tag)
-                                : () => onShowJournalEntry?.(t.entryId)
-                            }
-                          />
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                )}
                 {isExpanded && (
                   <tr>
                     <td colSpan={isMobile ? 5 : 10} style={{ padding: 0, borderBottom: `1px solid ${theme.border.default}` }}>
-                      {onTagPosition && (
+                      {(hasTagRow || onTagPosition) && (
                         <div style={{
                           padding: `${theme.space[2]}px ${theme.space[3]}px`,
                           background: theme.bg.surface,
                           borderTop: `1px solid ${theme.border.default}`,
+                          display: "flex", flexWrap: "wrap", alignItems: "center", gap: theme.space[1],
                         }}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onTagPosition(pos); }}
-                            style={{
-                              background: "transparent", border: "none", padding: 0,
-                              color: theme.text.muted, cursor: "pointer",
-                              fontSize: theme.size.sm, fontFamily: "inherit",
-                              textDecoration: "underline",
-                            }}
-                          >
-                            + Tag
-                          </button>
+                          {sortedTags.map(t => (
+                            <PositionTagChip
+                              key={t.tag}
+                              tag={t.tag}
+                              compact={false}
+                              onClick={
+                                t.tag.startsWith("cohort:") && onOpenCohort
+                                  ? () => onOpenCohort(t.tag)
+                                  : t.tag.startsWith("strategy:") && onOpenBasket
+                                  ? () => onOpenBasket(t.tag)
+                                  : () => onShowJournalEntry?.(t.entryId)
+                              }
+                            />
+                          ))}
+                          {onTagPosition && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onTagPosition(pos); }}
+                              style={{
+                                background: "transparent", border: "none", padding: 0,
+                                color: theme.text.muted, cursor: "pointer",
+                                fontSize: theme.size.sm, fontFamily: "inherit",
+                                textDecoration: "underline",
+                                marginLeft: hasTagRow ? theme.space[1] : 0,
+                              }}
+                            >
+                              + Tag
+                            </button>
+                          )}
                         </div>
                       )}
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
