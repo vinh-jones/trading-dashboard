@@ -59,6 +59,18 @@ export function fetchGreekExposure(ticker) {
   return uwGet(`/stock/${encodeURIComponent(ticker)}/greek-exposure`);
 }
 
+// Greek exposure broken down by strike — the per-strike dealer-gamma profile
+// that drives the GEX strike walls (Consumer 3).
+export function fetchGreekExposureByStrike(ticker) {
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/greek-exposure/strike`);
+}
+
+// Spot gamma/delta exposure by strike — alternate GEX-by-strike shape; probed
+// alongside greek-exposure/strike until the live response shape is confirmed.
+export function fetchSpotExposuresByStrike(ticker) {
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/spot-exposures/strike`);
+}
+
 // Flow alerts for a ticker (puts + calls, all sides) at or above minPremium.
 export function fetchFlowAlerts(ticker, { minPremium = 50000, limit = 50 } = {}) {
   const qs = new URLSearchParams({ min_premium: String(minPremium), limit: String(limit) });

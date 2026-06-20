@@ -3,7 +3,8 @@
     "api/monthly-review.js": { "maxDuration": 30 },
     "api/uw-snapshot.js": { "maxDuration": 60 },
     "api/uw-assignment-data.js": { "maxDuration": 60 },
-    "api/uw-earnings-dates.js": { "maxDuration": 60 }
+    "api/uw-earnings-dates.js": { "maxDuration": 60 },
+    "api/uw-gex.js": { "maxDuration": 60 }
   },
   "crons": [
     {
@@ -21,6 +22,10 @@
     {
       "path": "/api/uw-earnings-dates",
       "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/uw-gex",
+      "schedule": "15 14,19 * * 1-5"
     },
     {
       "path": "/api/alert-check",
