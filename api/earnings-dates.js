@@ -5,7 +5,7 @@
  *
  * Returns upcoming earnings dates for the approved wheel universe + any
  * currently-held tickers, reading directly from quotes.earnings_date.
- * Populated daily by OpenClaw via POST /api/ingest-wheel-earnings (Finnhub).
+ * Populated daily from Unusual Whales by the /api/uw-earnings-dates cron.
  *
  * Response shape:
  *   { ok: true, earnings: [{ ticker, date, hour, confidence }], asOf }
