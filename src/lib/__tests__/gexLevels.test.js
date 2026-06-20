@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeGexLevels, classifyStrikeVsSupport } from "../gexLevels";
+import { computeGexLevels } from "../gexLevels";
 
 describe("computeGexLevels", () => {
   it("null-safe on empty rows", () => {
@@ -39,40 +39,36 @@ describe("computeGexLevels", () => {
     expect(r.gammaRatio).toBe(0);
   });
 
-  it("picks the dominant positive-gamma wall on each side of spot", () => {
+  it("resistance = dominant positive-gamma bar above spot", () => {
     const r = computeGexLevels({
       rows: [
-        { strike: 85, gamma: 3 },
-        { strike: 95, gamma: 9 },   // biggest below → support
         { strike: 105, gamma: 4 },
-        { strike: 115, gamma: 12 }, // biggest above → resistance
+        { strike: 115, gamma: 12 }, // biggest positive above → resistance
+        { strike: 120, gamma: 7 },
       ],
       spot: 100,
     });
-    expect(r.support).toBe(95);
     expect(r.resistance).toBe(115);
   });
 
-  it("ignores negative-gamma strikes when picking walls", () => {
+  it("support = dominant negative-gamma bar below spot", () => {
     const r = computeGexLevels({
-      rows: [{ strike: 95, gamma: -20 }, { strike: 92, gamma: 4 }, { strike: 108, gamma: -30 }],
+      rows: [
+        { strike: 95, gamma: -6 },
+        { strike: 90, gamma: -14 }, // most negative below → support
+        { strike: 85, gamma: -3 },
+      ],
       spot: 100,
     });
-    expect(r.support).toBe(92);     // 95 is negative gamma, skipped
-    expect(r.resistance).toBeNull(); // no positive-gamma strike above spot
+    expect(r.support).toBe(90);
   });
-});
 
-describe("classifyStrikeVsSupport", () => {
-  it("strike at/below the wall is defended", () => {
-    expect(classifyStrikeVsSupport(90, 95)).toBe("below_wall");
-    expect(classifyStrikeVsSupport(95, 95)).toBe("below_wall");
-  });
-  it("strike above the wall is less protected", () => {
-    expect(classifyStrikeVsSupport(98, 95)).toBe("above_wall");
-  });
-  it("null-safe", () => {
-    expect(classifyStrikeVsSupport(90, null)).toBeNull();
-    expect(classifyStrikeVsSupport(null, 95)).toBeNull();
+  it("no positive bar above → resistance null; no negative bar below → support null", () => {
+    const r = computeGexLevels({
+      rows: [{ strike: 110, gamma: -5 }, { strike: 90, gamma: 8 }],
+      spot: 100,
+    });
+    expect(r.resistance).toBeNull(); // only negative gamma above
+    expect(r.support).toBeNull();    // only positive gamma below
   });
 });

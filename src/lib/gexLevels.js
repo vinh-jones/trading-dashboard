@@ -4,16 +4,16 @@
 // drive a CSP decision (Ryan's framing):
 //   - environment from the NET gamma sign: positive = market-makers stabilize
 //     (buy dips / sell rips → CSP-friendly), negative = they amplify moves
-//     (choppy/fast → caution).
-//   - the dominant positive-gamma "walls": the one above spot acts as
-//     resistance (a ceiling), the one below spot as a support floor. A CSP
-//     whose strike sits at/below a strong support wall is defended by dealer
-//     hedging; a strike with no wall beneath it is more exposed.
+//     (choppy/fast → caution). Default posture: sell CSPs in positive-gamma
+//     names.
+//   - the gamma "walls" around spot: the dominant positive-gamma bar ABOVE spot
+//     acts as resistance (a ceiling), the dominant negative-gamma bar BELOW spot
+//     marks support / an acceleration zone.
 //
-// Pure + null-safe: no rows / no spot → all-null ("no GEX signal"), exactly
-// like the other UW libs. The cron normalizes UW's raw by-strike response into
-// `[{ strike, gamma }]` (gamma = signed net dealer gamma at that strike), so
-// this stays shape-independent and testable.
+// Net gamma at a strike = call_gex + put_gex (UW signs put_gex negative, same
+// convention as gammaEnvFromGreek). Pure + null-safe: no rows / no spot →
+// all-null ("no GEX signal"). The cron normalizes UW's raw by-strike response
+// into `[{ strike, gamma }]`, so this stays shape-independent and testable.
 
 // Net gamma ratio in [-1, 1] above/below this magnitude flips the label;
 // inside the band it's "neutral" (avoids flip-flop near zero).
@@ -37,30 +37,16 @@ export function computeGexLevels({ rows, spot } = {}) {
     : gammaRatio < -ENV_DEADBAND ? "choppy"
     : "neutral";
 
-  // Dominant positive-gamma wall on each side of spot (the hedging wall traders
-  // mean — largest concentration, not merely nearest).
-  const wall = (predicate) => {
-    let best = null;
-    for (const r of clean) {
-      if (r.gamma > 0 && predicate(r.strike) && (best == null || r.gamma > best.gamma)) best = r;
-    }
-    return best ? best.strike : null;
-  };
-
-  const support    = wall((k) => k < spotNum);
-  const resistance = wall((k) => k > spotNum);
+  // Resistance = dominant positive-gamma bar above spot (a ceiling).
+  // Support    = dominant negative-gamma bar below spot (acceleration/floor).
+  let resistance = null, resGamma = -Infinity;
+  let support = null, supGamma = Infinity;
+  for (const r of clean) {
+    if (r.strike > spotNum && r.gamma > resGamma) { resGamma = r.gamma; resistance = r.strike; }
+    if (r.strike < spotNum && r.gamma < supGamma) { supGamma = r.gamma; support = r.strike; }
+  }
+  if (!(resGamma > 0)) resistance = null; // no genuine positive-gamma wall above
+  if (!(supGamma < 0)) support = null;    // no genuine negative-gamma wall below
 
   return { env, netGamma: +netGamma.toFixed(2), gammaRatio, support, resistance };
-}
-
-// How a CSP strike sits relative to the gamma support wall. The defended case
-// is a strike at/below a positive-gamma wall — the wall acts as a floor above
-// it. Pure helper for the strike annotation.
-export function classifyStrikeVsSupport(strike, support) {
-  if (strike == null || support == null) return null;
-  const k = Number(strike);
-  const s = Number(support);
-  if (!Number.isFinite(k) || !Number.isFinite(s)) return null;
-  if (k <= s) return "below_wall";   // wall sits above the strike → defended floor
-  return "above_wall";               // strike is above the wall → less protected
 }
