@@ -21,7 +21,7 @@ YTD premium ≈ **$94k** across positions running **$28k+** collateral each. At 
 | Provider | Unusual Whales (buys the classification; UW's tape already trusted) over Polygon raw-tape build |
 | Refresh cadence | Intraday (piggyback `intraday-snapshot`); heavier smoothing to tame intraday flow noise |
 | Signal purity | UW data **never** mutates the redeploy ratio. It overlays as a separate veto/confirm layer |
-| Build order | IV rank → Assignment defense → GEX → Flow conviction (ROI ÷ effort; noisiest last) |
+| Build order | IV-rank/structural entries → Assignment defense → GEX → Whale CSP flow → Flow-conviction veto (ROI ÷ effort; noisiest last) |
 | Scope of tickers | Open-position + watchlist names only (not full market) — keeps API volume + cost down |
 | Already-owned data | `earnings_date` and raw IV already live in `quotes`; do **not** re-source from UW |
 
@@ -79,6 +79,15 @@ All four consumers read from one pipeline that mirrors the existing quotes flow 
 - **Surfaces:** modulates the existing redeploy chip + hold-yield veto. The pure `redeploySignal` ratio is untouched.
 - **Decision impact:** the original hold-vs-redeploy directional veto, triangulated rather than single-source.
 
+## Consumer 5 — Whale CSP flow (entry ideas + confirmation)
+
+**What:** Ryan's actual daily driver — a live, watchlist-scoped list of institutions **selling puts**, used both to surface CSP entry ideas and to confirm a strike you're eyeing. It's the aggregated *list* view of the same put-selling flow Consumer 4 ingests, so it's largely free once that feed exists — and it's *simpler* than the veto (a filtered, ranked list; no conviction-scoring or overlay logic), so it **ships ahead of the Consumer 4 veto**.
+
+- **Data:** institutional put-sell prints — **bid-side, puts only, stocks only, ≥$50k premium, DTE 7–65, sweeps+crosses+normal (hide floor)** — the exact filter from Ryan's "CSP whale flow" screen. Same flow feed as Consumer 4.
+- **Lib:** `whaleCspFlow.js` — group raw prints into per-ticker whale put-sell rows; rank by premium, recency, and **repeat count** (repeat > one-off). Annotate each against data we already have: strike vs current price / lower Bollinger Band, and whether it aligns with an open position or a watchlist name.
+- **Surfaces:** a dedicated list (Radar-tab section or its own panel) — ticker · strike · DTE · premium · sweep type · strike-vs-BB · "aligns with your CSP?" Sortable, watchlist-scoped.
+- **Decision impact:** "where are whales selling puts right now → candidate entries, and is the strike I'm considering being validated by institutional size at/near it?" Idea **generation**, not just per-position veto.
+
 ## Ryan's playbook — extracted parameters (from UW course transcripts)
 
 Source: Ryan's 5 UW lectures (his workflow, not ours). UW is **confirmation only** — the OTU checklist supersedes it (upward-trending chart 1.5yr, positive P/E, **30Δ/30-day put paying ≥2%**, consecutive earnings beats). These pin our signal definitions and default thresholds to his actual numbers:
@@ -87,7 +96,7 @@ Source: Ryan's 5 UW lectures (his workflow, not ours). UW is **confirmation only
 - **Consumer 2 (assignment defense):** add an **earnings expected-move overlay** — market-maker expected move vs actual move over the last 4 quarters + directional skew; flag CSPs whose strike sits **inside** the expected move before an earnings-before-expiry event. Add **insider transactions with the 10b5-1 scheduled-vs-unscheduled flag** (an unscheduled insider *sell* is a real risk signal; scheduled is noise).
 - **Consumer 3 (GEX):** classify each ticker's environment from the **net OI gamma sign** — positive = MM-stabilized (CSP-friendly), negative = choppy/fast (caution). Surface nearest **positive-gamma bar above = resistance** and **negative-gamma bar below = support/acceleration** for strike placement. Default posture: sell CSPs in positive-gamma names.
 - **Consumer 4 (flow):** the primary CSP confirmation is **institutional put-selling flow**, not generic net premium — filter: **bid-side, puts only, stocks only, ≥$50k premium, DTE 7–65, sweeps+crosses+normal (hide floor)**. Bullish when whales are selling puts at/near your strike. Reinforce with per-ticker **put/call ratio (<1 bullish)**. Require **repeat activity, not one-offs** → this IS the smoothing window. Market-wide posture (ties to the VIX cash-target framework): **market tide** net call vs put premium + fear gauge; index sentiment filter is **SPY/QQQ, bid+ask, calls+puts, ETFs only, ≥$250k premium, DTE 1–30**.
-- **New surface worth considering — "Whale CSP flow":** Ryan's actual daily driver is a trade-idea/confirmation list of whales selling puts on his watchlist. Cheap to add once Consumer 4's flow ingestion exists; doubles as entry idea generation, not just a per-position veto.
+- **Whale CSP flow → promoted to Consumer 5:** Ryan's actual daily driver (a watchlist list of whales selling puts) is now a first-class surface — see Consumer 5. Its filter params are the Consumer 4 flow params above.
 - **Conviction layer (Consumer 2/4):** 13F institutional-ownership trend (are the big banks *adding* near the lows?) — quarterly/lagged, long-horizon conviction only.
 
 **API coverage — verified in API Basic** (UW official MCP catalog + REST docs): options flow with **side (bid/ask) + premium + sweep/cross classification**, **market tide** (`GET /api/market/market-tide`, also `market_tide_v3`), **earnings — schedules + historical earnings w/ IV & expected moves**, **greek exposure**, **IV rank**, **short interest**, **insider transactions**, **13F institutional ownership**. The *only* endpoint flagged premium-gated is the **Politicians/portfolios** dataset (not load-bearing for any consumer). **No tier upgrade required.**
@@ -97,12 +106,13 @@ Source: Ryan's 5 UW lectures (his workflow, not ours). UW is **confirmation only
 | Phase | Deliverable | Gates on |
 |---|---|---|
 | 0 | Backbone: adapter, tables, `useUwSignals`, stubs | UW key |
-| 1 | IV rank entries | Phase 0 |
-| 2 | Assignment defense | Phase 0 (+ existing earnings) |
-| 3 | GEX strike walls | Phase 0 |
-| 4 | Flow conviction veto | Phases 0–3 validated |
+| 1 | Consumer 1 — IV-rank + structural entries | Phase 0 |
+| 2 | Consumer 2 — Assignment defense | Phase 0 (+ existing earnings) |
+| 3 | Consumer 3 — GEX strike walls | Phase 0 |
+| 4 | Consumer 5 — Whale CSP flow list (+ shared put-selling-flow ingestion) | Phase 0 |
+| 5 | Consumer 4 — Flow-conviction veto | Phase 4 ingestion + Phases 1–3 validated |
 
-Each phase is independently shippable and independently abandonable — if IV-rank entries (Phase 1) don't earn their keep once live, we've learned that cheaply before the heavy phases.
+Whale CSP flow (Consumer 5) deliberately ships **before** the Consumer 4 veto: it reuses the same put-selling-flow ingestion but is a simple ranked list — high value, low complexity — whereas the veto adds the noisy triangulation/overlay logic that benefits from validating the other signals first. Each phase is independently shippable and independently abandonable — if IV-rank/structural entries (Phase 1) don't earn their keep once live, we've learned that cheaply before the heavy phases.
 
 ## Endpoint coverage — verified 2026-06-20
 
