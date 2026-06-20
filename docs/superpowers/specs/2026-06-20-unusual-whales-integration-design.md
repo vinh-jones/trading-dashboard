@@ -39,16 +39,14 @@ All four consumers read from one pipeline that mirrors the existing quotes flow 
 
 > Stub-first: tables + hook land empty so the app compiles and renders gracefully (null = "no signal") **before** the key exists. Wiring the adapter is then a localized change.
 
-## Consumer 1 — IV rank → entries  *(ship first)*
+## Consumer 1 — Entry timing: IV rank (1a) + Ryan's structural gate (1b)  *(ship first)*
 
-**Why first:** one scalar per ticker, highest-confidence signal, smallest surface area; proves the pipeline end-to-end and pays off immediately.
+**Why first:** smallest surface area, proves the pipeline end-to-end, pays off immediately. Entry richness is judged by **two co-equal lenses** — the strongest entry is when they agree:
 
-- **Data:** `iv_rank` (IV percentile vs the ticker's own trailing year).
-- **Lib:** none needed beyond a band helper (e.g. <30 cheap / 30–60 fair / >60 rich).
-- **Surfaces:**
-  - Radar scoring + CSP selection calculator: show IV rank next to each candidate ("rich premium here").
-  - Cash-target framework (CLAUDE.md VIX table): per-ticker IV rank contextualizes the contrarian posture beyond the single market VIX number.
-- **Decision impact:** "should I sell premium on *this name* right now."
+- **1a — IV rank** (`iv_rank`, IV percentile vs the ticker's own trailing year): the statistical "is premium actually rich" measure. Band helper (<30 cheap / 30–60 fair / >60 rich). Vinh weights this heavily even though Ryan doesn't use it — it is **not** subordinate to 1b.
+- **1b — Ryan's structural gate:** lower-Bollinger-Band proximity + the 2%-on-30Δ/30d rule + contrarian "sell into fear" (VIX / UW fear gauge).
+- **Surfaces:** Radar scoring + CSP selection calculator show **both** IV rank and the structural read per candidate; cash-target framework (CLAUDE.md VIX table) uses per-ticker IV rank to contextualize the contrarian posture beyond the single market VIX number.
+- **Decision impact:** "should I sell premium on *this name* right now" — highest conviction when statistical richness (1a) and structure (1b) line up.
 
 ## Consumer 2 — Assignment defense
 
@@ -85,14 +83,14 @@ All four consumers read from one pipeline that mirrors the existing quotes flow 
 
 Source: Ryan's 5 UW lectures (his workflow, not ours). UW is **confirmation only** — the OTU checklist supersedes it (upward-trending chart 1.5yr, positive P/E, **30Δ/30-day put paying ≥2%**, consecutive earnings beats). These pin our signal definitions and default thresholds to his actual numbers:
 
-- **Consumer 1 (entries):** Ryan's richness gate is **lower-Bollinger-Band + the 2%-on-30Δ/30d rule + contrarian "sell into fear" (VIX/UW fear gauge)** — *not* IV rank. Lead with that; treat IV rank as a complement, not the headline.
+- **Consumer 1 (entries):** Ryan's richness gate is **lower-Bollinger-Band + the 2%-on-30Δ/30d rule + contrarian "sell into fear" (VIX/UW fear gauge)** — *not* IV rank. Per Vinh, run these as **co-equal lenses**: IV rank = "1a" (statistical richness), Ryan's structural gate = "1b". Surface both; a strong entry is when they agree.
 - **Consumer 2 (assignment defense):** add an **earnings expected-move overlay** — market-maker expected move vs actual move over the last 4 quarters + directional skew; flag CSPs whose strike sits **inside** the expected move before an earnings-before-expiry event. Add **insider transactions with the 10b5-1 scheduled-vs-unscheduled flag** (an unscheduled insider *sell* is a real risk signal; scheduled is noise).
 - **Consumer 3 (GEX):** classify each ticker's environment from the **net OI gamma sign** — positive = MM-stabilized (CSP-friendly), negative = choppy/fast (caution). Surface nearest **positive-gamma bar above = resistance** and **negative-gamma bar below = support/acceleration** for strike placement. Default posture: sell CSPs in positive-gamma names.
 - **Consumer 4 (flow):** the primary CSP confirmation is **institutional put-selling flow**, not generic net premium — filter: **bid-side, puts only, stocks only, ≥$50k premium, DTE 7–65, sweeps+crosses+normal (hide floor)**. Bullish when whales are selling puts at/near your strike. Reinforce with per-ticker **put/call ratio (<1 bullish)**. Require **repeat activity, not one-offs** → this IS the smoothing window. Market-wide posture (ties to the VIX cash-target framework): **market tide** net call vs put premium + fear gauge; index sentiment filter is **SPY/QQQ, bid+ask, calls+puts, ETFs only, ≥$250k premium, DTE 1–30**.
 - **New surface worth considering — "Whale CSP flow":** Ryan's actual daily driver is a trade-idea/confirmation list of whales selling puts on his watchlist. Cheap to add once Consumer 4's flow ingestion exists; doubles as entry idea generation, not just a per-position veto.
 - **Conviction layer (Consumer 2/4):** 13F institutional-ownership trend (are the big banks *adding* near the lows?) — quarterly/lagged, long-horizon conviction only.
 
-**API coverage to confirm for these specifically:** options flow with **side (bid/ask) + premium + sweep/cross classification**, **market tide**, **earnings expected-move history**, **13F institutional ownership**, **insider transactions w/ 10b5-1 flag**. Flow + GEX + insider/congress are confirmed in API Basic; verify market-tide and earnings-expected-move endpoints before subscribing.
+**API coverage — verified in API Basic** (UW official MCP catalog + REST docs): options flow with **side (bid/ask) + premium + sweep/cross classification**, **market tide** (`GET /api/market/market-tide`, also `market_tide_v3`), **earnings — schedules + historical earnings w/ IV & expected moves**, **greek exposure**, **IV rank**, **short interest**, **insider transactions**, **13F institutional ownership**. The *only* endpoint flagged premium-gated is the **Politicians/portfolios** dataset (not load-bearing for any consumer). **No tier upgrade required.**
 
 ## Build sequence
 
@@ -112,8 +110,10 @@ Confirmed against UW's **official MCP server README** (their own enumeration of 
 
 - **IV rank** ✅ (Consumer 1)
 - **Short interest / FTDs / borrow rates** ✅ (Consumer 2)
+- **Earnings — schedules + historical earnings w/ IV & expected moves** ✅ (Consumer 2)
 - **Greek exposure — GEX/DEX/vanna by strike** ✅ (Consumer 3)
-- **Market tide / net premium + options flow alerts** ✅ (Consumer 4)
+- **Market tide** (`GET /api/market/market-tide`) **+ options flow w/ side classification** ✅ (Consumer 4)
+- **13F institutional ownership / insider transactions** ✅ (Consumers 2/4)
 
 **Tier mapping (confirmed from UW pricing page):** API Basic **$125/mo** includes options order flow, stocks, **congressional & insider trades**, market data, and proprietary tools — i.e. **everything all four consumers need**. Basic excludes only the "Premium endpoints" (Forex, Commodities, Economic indicators, Digital currencies, Top movers, IPO calendar, Statistics, Extended fundamentals) — none of which we use. Advanced ($315/mo) adds only **websockets** (our REST polling doesn't need them) and 365- vs 180-day history. So **API Basic covers all four phases**, congress/insider enrichment included. Rate limits: **40,000 req/day, 120/min** — our polling (~3–9k/day across tracked names) is well under.
 
