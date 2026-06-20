@@ -60,4 +60,38 @@ describe("computeAssignmentRisk", () => {
     const r = computeAssignmentRisk({ ...base, flowSentiment: null, gammaEnv: null, cushionState: "safe" });
     expect(r.level).toBe("none");
   });
+
+  it("earnings: strike inside the expected move → high", () => {
+    // spot 100, ±8% → downside 92; strike 95 is inside → exposed
+    const r = computeAssignmentRisk({ ...base, earningsDate: "2026-07-09", expectedMovePct: 8, spot: 100, strike: 95 });
+    expect(r.factors[0].severity).toBe("high");
+    expect(r.factors[0].label).toMatch(/inside expected ±8% move/);
+    expect(r.level).toBe("high");
+  });
+
+  it("earnings: strike outside the expected move → low (Ryan's setup)", () => {
+    // spot 100, ±8% → downside 92; strike 88 is below it → outside
+    const r = computeAssignmentRisk({ ...base, earningsDate: "2026-07-09", expectedMovePct: 8, spot: 100, strike: 88 });
+    expect(r.factors[0].severity).toBe("low");
+    expect(r.factors[0].label).toMatch(/outside expected ±8% move/);
+    expect(r.level).toBe("watch");
+  });
+
+  it("earnings without expected-move data falls back to day-based severity", () => {
+    const r = computeAssignmentRisk({ ...base, earningsDate: "2026-07-09" }); // 8d, no em
+    expect(r.factors[0].severity).toBe("high");
+    expect(r.factors[0].label).toMatch(/before expiry/);
+  });
+
+  it("high short interest adds a med factor", () => {
+    const r = computeAssignmentRisk({ ...base, shortInterestPct: 25, cushionState: "safe" });
+    expect(r.factors.find((f) => f.key === "short")?.severity).toBe("med");
+    expect(r.factors.find((f) => f.key === "short")?.label).toMatch(/25% of float/);
+    expect(r.level).toBe("watch");
+  });
+
+  it("low short interest adds nothing", () => {
+    const r = computeAssignmentRisk({ ...base, shortInterestPct: 4 });
+    expect(r.factors.find((f) => f.key === "short")).toBeUndefined();
+  });
 });

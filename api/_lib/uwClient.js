@@ -64,3 +64,15 @@ export function fetchFlowAlerts(ticker, { minPremium = 50000, limit = 50 } = {})
   const qs = new URLSearchParams({ min_premium: String(minPremium), limit: String(limit) });
   return uwGet(`/stock/${encodeURIComponent(ticker)}/flow-alerts?${qs}`);
 }
+
+// Short interest + float (slow-changing). Latest row has short_float_perc as a
+// decimal string (0.0082 = 0.82% of float).
+export function fetchShortInterest(ticker) {
+  return uwGet(`/shorts/${encodeURIComponent(ticker)}/interest-float`);
+}
+
+// Earnings by ticker — historical + upcoming rows carry expected_move_perc
+// (the option-implied move) for the report.
+export function fetchEarnings(ticker) {
+  return uwGet(`/earnings/${encodeURIComponent(ticker)}`);
+}
