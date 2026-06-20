@@ -40,14 +40,47 @@ function authorized(req) {
   return !!(app && cookieTok === app);
 }
 
-// Latest short interest as a percent of float. short_float_perc is a decimal
-// string (0.0082 = 0.82%).
+// Field on a short-interest row that holds short interest as a fraction of
+// float, ordered most- to least- semantically precise. UW's interest-float
+// rows expose this as `si_float...` (short interest ÷ float, a small decimal
+// like 0.012 = 1.2%). NOT `percent_returned`, which is a securities-lending
+// "shares returned" stat that runs in the double digits — wrong metric.
+const SHORT_FLOAT_FIELDS = [
+  "short_percent_of_float",
+  "short_interest_percent_of_float",
+  "si_float_perc",
+  "si_float_returned",
+  "si_float",
+  "percent_of_float",
+  "short_float_perc",
+];
+
+// Row date, newest first. UW uses market_date (or created_at) on these rows.
+function shortRowDate(r) {
+  return String(r?.market_date ?? r?.created_at ?? r?.date ?? "");
+}
+
+// Pick the first finite numeric value across a list of candidate keys.
+function pickNum(row, keys) {
+  for (const k of keys) {
+    if (row && row[k] != null) {
+      const v = parseFloat(row[k]);
+      if (Number.isFinite(v)) return v;
+    }
+  }
+  return null;
+}
+
+// Latest short interest as a percent of float. UW returns the ratio as a
+// fraction (0.012 = 1.2%); if a field already comes through as a percent
+// (>= 1) leave it. Realistic short floats top out well under 100%.
 function latestShortFloatPct(resp) {
   const rows = resp?.data ?? resp ?? [];
   if (!Array.isArray(rows) || rows.length === 0) return null;
-  const latest = [...rows].sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")))[0];
-  const v = parseFloat(latest?.short_float_perc);
-  return Number.isFinite(v) ? +(v * 100).toFixed(2) : null;
+  const latest = [...rows].sort((a, b) => shortRowDate(b).localeCompare(shortRowDate(a)))[0];
+  const v = pickNum(latest, SHORT_FLOAT_FIELDS);
+  if (v == null) return null;
+  return +(v < 1 ? v * 100 : v).toFixed(2);
 }
 
 // Expected option-implied move % for the next upcoming earnings report.
@@ -108,7 +141,7 @@ export default async function handler(req, res) {
           earnings_expected_move_pct: upcomingExpectedMovePct(earnResp, today),
         };
         const { error } = await supabase.from("uw_signals").update(patch).eq("ticker", ticker);
-        results.push({ ticker, ok: !error, error: error?.message });
+        results.push({ ticker, ok: !error, error: error?.message, ...patch });
       } catch (err) {
         results.push({ ticker, ok: false, error: err?.message ?? String(err) });
       }
