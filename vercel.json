@@ -1,11 +1,16 @@
 {
   "functions": {
-    "api/monthly-review.js": { "maxDuration": 30 }
+    "api/monthly-review.js": { "maxDuration": 30 },
+    "api/uw-snapshot.js": { "maxDuration": 60 }
   },
   "crons": [
     {
       "path": "/api/quotes",
       "schedule": "*/15 12-20 * * 1-5"
+    },
+    {
+      "path": "/api/uw-snapshot",
+      "schedule": "10,25,40,55 12-20 * * 1-5"
     },
     {
       "path": "/api/alert-check",

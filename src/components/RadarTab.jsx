@@ -5,6 +5,7 @@ import { useRadar } from "../hooks/useRadar";
 import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
+import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
 import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
@@ -13,39 +14,9 @@ import { useRadarSamples } from "../hooks/useRadarSamples";
 import { useIvTrends } from "../hooks/useIvTrends";
 
 // ── Score computation ─────────────────────────────────────────────────────────
-
-function compositeIv(iv, ivRank) {
-  if (iv == null || ivRank == null) return null;
-  return (ivRank / 100 * 0.60) + (Math.min(iv / 1.50, 1.0) * 0.40);
-}
-
-function getTrendState(price, ma50, ma200) {
-  if (price == null) return null;
-  const above200 = ma200 == null || price >= ma200;
-  const above50  = ma50  == null || price >= ma50;
-  if (above200 && above50)   return { state: "uptrend",   label: "Uptrend",    modifier: 1.00 };
-  if (above200 && !above50)  return { state: "pullback",  label: "Pullback",   modifier: 0.90 };
-  if (!above200 && above50)  return { state: "recovering",label: "Recovering", modifier: 0.85 };
-  return                            { state: "downtrend", label: "Downtrend",  modifier: 0.70 };
-}
-
-function scannerScore(bbPosition, iv, ivRank, price, ma50, ma200, ivTrend) {
-  if (bbPosition == null) return null;
-  const ivComp  = compositeIv(iv, ivRank);
-  if (ivComp == null) return null;
-  const base    = (1 - bbPosition) * 0.50 + ivComp * 0.50;
-  const trend   = getTrendState(price, ma50, ma200);
-  const ivMod   = (ivTrend?.state && ivTrend.state !== "insufficient") ? (ivTrend.modifier ?? 1.0) : 1.0;
-  return base * (trend?.modifier ?? 1.0) * ivMod;
-}
-
-function scoreLabel(score) {
-  if (score == null) return null;
-  if (score >= 0.70) return "Strong";
-  if (score >= 0.50) return "Moderate";
-  if (score >= 0.30) return "Neutral";
-  return "Weak";
-}
+// compositeIv, getTrendState, entryScore (formerly scannerScore), and scoreLabel
+// now live in ../lib/entryScore (shared with the CSP selection calculator and
+// ticker detail) and are imported above.
 
 // ── Beta (market sensitivity) ───────────────────────────────────────────────────
 // Beta is a stock-level statistic (not an option Greek): how much a name moves
@@ -533,9 +504,9 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
 }
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200 } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_sentiment } = row;
   const bucket   = bbBucket(bb_position);
-  const score    = scannerScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend);
+  const score    = entryScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend, gamma_env, flow_sentiment);
   const ivComp   = compositeIv(iv, iv_rank);
   const trend    = getTrendState(last, ma_50, ma_200);
   const label    = scoreLabel(score);
@@ -1414,7 +1385,7 @@ export function RadarTab({ positions = null, account = null }) {
       const d = sortBy.dir === "asc" ? 1 : -1;  // multiplier: asc=1, desc=-1
 
       const getVal = {
-        score:        r => scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null),
+        score:        r => entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment),
         bb:           r => r.bb_position,
         iv_rank:      r => r.iv_rank,
         iv_raw:       r => r.iv,
@@ -1439,7 +1410,7 @@ export function RadarTab({ positions = null, account = null }) {
   }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext, ivTrendsByTicker]);
 
   const strongCount = useMemo(() =>
-    processedRows.filter(r => scoreLabel(scannerScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null)) === "Strong").length,
+    processedRows.filter(r => scoreLabel(entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment)) === "Strong").length,
     [processedRows, ivTrendsByTicker]
   );
 
