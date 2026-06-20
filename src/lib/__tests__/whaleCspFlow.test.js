@@ -94,6 +94,22 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(bbb.trade_count).toBe(1);
   });
 
+  it("floats candidates above bigger non-candidates", () => {
+    const sigs = [
+      { ticker: "BIG", flow_sentiment: 0.0, whale_put_sells: [
+        { ticker: "BIG", strike: 90, underlying: 100, premium: 5_000_000, expiry: "2026-07-20" }, // huge, but flat flow
+      ]},
+      { ticker: "CAND", flow_sentiment: 0.4, whale_put_sells: [
+        { ticker: "CAND", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // small, but candidate
+      ]},
+    ];
+    const score = new Map([["BIG", { label: "Neutral", ivRank: 20 }], ["CAND", { label: "Strong", ivRank: 70 }]]);
+    const rows = summarizeWhaleFlowByTicker(sigs, { today, otmOnly: true, scoreByTicker: score });
+    expect(rows[0].ticker).toBe("CAND");         // candidate first despite less premium
+    expect(rows[0].is_candidate).toBe(true);
+    expect(rows[1].is_candidate).toBe(false);
+  });
+
   it("accepts a plain-object score map and exposes drill-down trades", () => {
     const rows = summarizeWhaleFlowByTicker(filterSigs, {
       today, otmOnly: true, scoreByTicker: { AAA: { label: "Moderate", ivRank: 55 } },

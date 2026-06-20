@@ -17,6 +17,18 @@ const SCORE_COLOR = {
   Weak:     theme.text.subtle,
 };
 
+// Column explanations — used for both the header hover tooltip (desktop) and
+// the tap-to-open column guide (mobile). Written for someone still learning.
+const COLUMN_HELP = {
+  "Ticker":     "The stock. ★ + green row = a prime CSP candidate: good setup AND bullish flow. 'held' = you already have a position in it.",
+  "Score":      "Your entry quality — IV richness + Bollinger position + trend + gamma/flow. Strong or Moderate = a better setup to sell a put. IVR = IV rank; higher = richer premium (good = ~50+).",
+  "Put-sell $": "Total premium institutions collected selling puts here (within the filter). Bigger = more institutional conviction by size. Good = large.",
+  "#":          "Number of separate whale put-sell trades. More = repeated conviction, not a one-off. Good = several.",
+  "Top strike": "The strike with the most put-sell premium — a price level whales are validating. +% = out-of-the-money (below spot, the safe sell zone, good); −% = in-the-money (more aggressive).",
+  "Flow":       "Net options flow direction. Bullish (good for selling puts) = put-selling + call-buying dominate. Bearish = the opposite. Neutral = mixed.",
+  "Gamma":      "Dealer-gamma regime. Stable (good) = market makers calm the stock — CSP-friendly. Choppy (caution) = they amplify moves — faster, riskier. Flat = neutral.",
+};
+
 function flowChip(s) {
   if (s == null)  return { label: "—",       color: theme.text.subtle };
   if (s >= 0.2)   return { label: "bullish",  color: theme.green };
@@ -39,9 +51,10 @@ function gammaChip(g) {
 // to its individual trades.
 export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
   const { uwSignals } = useUwSignals();
-  const [open, setOpen]         = useState(false);
-  const [filtered, setFiltered] = useState(true);
-  const [expanded, setExpanded] = useState(null);
+  const [open, setOpen]           = useState(false);
+  const [filtered, setFiltered]   = useState(true);
+  const [expanded, setExpanded]   = useState(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const rows = useMemo(() => {
     const list = [...uwSignals.values()];
@@ -55,10 +68,11 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
   if (uwSignals.size === 0) return null;
 
   const th = (label, align = "left") => (
-    <th style={{
+    <th title={COLUMN_HELP[label]} style={{
       textAlign: align, padding: `${theme.space[2]}px ${theme.space[3]}px`,
       color: theme.text.muted, fontWeight: 500, fontSize: theme.size.xs,
       textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap",
+      cursor: "help", textDecoration: "underline dotted", textUnderlineOffset: 3,
     }}>{label}</th>
   );
   const td = (content, style = {}) => (
@@ -92,10 +106,30 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
 
       {open && (
         <div style={{ borderTop: `1px solid ${theme.border.default}` }}>
-          <div style={{ display: "flex", gap: theme.space[1], padding: `${theme.space[2]}px ${theme.space[3]}px` }}>
+          <div style={{ display: "flex", gap: theme.space[1], alignItems: "center", flexWrap: "wrap", padding: `${theme.space[2]}px ${theme.space[3]}px` }}>
             <FilterBtn active={filtered}  onClick={() => setFiltered(true)}>CSP window (7–65d · OTM)</FilterBtn>
             <FilterBtn active={!filtered} onClick={() => setFiltered(false)}>All put-sells</FilterBtn>
+            <button
+              onClick={() => setGuideOpen((g) => !g)}
+              style={{
+                marginLeft: "auto", fontSize: theme.size.xs, fontFamily: "inherit", cursor: "pointer",
+                background: "transparent", border: "none", color: theme.text.muted, textDecoration: "underline",
+              }}
+            >{guideOpen ? "hide guide" : "ⓘ what do these mean?"}</button>
           </div>
+
+          {guideOpen && (
+            <div style={{
+              padding: `${theme.space[2]}px ${theme.space[4]}px ${theme.space[3]}px`,
+              borderBottom: `1px solid ${theme.border.default}`, background: theme.bg.base,
+            }}>
+              {Object.entries(COLUMN_HELP).map(([col, text]) => (
+                <div key={col} style={{ fontSize: theme.size.xs, color: theme.text.muted, padding: "3px 0", lineHeight: 1.5 }}>
+                  <span style={{ color: theme.text.secondary, fontWeight: 600 }}>{col}</span> — {text}
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.sm }}>
@@ -111,8 +145,7 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
                   const fc       = flowChip(r.flow_sentiment);
                   const gc       = gammaChip(r.gamma_env);
                   const scColor  = SCORE_COLOR[r.score_label] ?? theme.text.subtle;
-                  // Shortlist signal: good setup AND bullish institutional flow.
-                  const isCandidate = (r.score_label === "Strong" || r.score_label === "Moderate") && r.flow_sentiment > 0.2;
+                  const isCandidate = r.is_candidate;
                   return (
                     <FragmentRow key={r.ticker}>
                       <tr

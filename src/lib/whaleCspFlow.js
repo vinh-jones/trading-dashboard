@@ -91,6 +91,10 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
     for (const [k, v] of g.byStrike) if (v > topPrem) { topPrem = v; topStrike = k; }
     const topTrade = g.trades.find((t) => t.strike === topStrike);
     const score = lookupScore(g.ticker) ?? null;
+    const flow  = flowByTicker.get(g.ticker) ?? null;
+    // Candidate = good setup AND bullish institutional flow — the prime "sell a
+    // put here" names, floated to the top.
+    const isCandidate = (score?.label === "Strong" || score?.label === "Moderate") && flow != null && flow > 0.2;
     out.push({
       ticker:         g.ticker,
       total_premium:  g.total_premium,
@@ -102,11 +106,14 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
       any_sweep:      g.any_sweep,
       held:           g.held,
       gamma_env:      gammaByTicker.get(g.ticker) ?? null,
-      flow_sentiment: flowByTicker.get(g.ticker) ?? null,
+      flow_sentiment: flow,
       score_label:    score?.label ?? null,
       iv_rank:        score?.ivRank ?? null,
+      is_candidate:   isCandidate,
       trades:         g.trades,
     });
   }
-  return out.sort((a, b) => b.total_premium - a.total_premium);
+  // Candidates first, then by total put-sell premium.
+  return out.sort((a, b) =>
+    (Number(b.is_candidate) - Number(a.is_candidate)) || (b.total_premium - a.total_premium));
 }
