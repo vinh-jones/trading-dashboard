@@ -18,6 +18,8 @@ import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeRedeploySignal } from "../lib/redeploySignal";
+import { trendOverlay } from "../lib/trendOverlay";
+import { useUwSignals } from "../hooks/useUwSignals";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
 import { CohortsPanel } from "./CohortsPanel";
@@ -379,9 +381,30 @@ function redeployCopy(rd) {
 
 // Collapsed-row indicator. redeploy = visible chip; watch = muted ratio;
 // hold / underwater are silent (the detail still shows on expand).
-function RedeployIndicator({ rd }) {
+function RedeployIndicator({ rd, ov }) {
   if (!rd || rd.skipped) return null;
-  if (rd.redeploy_state === "redeploy") {
+  const state = ov?.state ?? rd.redeploy_state;
+  // Flow overrides: close-trigger fired but smart money bullish → let it ride;
+  // holding fine but flow turned bearish → shed early.
+  if (state === "let_it_ride") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${theme.green}22`, color: theme.green, border: `1px solid ${theme.green}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>▲ let it ride</span>
+    );
+  }
+  if (state === "shed") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${theme.amber}22`, color: theme.amber, border: `1px solid ${theme.amber}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>⚠ flow turning</span>
+    );
+  }
+  if (state === "redeploy") {
     return (
       <span style={{
         marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
@@ -390,7 +413,7 @@ function RedeployIndicator({ rd }) {
       }}>↻ {rd.ratio.toFixed(2)}×</span>
     );
   }
-  if (rd.redeploy_state === "watch") {
+  if (state === "watch") {
     return (
       <span style={{
         marginLeft: theme.space[1], color: theme.blue, opacity: 0.75,
@@ -401,11 +424,22 @@ function RedeployIndicator({ rd }) {
   return null;
 }
 
-function RedeployPanel({ rd }) {
+function RedeployPanel({ rd, ov }) {
   if (!rd || rd.skipped || rd.redeploy_state === "underwater") return null;
 
-  const actionable = rd.redeploy_state === "redeploy";
-  const color = (actionable || rd.redeploy_state === "watch") ? theme.blue : theme.text.muted;
+  const state      = ov?.state ?? rd.redeploy_state;
+  const overridden = !!ov?.overridden;
+  const HEAD = {
+    let_it_ride: { label: "Let it ride", color: theme.green },
+    shed:        { label: "Flow turning", color: theme.amber },
+    redeploy:    { label: "Redeploy",     color: theme.blue },
+    watch:       { label: "Redeploy",     color: theme.blue },
+  };
+  const head  = HEAD[state] ?? { label: "Redeploy", color: theme.text.muted };
+  const tint  = state === "let_it_ride" ? theme.green : state === "shed" ? theme.amber : state === "redeploy" ? theme.blue : null;
+
+  const flowLabel = ov?.flow == null ? "—" : ov.flow >= 0.2 ? "bullish" : ov.flow <= -0.2 ? "bearish" : "neutral";
+  const flowColor = ov?.flow == null ? theme.text.muted : ov.flow >= 0.2 ? theme.green : ov.flow <= -0.2 ? theme.red : theme.text.muted;
 
   const labelStyle = {
     fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase",
@@ -420,22 +454,23 @@ function RedeployPanel({ rd }) {
 
   return (
     <div style={{
-      background: actionable ? `${theme.blue}11` : theme.bg.surface,
-      borderTop: `1px solid ${actionable ? `${theme.blue}44` : theme.border.default}`,
+      background: tint ? `${tint}11` : theme.bg.surface,
+      borderTop: `1px solid ${tint ? `${tint}44` : theme.border.default}`,
       borderBottom: `1px solid ${theme.border.default}`,
       padding: `${theme.space[3]}px ${theme.space[4]}px`,
     }}>
       <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
-        <span style={{ fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
-          Redeploy
+        <span style={{ fontWeight: 600, color: head.color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
+          {head.label}
         </span>
-        {redeployCopy(rd)}
+        {overridden ? ov.reason : redeployCopy(rd)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.sm }}>
-        {cell("Ratio vs fresh", `${rd.ratio.toFixed(2)}×`, color)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.sm }}>
+        {cell("Ratio vs fresh", `${rd.ratio.toFixed(2)}×`, tint ?? undefined)}
         {cell("Premium kept", `${Math.round(rd.kept_pct * 100)}%`)}
         {cell("Time left", `${Math.round(rd.frac_time_left * 100)}% · ${rd.days_remaining}d`)}
-        {cell("Close trigger", `≤ $${rd.trigger_mark.toFixed(2)}`, actionable ? theme.blue : undefined)}
+        {cell("Close trigger", `≤ $${rd.trigger_mark.toFixed(2)}`)}
+        {cell("Institutional flow", flowLabel, flowColor)}
       </div>
     </div>
   );
@@ -594,7 +629,7 @@ function PriceTargetPanel({ targets, position, stockPrice }) {
 
 // ── Shared positions table ────────────────────────────────────────────────────
 
-function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket, selectable, selectedKeys, setSelectedKeys, accountValue, onSaveCohort, onOpenCohort }) {
+function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYieldBenchmark, isMobile, highlightedTicker, onOpenTickerDetail, strategicTagsByPos, onShowJournalEntry, onTagPosition, onOpenBasket, selectable, selectedKeys, setSelectedKeys, accountValue, onSaveCohort, onOpenCohort }) {
   const isLeap = positionType === "leaps";
   const isCC   = positionType === "ccs";
   const [expandedRowKey, setExpandedRowKey] = useState(null);
@@ -717,7 +752,12 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
       });
     }
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy };
+    // Consumer 4 — flow veto on the redeploy signal (bullish flow → let it ride).
+    const redeployOverlay = redeploy
+      ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null)
+      : null;
+
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -792,7 +832,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -883,7 +923,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
                       <HoldYieldIndicator hy={holdYield} />
-                      <RedeployIndicator rd={redeploy} />
+                      <RedeployIndicator rd={redeploy} ov={redeployOverlay} />
                       {hasTagRow && !isExpanded && !isMobile && (
                         <span
                           onClick={canExpand ? (e) => { e.stopPropagation(); setExpandedRowKey(rowKey); } : undefined}
@@ -981,7 +1021,7 @@ function PositionsTable({ rows, positionType, quoteMap, cspEntryYieldBenchmark, 
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
                       <HoldYieldPanel hy={holdYield} />
-                      <RedeployPanel rd={redeploy} />
+                      <RedeployPanel rd={redeploy} ov={redeployOverlay} />
                       {priceTargets && (
                         <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                       )}
@@ -1013,6 +1053,7 @@ const TYPE_TO_TAB = { CSP: "csps", CC: "ccs", LEAP: "leaps" };
 export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onOpenTickerDetail, onShowJournalEntry, onTagPosition, onOpenBasket }) {
   const { positions, account, cspEntryYieldBenchmark, trades } = useData();
   const { quoteMap } = useQuotes();
+  const { uwSignals } = useUwSignals();
   const isMobile = useWindowWidth() < 600;
   const { assigned_shares, open_csps, open_leaps } = positions;
 
@@ -1307,6 +1348,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               rows={activeTab?.rows ?? []}
               positionType={positionTab}
               quoteMap={quoteMap}
+              uwSignals={uwSignals}
               cspEntryYieldBenchmark={cspEntryYieldBenchmark}
               selectable={positionTab === "csps"}
               selectedKeys={selectedKeys}
