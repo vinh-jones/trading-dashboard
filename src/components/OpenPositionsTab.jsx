@@ -806,12 +806,16 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
       // layered over the price cushion (Consumer 2).
       const uwSig = uwSignals?.get?.(pos.ticker);
       assignmentRisk = computeAssignmentRisk({
-        earningsDate:  quoteMap.get(pos.ticker)?.earnings_date ?? null,
-        expiry:        pos.expiry_date,
-        today:         todayIso,
-        flowSentiment: uwSig?.flow_sentiment ?? null,
-        gammaEnv:      uwSig?.gamma_env ?? null,
-        cushionState:  enrichedPos.cushion_state,
+        earningsDate:     quoteMap.get(pos.ticker)?.earnings_date ?? null,
+        expiry:           pos.expiry_date,
+        today:            todayIso,
+        flowSentiment:    uwSig?.flow_sentiment ?? null,
+        gammaEnv:         uwSig?.gamma_env ?? null,
+        cushionState:     enrichedPos.cushion_state,
+        shortInterestPct: uwSig?.short_interest_pct ?? null,
+        expectedMovePct:  uwSig?.earnings_expected_move_pct ?? null,
+        spot:             quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null,
+        strike:           pos.strike,
       });
     }
 

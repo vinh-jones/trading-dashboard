@@ -17,27 +17,47 @@ function calendarDays(fromISO, toISO) {
 }
 
 export const ASSIGNMENT_RISK_DEFAULTS = {
-  EARNINGS_SOON_DAYS: 14, // earnings within this window before expiry = high severity
+  EARNINGS_SOON_DAYS: 14,    // earnings within this window before expiry = high severity
   BEARISH_FLOW: -0.2,
   CHOPPY_GAMMA: -0.10,
+  HIGH_SHORT_INTEREST: 20,   // % of float — crowded/fragile
 };
 
 export function computeAssignmentRisk(args = {}, config = ASSIGNMENT_RISK_DEFAULTS) {
-  const { earningsDate, expiry, today, flowSentiment, gammaEnv, cushionState } = args;
+  const { earningsDate, expiry, today, flowSentiment, gammaEnv, cushionState,
+          shortInterestPct, expectedMovePct, spot, strike } = args;
   const cfg = { ...ASSIGNMENT_RISK_DEFAULTS, ...config };
   const todayIso = today ?? new Date().toISOString().slice(0, 10);
 
   const factors = [];
 
-  // Earnings before expiry — gap risk inside the trade's life.
+  // Earnings before expiry — gap risk inside the trade's life. If we know the
+  // option-implied expected move, refine: is the strike inside the expected
+  // downside move (exposed) or outside it (Ryan's preferred setup)?
   const er = entryEarningsRisk({ earningsDateIso: earningsDate, expiryIso: expiry, todayIso });
   const daysToEarnings = er.earningsBeforeExpiry ? calendarDays(todayIso, earningsDate) : null;
   if (er.earningsBeforeExpiry) {
     const soon = daysToEarnings != null && daysToEarnings <= cfg.EARNINGS_SOON_DAYS;
-    factors.push({
-      key: "earnings", severity: soon ? "high" : "med",
-      label: daysToEarnings != null ? `Earnings in ${daysToEarnings}d, before expiry` : "Earnings before expiry",
-    });
+    const whenStr = daysToEarnings != null ? `in ${daysToEarnings}d` : "before expiry";
+
+    let insideMove = null;
+    if (expectedMovePct != null && spot > 0 && strike > 0) {
+      const expectedDown = spot * (1 - expectedMovePct / 100);
+      insideMove = strike >= expectedDown; // strike within the expected downside
+    }
+
+    let severity, label;
+    if (insideMove === true) {
+      severity = "high";
+      label = `Earnings ${whenStr} · strike inside expected ±${expectedMovePct.toFixed(0)}% move`;
+    } else if (insideMove === false) {
+      severity = "low";
+      label = `Earnings ${whenStr} · strike outside expected ±${expectedMovePct.toFixed(0)}% move`;
+    } else {
+      severity = soon ? "high" : "med";
+      label = `Earnings ${whenStr}, before expiry`;
+    }
+    factors.push({ key: "earnings", severity, label });
   }
 
   // Price cushion (the existing, lagging signal) — folded in for one view.
@@ -55,6 +75,11 @@ export function computeAssignmentRisk(args = {}, config = ASSIGNMENT_RISK_DEFAUL
   // Choppy gamma regime — fast/volatile, higher gap risk.
   if (gammaEnv != null && gammaEnv <= cfg.CHOPPY_GAMMA) {
     factors.push({ key: "gamma", severity: "low", label: "Choppy gamma (fast moves)" });
+  }
+
+  // High short interest — crowded/fragile, prone to sharp moves.
+  if (shortInterestPct != null && shortInterestPct >= cfg.HIGH_SHORT_INTEREST) {
+    factors.push({ key: "short", severity: "med", label: `High short interest (${shortInterestPct.toFixed(0)}% of float)` });
   }
 
   factors.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]);
