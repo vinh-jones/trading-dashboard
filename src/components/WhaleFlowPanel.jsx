@@ -24,6 +24,15 @@ function flowChip(s) {
   return { label: "neutral", color: theme.text.muted };
 }
 
+// Gamma environment — positive = dealers stabilize (chop, CSP-friendly),
+// negative = they amplify (fast moves). Ryan sells puts best in stable regimes.
+function gammaChip(g) {
+  if (g == null)   return { label: "—",      color: theme.text.subtle };
+  if (g >= 0.10)   return { label: "stable", color: theme.green };
+  if (g <= -0.10)  return { label: "choppy", color: theme.red };
+  return { label: "flat", color: theme.text.muted };
+}
+
 // Whale CSP flow (Consumer 5) — a per-ticker shortlist of where institutions
 // are selling puts, fused with the Radar entry score. Filtered to your CSP
 // window (7-65 DTE, OTM) by default; toggle to see everything. Each row expands
@@ -93,15 +102,16 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
               <thead>
                 <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
                   {th("Ticker")}{th("Score")}{th("Put-sell $", "right")}{th("#", "right")}
-                  {th("Top strike", "right")}{th("Flow", "right")}
+                  {th("Top strike", "right")}{th("Flow", "right")}{th("Gamma", "right")}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => {
                   const isOpen   = expanded === r.ticker;
                   const fc       = flowChip(r.flow_sentiment);
+                  const gc       = gammaChip(r.gamma_env);
                   const scColor  = SCORE_COLOR[r.score_label] ?? theme.text.subtle;
-                  // Shortlist accent: good setup AND bullish institutional flow.
+                  // Shortlist signal: good setup AND bullish institutional flow.
                   const isCandidate = (r.score_label === "Strong" || r.score_label === "Moderate") && r.flow_sentiment > 0.2;
                   return (
                     <FragmentRow key={r.ticker}>
@@ -110,10 +120,12 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
                         style={{
                           borderBottom: `1px solid ${theme.border.default}`, cursor: "pointer",
                           borderLeft: isCandidate ? `3px solid ${theme.green}` : "3px solid transparent",
+                          background: isCandidate ? `${theme.green}14` : "transparent",
                         }}
                       >
                         {td(
                           <span style={{ fontWeight: 700, color: theme.text.primary }}>
+                            {isCandidate && <span style={{ color: theme.green, marginRight: 4 }}>★</span>}
                             {r.ticker}
                             {r.held && (
                               <span style={{
@@ -146,10 +158,11 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
                           { textAlign: "right" }
                         )}
                         {td(<span style={{ color: fc.color, fontWeight: 600 }}>{fc.label}</span>, { textAlign: "right" })}
+                        {td(<span style={{ color: gc.color, fontWeight: 600 }}>{gc.label}</span>, { textAlign: "right" })}
                       </tr>
                       {isOpen && (
                         <tr>
-                          <td colSpan={6} style={{ padding: 0, background: theme.bg.base }}>
+                          <td colSpan={7} style={{ padding: 0, background: theme.bg.base }}>
                             <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px` }}>
                               {r.trades.map((t, i) => (
                                 <div key={i} style={{
@@ -177,7 +190,7 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
           </div>
 
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.xs, color: theme.text.subtle }}>
-            Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>Green bar</span> = strong/moderate setup AND bullish flow. Click a row for the individual trades.
+            Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>★ green row</span> = strong/moderate setup AND bullish flow — your prime CSP candidates. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
           </div>
         </div>
       )}
