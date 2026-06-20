@@ -39,7 +39,7 @@ export function useRadar() {
             .in("ticker", approvedTickers),
           supabase
             .from("uw_signals")
-            .select("ticker, gamma_env, flow_sentiment")
+            .select("ticker, gamma_env, flow_sentiment, gex_env, gex_support, gex_resistance")
             .in("ticker", approvedTickers),
         ]);
 
@@ -92,6 +92,9 @@ export function useRadar() {
             beta:                  f.beta             ?? null,
             gamma_env:             uw.gamma_env       ?? null,
             flow_sentiment:        uw.flow_sentiment  ?? null,
+            gex_env:               uw.gex_env         ?? null,
+            gex_support:           uw.gex_support     ?? null,
+            gex_resistance:        uw.gex_resistance  ?? null,
           };
         });
 
