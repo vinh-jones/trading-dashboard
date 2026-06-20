@@ -30,6 +30,22 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+// In middleware BYPASS, so this self-authenticates: Vercel cron sends
+// `Authorization: Bearer ${CRON_SECRET}`; a logged-in manual trigger from the
+// dashboard carries the app_auth cookie (or Bearer APP_SECRET).
+function authorized(req) {
+  const auth   = req.headers["authorization"] || "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null;
+  const cron   = process.env.CRON_SECRET;
+  const app    = process.env.APP_SECRET;
+  if (cron && bearer === cron) return true;
+  if (app && bearer === app) return true;
+  const cookie = req.headers.cookie || "";
+  const m = cookie.match(/(?:^|;\s*)app_auth=([^;]+)/);
+  const cookieTok = m ? decodeURIComponent(m[1]) : null;
+  return !!(app && cookieTok === app);
+}
+
 async function resolveTickers(supabase, req) {
   const override = (req.query.tickers || "").trim();
   if (override) {
@@ -48,6 +64,9 @@ async function resolveTickers(supabase, req) {
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
+  }
+  if (!authorized(req)) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   if (!hasUwKey()) {
     // Soft no-op so the cron doesn't error before the key is configured.
