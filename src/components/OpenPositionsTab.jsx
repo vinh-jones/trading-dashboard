@@ -19,6 +19,7 @@ import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeRedeploySignal } from "../lib/redeploySignal";
 import { trendOverlay } from "../lib/trendOverlay";
+import { computeAssignmentRisk } from "../lib/assignmentRisk";
 import { useUwSignals } from "../hooks/useUwSignals";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
@@ -477,6 +478,54 @@ function RedeployPanel({ rd, ov }) {
   );
 }
 
+// ── Assignment-risk early warning (Consumer 2) ──────────────────────────────────
+// Earnings before expiry is the net-new row chip (flow has its own redeploy
+// chip, the cushion its own dot). The full factor list lives in the panel.
+
+function AssignmentRiskIndicator({ risk }) {
+  if (!risk?.earnings_before_expiry) return null;
+  const soon  = risk.days_to_earnings != null && risk.days_to_earnings <= 14;
+  const color = soon ? theme.red : theme.amber;
+  return (
+    <span
+      title={`Earnings ${risk.days_to_earnings != null ? `in ${risk.days_to_earnings}d ` : ""}before this CSP expires — gap risk. Ryan sells outside the expected move around earnings.`}
+      style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${color}22`, color, border: `1px solid ${color}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>⚠ ER {risk.days_to_earnings != null ? `${risk.days_to_earnings}d` : ""}</span>
+  );
+}
+
+function AssignmentRiskPanel({ risk }) {
+  if (!risk || risk.level === "none") return null;
+  const levelColor = risk.level === "high" ? theme.red : risk.level === "elevated" ? theme.amber : theme.text.muted;
+  const sevColor = { high: theme.red, med: theme.amber, low: theme.text.muted };
+  return (
+    <div style={{
+      background: `${levelColor}11`,
+      borderTop: `1px solid ${levelColor}44`,
+      borderBottom: `1px solid ${theme.border.default}`,
+      padding: `${theme.space[3]}px ${theme.space[4]}px`,
+    }}>
+      <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
+        <span style={{ fontWeight: 600, color: levelColor, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
+          Assignment risk · {risk.level}
+        </span>
+        Leading warnings before the price cushion breaches.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {risk.factors.map((f) => (
+          <div key={f.key} style={{ fontSize: theme.size.sm, color: theme.text.secondary, display: "flex", alignItems: "center", gap: theme.space[2] }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: sevColor[f.severity], flexShrink: 0 }} />
+            {f.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
 function PriceTargetPanel({ targets, position, stockPrice }) {
@@ -720,6 +769,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     let enrichedPos = pos;
     let holdYield = null;
     let redeploy = null;
+    let assignmentRisk = null;
     if (isCsp) {
       const stockMid = quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null;
       const iv       = quoteMap.get(pos.ticker)?.iv  ?? null;
@@ -751,6 +801,18 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
         openDate:         pos.open_date,
         today:            todayIso,
       });
+
+      // Assignment-risk early warning — earnings/flow/gamma leading indicators
+      // layered over the price cushion (Consumer 2).
+      const uwSig = uwSignals?.get?.(pos.ticker);
+      assignmentRisk = computeAssignmentRisk({
+        earningsDate:  quoteMap.get(pos.ticker)?.earnings_date ?? null,
+        expiry:        pos.expiry_date,
+        today:         todayIso,
+        flowSentiment: uwSig?.flow_sentiment ?? null,
+        gammaEnv:      uwSig?.gamma_env ?? null,
+        cushionState:  enrichedPos.cushion_state,
+      });
     }
 
     // Consumer 4 — flow veto on the redeploy signal (bullish flow → let it ride).
@@ -758,7 +820,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
       ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null)
       : null;
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -833,7 +895,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -925,6 +987,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                       )}
                       <HoldYieldIndicator hy={holdYield} />
                       <RedeployIndicator rd={redeploy} ov={redeployOverlay} />
+                      <AssignmentRiskIndicator risk={assignmentRisk} />
                       {hasTagRow && !isExpanded && !isMobile && (
                         <span
                           onClick={canExpand ? (e) => { e.stopPropagation(); setExpandedRowKey(rowKey); } : undefined}
@@ -1018,6 +1081,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                           )}
                         </div>
                       )}
+                      <AssignmentRiskPanel risk={assignmentRisk} />
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
