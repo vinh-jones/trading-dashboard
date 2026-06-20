@@ -55,30 +55,38 @@ function pickNum(row, keys) {
 }
 
 const STRIKE_FIELDS = ["strike", "strike_price"];
-// A single signed net-gamma field, if UW exposes one.
-const GAMMA_FIELDS  = ["gamma_per_one_percent_move_oi", "net_gamma", "gamma_oi", "gamma_notional", "gamma"];
 
-// Normalize UW's by-strike rows into [{ strike, gamma }] (gamma = signed net
-// dealer gamma at that strike). Falls back to call_gamma − put_gamma when only
-// the split is given.
+// Net signed dealer gamma at a strike. UW's /greek-exposure/strike gives
+// call_gex + put_gex (put_gex already signed negative — same convention as
+// gammaEnvFromGreek), so net = call_gex + put_gex. Falls back to the
+// spot-exposures *_gamma_oi split, then to a single net field, for resilience.
+function netGammaAtStrike(r) {
+  const callGex = pickNum(r, ["call_gex"]);
+  const putGex  = pickNum(r, ["put_gex"]);
+  if (callGex != null || putGex != null) return (callGex ?? 0) + (putGex ?? 0);
+  const callOi = pickNum(r, ["call_gamma_oi", "call_gamma"]);
+  const putOi  = pickNum(r, ["put_gamma_oi", "put_gamma"]);
+  if (callOi != null || putOi != null) return (callOi ?? 0) + (putOi ?? 0);
+  return pickNum(r, ["gamma_per_one_percent_move_oi", "net_gamma", "gamma_oi", "gamma_notional", "gamma"]);
+}
+
+// Normalize UW's by-strike rows into [{ strike, gamma }]. The response carries
+// one row per strike per `date`; keep only the latest date's full ladder.
 function normalizeStrikeRows(resp) {
   const rows = resp?.data ?? resp ?? [];
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((r) => {
-      const strike = pickNum(r, STRIKE_FIELDS);
-      let gamma = pickNum(r, GAMMA_FIELDS);
-      if (gamma == null) {
-        const call = pickNum(r, ["call_gamma_oi", "call_gamma"]);
-        const put  = pickNum(r, ["put_gamma_oi", "put_gamma"]);
-        if (call != null || put != null) gamma = (call ?? 0) - (put ?? 0);
-      }
-      return { strike, gamma };
-    })
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const latestDate = rows.reduce((m, r) => {
+    const d = String(r?.date ?? "");
+    return d > m ? d : m;
+  }, "");
+  const ladder = latestDate ? rows.filter((r) => String(r?.date ?? "") === latestDate) : rows;
+  return ladder
+    .map((r) => ({ strike: pickNum(r, STRIKE_FIELDS), gamma: netGammaAtStrike(r) }))
     .filter((r) => r.strike != null && r.gamma != null);
 }
 
-// Try the primary by-strike endpoint, fall back to the spot-exposures variant.
+// /greek-exposure/strike is the clean per-strike ladder (call_gex/put_gex);
+// fall back to spot-exposures/strike only if it returns nothing.
 async function fetchStrikeProfile(ticker) {
   let rows = normalizeStrikeRows(await fetchGreekExposureByStrike(ticker));
   if (rows.length === 0) rows = normalizeStrikeRows(await fetchSpotExposuresByStrike(ticker));
