@@ -23,10 +23,11 @@ export function useRadar() {
 
         const approvedTickers = universe.map((u) => u.ticker);
 
-        // 2. Fetch quotes + fundamentals in parallel
+        // 2. Fetch quotes + fundamentals + UW signals in parallel
         const [
           { data: quotes,       error: quotesErr },
           { data: fundamentals, error: fundErr   },
+          { data: uwSignals,    error: uwErr     },
         ] = await Promise.all([
           supabase
             .from("quotes")
@@ -36,10 +37,16 @@ export function useRadar() {
             .from("fundamentals")
             .select("ticker, pe_ttm, pe_annual, eps_ttm, beta")
             .in("ticker", approvedTickers),
+          supabase
+            .from("uw_signals")
+            .select("ticker, gamma_env, flow_sentiment")
+            .in("ticker", approvedTickers),
         ]);
 
         if (quotesErr) throw quotesErr;
         if (fundErr) console.warn("[useRadar] fundamentals fetch failed:", fundErr.message);
+        // UW signals are optional — null/empty just means the score modifiers stay no-ops.
+        if (uwErr) console.warn("[useRadar] uw_signals fetch failed:", uwErr.message);
 
         // 3. Build lookup maps
         const quotesMap = {};
@@ -50,11 +57,16 @@ export function useRadar() {
         for (const f of (fundamentals || [])) {
           fundMap[f.ticker] = f;
         }
+        const uwMap = {};
+        for (const u of (uwSignals || [])) {
+          uwMap[u.ticker] = u;
+        }
 
         // 4. Merge universe + quotes + fundamentals
         const merged = universe.map((u) => {
-          const q = quotesMap[u.ticker] || {};
-          const f = fundMap[u.ticker]   || {};
+          const q  = quotesMap[u.ticker] || {};
+          const f  = fundMap[u.ticker]   || {};
+          const uw = uwMap[u.ticker]     || {};
           return {
             ticker:                u.ticker,
             company:               u.company,
@@ -78,6 +90,8 @@ export function useRadar() {
             pe_annual:             f.pe_annual        ?? null,
             eps_ttm:               f.eps_ttm          ?? null,
             beta:                  f.beta             ?? null,
+            gamma_env:             uw.gamma_env       ?? null,
+            flow_sentiment:        uw.flow_sentiment  ?? null,
           };
         });
 
