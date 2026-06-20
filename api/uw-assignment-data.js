@@ -40,20 +40,12 @@ function authorized(req) {
   return !!(app && cookieTok === app);
 }
 
-// Field on a short-interest row that holds short interest as a fraction of
-// float, ordered most- to least- semantically precise. UW's interest-float
-// rows expose this as `si_float...` (short interest ÷ float, a small decimal
-// like 0.012 = 1.2%). NOT `percent_returned`, which is a securities-lending
-// "shares returned" stat that runs in the double digits — wrong metric.
-const SHORT_FLOAT_FIELDS = [
-  "short_percent_of_float",
-  "short_interest_percent_of_float",
-  "si_float_perc",
-  "si_float_returned",
-  "si_float",
-  "percent_of_float",
-  "short_float_perc",
-];
+// Field holding short interest as a percent of float. UW's interest-float
+// rows pre-compute this as `percent_returned`, already expressed as a percent
+// ("2.16" = 2.16% of float). Verified: si_float_returned (short shares, in
+// thousands) ÷ total_float_returned matches percent_returned exactly. The
+// other names are defensive fallbacks for shape changes.
+const SHORT_FLOAT_FIELDS = ["percent_returned", "short_percent_of_float", "short_float_perc"];
 
 // Row date, newest first. UW uses market_date (or created_at) on these rows.
 function shortRowDate(r) {
@@ -71,16 +63,19 @@ function pickNum(row, keys) {
   return null;
 }
 
-// Latest short interest as a percent of float. UW returns the ratio as a
-// fraction (0.012 = 1.2%); if a field already comes through as a percent
-// (>= 1) leave it. Realistic short floats top out well under 100%.
+// Latest short interest as a percent of float. percent_returned is already a
+// percent, so it is used as-is (no fraction scaling — that would turn a real
+// 0.82% into 82%). Falls back to short shares (thousands) ÷ float if absent.
 function latestShortFloatPct(resp) {
   const rows = resp?.data ?? resp ?? [];
   if (!Array.isArray(rows) || rows.length === 0) return null;
   const latest = [...rows].sort((a, b) => shortRowDate(b).localeCompare(shortRowDate(a)))[0];
   const v = pickNum(latest, SHORT_FLOAT_FIELDS);
-  if (v == null) return null;
-  return +(v < 1 ? v * 100 : v).toFixed(2);
+  if (v != null) return +v.toFixed(2);
+  const si = parseFloat(latest?.si_float_returned);
+  const fl = parseFloat(latest?.total_float_returned);
+  if (Number.isFinite(si) && Number.isFinite(fl) && fl > 0) return +((si * 1000) / fl * 100).toFixed(2);
+  return null;
 }
 
 // Expected option-implied move % for the next upcoming earnings report.
