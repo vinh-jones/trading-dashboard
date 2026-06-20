@@ -271,6 +271,32 @@ const IV_TREND_EXPLANATIONS = {
     `Scanner score reduced 10% (compressing, but post-crush entries are still valid).`,
 };
 
+// ── GEX / dealer-gamma environment (Consumer 3) ──────────────────────────────
+// Net-gamma regime from the per-strike profile (api/uw-gex → uw_signals).
+// Compact-row chip is loud on choppy, subtle on stable, hidden on neutral.
+const GEX_ENV_META = {
+  stabilized: { label: "Gamma: Stable",  color: theme.green,      bg: theme.alert.successBg,
+    tip: "Positive net dealer gamma — market-makers buy dips / sell rips, dampening moves. Ryan's preferred CSP regime." },
+  choppy:     { label: "Gamma: Choppy",  color: theme.red,        bg: theme.alert.dangerBg,
+    tip: "Negative net dealer gamma — market-makers amplify moves. Faster, gappier action and higher assignment risk; size down or wait." },
+  neutral:    { label: "Gamma: Neutral", color: theme.text.muted, bg: theme.bg.surface,
+    tip: "Dealer gamma roughly balanced — no strong stabilizing or accelerating bias." },
+};
+
+const GEX_EXPLANATIONS = {
+  stabilized: (t) =>
+    `${t} is in a positive net-gamma regime — dealers are net long gamma, so they buy dips and sell rips, ` +
+    `dampening intraday moves. This is the CSP-friendly environment: price tends to grind and pin rather than gap. ` +
+    `Sell with normal size if Bollinger position and IV confirm.`,
+  choppy: (t) =>
+    `${t} is in a negative net-gamma regime — dealers are net short gamma, so they sell into weakness and buy into ` +
+    `strength, amplifying moves. Expect faster, gappier price action and elevated assignment risk on a sharp drop. ` +
+    `Size down, or wait for the regime to flip positive.`,
+  neutral: (t) =>
+    `${t}'s dealer gamma is roughly balanced — no strong stabilizing or accelerating bias. Lean on Bollinger ` +
+    `position, IV, and the gamma walls below for strike placement.`,
+};
+
 // ── VIX context line (new, for ExpandedPanel top) ────────────────────────────
 function vixContextLine(vix, vixBand, ivRank) {
   if (!vix || !vixBand) return null;
@@ -505,7 +531,7 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
 }
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_sentiment } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_sentiment, gex_env } = row;
   const bucket   = bbBucket(bb_position);
   const score    = entryScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend, gamma_env, flow_sentiment);
   const ivComp   = compositeIv(iv, iv_rank);
@@ -605,6 +631,16 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
               tooltip={IV_TREND_DEFINITIONS[ivTrend.state]}
               color={IV_TREND_COLORS[ivTrend.state].text}
               background={IV_TREND_COLORS[ivTrend.state].bg}
+            />
+          )}
+
+          {/* GEX dealer-gamma badge — loud on choppy, subtle on stable, hidden on neutral/none */}
+          {gex_env && gex_env !== "neutral" && GEX_ENV_META[gex_env] && (
+            <ChipWithTooltip
+              label={GEX_ENV_META[gex_env].label}
+              tooltip={GEX_ENV_META[gex_env].tip}
+              color={GEX_ENV_META[gex_env].color}
+              background={GEX_ENV_META[gex_env].bg}
             />
           )}
 
@@ -725,7 +761,7 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200 } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance } = row;
   const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
@@ -1026,6 +1062,46 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>IV data pending</div>
       )}
+
+      {/* ── Dealer Gamma (GEX) section ── */}
+      {gex_env && GEX_ENV_META[gex_env] && (() => {
+        const meta = GEX_ENV_META[gex_env];
+        const fmt = (n) => (n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+        const sampleStrike = sample?.status === "ok" ? sample.strike : null;
+        let strikeNote = null;
+        if (sampleStrike != null && gex_support != null) {
+          strikeNote = sampleStrike <= gex_support
+            ? `Your sample $${sampleStrike}p sits below the negative-gamma zone (${fmt(gex_support)}) — a break there can accelerate toward your strike. Favor a strike with a positive-gamma wall beneath it.`
+            : `Your sample $${sampleStrike}p sits above the negative-gamma zone (${fmt(gex_support)}) — the acceleration level is below your strike.`;
+        }
+        return (
+          <>
+            <div style={sectionLabelStyle}>Dealer Gamma (GEX)</div>
+            <div style={{ display: "flex", gap: theme.space[4], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+              <span style={{ ...monoStyle }}>
+                <span style={{ color: theme.text.subtle }}>Environment: </span>
+                <span style={{ color: meta.color, fontWeight: 600 }}>{meta.label.replace("Gamma: ", "")}</span>
+              </span>
+              {fieldRow("Resistance wall", fmt(gex_resistance))}
+              {fieldRow("Support / accel.", fmt(gex_support))}
+            </div>
+            <div style={{
+              fontSize:     theme.size.sm,
+              color:        theme.text.muted,
+              lineHeight:   1.6,
+              padding:      `${theme.space[2]}px ${theme.space[3]}px`,
+              background:   theme.bg.surface,
+              borderRadius: theme.radius.sm,
+              border:       `1px solid ${theme.border.default}`,
+            }}>
+              {GEX_EXPLANATIONS[gex_env](ticker)}
+              {strikeNote && (
+                <div style={{ marginTop: theme.space[2], color: theme.text.secondary }}>{strikeNote}</div>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Current Positions section ── */}
       <div style={sectionLabelStyle}>Current Positions</div>
