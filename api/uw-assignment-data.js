@@ -111,23 +111,6 @@ export default async function handler(req, res) {
     }
 
     const results = [];
-    // ?debug=1 — dump the raw UW response shape (field names + a couple rows)
-    // so the parsers can be mapped exactly. Does not write.
-    if (req.query.debug) {
-      const trim = (resp) => {
-        const rows = resp?.data ?? resp;
-        if (Array.isArray(rows)) return { count: rows.length, keys: Object.keys(rows[0] ?? {}), sample: rows.slice(0, 2) };
-        if (rows && typeof rows === "object") return { keys: Object.keys(rows), value: rows };
-        return rows;
-      };
-      const debug = [];
-      for (const ticker of tickers) {
-        const [shortResp, earnResp] = await Promise.all([fetchShortInterest(ticker), fetchEarnings(ticker)]);
-        debug.push({ ticker, short: trim(shortResp), earnings: trim(earnResp) });
-      }
-      return res.status(200).json({ ok: true, debug });
-    }
-
     for (const ticker of tickers) {
       try {
         const [shortResp, earnResp] = await Promise.all([fetchShortInterest(ticker), fetchEarnings(ticker)]);
