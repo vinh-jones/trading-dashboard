@@ -93,13 +93,24 @@ All four consumers read from one pipeline that mirrors the existing quotes flow 
 
 Each phase is independently shippable and independently abandonable — if IV-rank entries (Phase 1) don't earn their keep once live, we've learned that cheaply before the heavy phases.
 
-## Open questions / dependencies
+## Endpoint coverage — verified 2026-06-20
 
-- **UW API tier & access:** confirm API Basic ($150/mo) exposes the needed endpoints (net premium, IV rank, GEX, short interest); confirm whether the base platform sub is required on top.
-- **Rate limits / volume:** per-ticker × intraday cadence × tracked names vs API quota.
+Confirmed against UW's **official MCP server README** (their own enumeration of the API surface). All four consumers' data exists in the REST API:
+
+- **IV rank** ✅ (Consumer 1)
+- **Short interest / FTDs / borrow rates** ✅ (Consumer 2)
+- **Greek exposure — GEX/DEX/vanna by strike** ✅ (Consumer 3)
+- **Market tide / net premium + options flow alerts** ✅ (Consumer 4)
+
+**Tier mapping:** the Basic ($150/mo) vs Advanced ($375/mo) split is **REST polling vs websocket streaming + deeper history** — *not* endpoint categories. Our design polls REST on an intraday cadence and explicitly does not need real-time push, so **API Basic covers Phases 0–3 and the core of Phase 4.** The only endpoint found explicitly gated as *Premium* is **congressional/politician trades** — which touches only the insider/congress *enrichment* of the flow veto (deferrable, not core).
+
+## Remaining questions / dependencies
+
+- **Confirm in-account before paying:** is congressional/insider included in Basic or does it need the Premium upgrade (Phase 4 enrichment only); exact REST rate limits vs our per-ticker × intraday volume; whether the base platform sub is required on top of the API plan.
 - **Normalization basis:** net premium normalized by what — avg daily option premium volume? market cap? (per-ticker, so cross-name comparable).
 - **Smoothing window:** sessions of look-back for the flow state to avoid intraday flicker.
 - **ToS:** personal-dashboard use of derived UW data (no redistribution) — fine, but note it.
+- **Build option:** UW ships an official MCP server; a backend REST adapter is still cleaner for a Supabase-writing snapshot job, but the MCP is a viable fallback.
 
 ## Risks
 
