@@ -526,6 +526,41 @@ function AssignmentRiskPanel({ risk }) {
   );
 }
 
+// ── GEX strike-walls expanded panel (Consumer 3) ─────────────────────────────
+
+function GexPanel({ gex }) {
+  if (!gex || !gex.env) return null;
+  const envMeta = {
+    stabilized: { color: theme.green,      label: "Stabilized", note: "Dealers are dampening moves — favorable for holding/selling CSPs." },
+    choppy:     { color: theme.red,        label: "Choppy",     note: "Negative-gamma regime — moves can accelerate; size with caution." },
+    neutral:    { color: theme.text.muted, label: "Neutral",    note: "Balanced dealer gamma — no strong pin or acceleration bias." },
+  }[gex.env];
+  if (!envMeta) return null;
+
+  const fmt = (n) => (n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+
+  return (
+    <div style={{
+      background:   `${envMeta.color}11`,
+      borderTop:    `1px solid ${envMeta.color}44`,
+      borderBottom: `1px solid ${theme.border.default}`,
+      padding:      `${theme.space[3]}px ${theme.space[4]}px`,
+    }}>
+      <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
+        <span style={{ fontWeight: 600, color: envMeta.color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
+          Dealer gamma · {envMeta.label}
+        </span>
+        {envMeta.note}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[4], fontSize: theme.size.sm, color: theme.text.secondary }}>
+        <span>Resistance wall <strong style={{ color: theme.text.primary }}>{fmt(gex.resistance)}</strong></span>
+        <span>Your strike <strong style={{ color: theme.text.primary }}>{fmt(gex.strike)}</strong></span>
+        <span>Support / accel. <strong style={{ color: theme.text.primary }}>{fmt(gex.support)}</strong></span>
+      </div>
+    </div>
+  );
+}
+
 // ── Price Target expanded panel ───────────────────────────────────────────────
 
 function PriceTargetPanel({ targets, position, stockPrice }) {
@@ -770,6 +805,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     let holdYield = null;
     let redeploy = null;
     let assignmentRisk = null;
+    let gex = null;
     if (isCsp) {
       const stockMid = quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null;
       const iv       = quoteMap.get(pos.ticker)?.iv  ?? null;
@@ -817,6 +853,18 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
         spot:             quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null,
         strike:           pos.strike,
       });
+
+      // GEX strike walls (Consumer 3) — net-gamma environment + the support /
+      // resistance walls vs this CSP's strike. Null until the uw-gex cron runs.
+      if (uwSig?.gex_env) {
+        gex = {
+          env:        uwSig.gex_env,
+          support:    uwSig.gex_support ?? null,
+          resistance: uwSig.gex_resistance ?? null,
+          strike:     pos.strike,
+          spot:       quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null,
+        };
+      }
     }
 
     // Consumer 4 — flow veto on the redeploy signal (bullish flow → let it ride).
@@ -824,7 +872,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
       ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null)
       : null;
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -899,7 +947,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -1086,6 +1134,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                         </div>
                       )}
                       <AssignmentRiskPanel risk={assignmentRisk} />
+                      <GexPanel gex={gex} />
                       {pos.cushion_state && pos.cushion_state !== "safe" && (
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
