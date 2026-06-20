@@ -41,6 +41,8 @@ All four consumers read from one pipeline that mirrors the existing quotes flow 
 
 ## Consumer 1 — Entry timing: IV rank (1a) + Ryan's structural gate (1b)  *(ship first)*
 
+> **Build update (2026-06-20):** Consumer 1 already existed as Radar's `scannerScore` (BB·0.5 + IVcomposite·0.5 × trend — exactly 1a/1b co-equal), and `iv_rank` + `bb_position` are already populated for all 55 approved tickers via the existing OpenClaw/Tastytrade feed. So this is an **augment, not a build**: `scannerScore` is extracted to a shared `src/lib/entryScore.js` and gains null-safe `gammaEnvMod` / `flowMod` (UW) + an `entryEarningsRisk` overlay. The modifiers are no-ops until the UW backbone populates `gammaEnv` / `flowSentiment`, so Radar is byte-identical until then. Remaining Phase-1 work: surface the shared score in the CSP selection calculator + ticker detail. **UW's real net-new value is Consumers 2–5; UW IV rank is redundant with the existing feed.**
+
 **Why first:** smallest surface area, proves the pipeline end-to-end, pays off immediately. Entry richness is judged by **two co-equal lenses** — the strongest entry is when they agree:
 
 - **1a — IV rank** (`iv_rank`, IV percentile vs the ticker's own trailing year): the statistical "is premium actually rich" measure. Band helper (<30 cheap / 30–60 fair / >60 rich). Vinh weights this heavily even though Ryan doesn't use it — it is **not** subordinate to 1b.
@@ -106,7 +108,8 @@ Source: Ryan's 5 UW lectures (his workflow, not ours). UW is **confirmation only
 | Phase | Deliverable | Gates on |
 |---|---|---|
 | 0 | Backbone: adapter, tables, `useUwSignals`, stubs | UW key |
-| 1 | Consumer 1 — IV-rank + structural entries | Phase 0 |
+| 1a | Shared `entryScore` lib (augment scannerScore + null-safe UW modifiers + earnings overlay) — **done** | none (uses existing data) |
+| 1b | Surface entry score in CSP calculator + ticker detail | 1a |
 | 2 | Consumer 2 — Assignment defense | Phase 0 (+ existing earnings) |
 | 3 | Consumer 3 — GEX strike walls | Phase 0 |
 | 4 | Consumer 5 — Whale CSP flow list (+ shared put-selling-flow ingestion) | Phase 0 |
