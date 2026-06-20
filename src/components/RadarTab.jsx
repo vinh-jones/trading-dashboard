@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
+import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
@@ -1271,6 +1272,19 @@ export function RadarTab({ positions = null, account = null }) {
   const allTickers = useMemo(() => rows.map(r => r.ticker).filter(Boolean), [rows]);
   const ivTrendsByTicker = useIvTrends(allTickers);
 
+  // Tickers you currently hold — annotates the whale-flow feed. Tolerant of
+  // either an array of positions or the grouped {csps, ccs, leaps, ...} shape.
+  const heldTickers = useMemo(() => {
+    const set = new Set();
+    const add = (arr) => (arr ?? []).forEach((p) => p?.ticker && set.add(p.ticker));
+    if (Array.isArray(positions)) add(positions);
+    else if (positions && typeof positions === "object") {
+      add(positions.csps); add(positions.ccs); add(positions.leaps);
+      add(positions.open_csps); add(positions.open_leaps); add(positions.shares);
+    }
+    return set;
+  }, [positions]);
+
   const [marketContext, setMarketContext]       = useState(null);
   const [bbFilter, setBbFilter]                 = useState("all");
   const [sortBy, setSortBy]                     = useState({ id: "score", dir: "desc" });
@@ -1450,6 +1464,8 @@ export function RadarTab({ positions = null, account = null }) {
 
   return (
     <div>
+      <WhaleFlowPanel heldTickers={heldTickers} />
+
       {/* ── Filter + sort bar ── */}
       <div style={{
         background:   theme.bg.surface,

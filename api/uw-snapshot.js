@@ -35,13 +35,14 @@ async function resolveTickers(supabase, req) {
   if (override) {
     return [...new Set(override.toUpperCase().split(",").map((t) => t.trim()).filter(Boolean))];
   }
-  if (req.query.scope === "approved") {
-    const { data } = await supabase.from("wheel_universe").select("ticker").eq("list_type", "approved");
-    return [...new Set((data ?? []).map((r) => r.ticker))].sort();
+  if (req.query.scope === "positions") {
+    const { data } = await supabase.from("positions").select("ticker");
+    return [...new Set((data ?? []).map((r) => r.ticker).filter(Boolean))].sort();
   }
-  // Default: distinct tickers from open positions (your active risk).
-  const { data } = await supabase.from("positions").select("ticker");
-  return [...new Set((data ?? []).map((r) => r.ticker).filter(Boolean))].sort();
+  // Default: the approved wheel universe — covers the Radar score AND the
+  // Whale CSP flow idea-generation feed across the whole watchlist.
+  const { data } = await supabase.from("wheel_universe").select("ticker").eq("list_type", "approved");
+  return [...new Set((data ?? []).map((r) => r.ticker))].sort();
 }
 
 export default async function handler(req, res) {
@@ -57,17 +58,31 @@ export default async function handler(req, res) {
     const supabase = getSupabase();
     const tickers  = await resolveTickers(supabase, req);
     const now      = new Date().toISOString();
+    const todayStartMs = (() => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d.getTime(); })();
+
+    // Greek exposure is daily data — only refetch when we don't already have a
+    // gamma_env from today. Keeps intraday runs to one call/ticker (flow only),
+    // well within the rate limit + function timeout across the full universe.
+    const { data: existingRows } = await supabase.from("uw_signals").select("ticker, gamma_env, refreshed_at");
+    const existing = new Map((existingRows ?? []).map((r) => [r.ticker, r]));
 
     const results = [];
     for (const ticker of tickers) {
       try {
-        const [greek, alerts] = await Promise.all([
-          fetchGreekExposure(ticker),
-          fetchFlowAlerts(ticker),
-        ]);
+        const prev = existing.get(ticker);
+        const greekFresh = prev?.gamma_env != null && prev?.refreshed_at &&
+          new Date(prev.refreshed_at).getTime() >= todayStartMs;
+
+        const alerts = await fetchFlowAlerts(ticker);
+        let gammaEnv = prev?.gamma_env ?? null;
+        if (!greekFresh) {
+          const greek = await fetchGreekExposure(ticker);
+          gammaEnv = gammaEnvFromGreek(greek);
+        }
+
         const row = {
           ticker,
-          gamma_env:       gammaEnvFromGreek(greek),
+          gamma_env:       gammaEnv,
           flow_sentiment:  flowSentimentFromAlerts(alerts),
           whale_put_sells: whalePutSellsFromAlerts(alerts),
           next_earnings_date: alerts?.[0]?.next_earnings_date ?? null,
