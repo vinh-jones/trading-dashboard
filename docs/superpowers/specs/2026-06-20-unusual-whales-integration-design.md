@@ -8,11 +8,11 @@
 
 The redeploy and hold-yield signals are **trend-blind** — they reason from premium captured, time elapsed, and the current mark, but have no view on *where a ticker is heading next*. Jefferson's framing (close early when % gain beats DTE, **unless** big money is piling into the ticker) is the missing forward-looking dimension. More broadly, the wheel's two biggest P&L levers — **entry timing** and **assignment avoidance** — are currently driven by raw IV and price cushion alone.
 
-A single Unusual Whales API subscription (~$150/mo, API Basic tier — confirm current pricing & whether the base sub is required) is only justified if it feeds **multiple** decisions, not just one flow overlay. This spec scopes four consumers riding one shared backbone, sequenced so the cheapest/highest-confidence ships first and the spend de-risks itself.
+A single Unusual Whales API subscription (**API Basic, $125/mo standalone** — or the **$165/mo Whale Bundle Basic** if the UW Retail Pro dashboard is also wanted) is only justified if it feeds **multiple** decisions, not just one flow overlay. This spec scopes four consumers riding one shared backbone, sequenced so the cheapest/highest-confidence ships first and the spend de-risks itself.
 
 ## Cost justification
 
-YTD premium ≈ **$94k** across positions running **$28k+** collateral each. At **$1,800/yr**, UW pays for itself if it improves outcomes by **<2% of premium**, prevents **one bad assignment**, or frees idle collateral a few days sooner across the book. Low bar — but only if wired into decisions, not just displayed.
+YTD premium ≈ **$94k** across positions running **$28k+** collateral each. At **$1,500/yr** (API Basic), UW pays for itself if it improves outcomes by **<2% of premium**, prevents **one bad assignment**, or frees idle collateral a few days sooner across the book. Low bar — but only if wired into decisions, not just displayed.
 
 ## Decisions (settled in brainstorm)
 
@@ -102,11 +102,11 @@ Confirmed against UW's **official MCP server README** (their own enumeration of 
 - **Greek exposure — GEX/DEX/vanna by strike** ✅ (Consumer 3)
 - **Market tide / net premium + options flow alerts** ✅ (Consumer 4)
 
-**Tier mapping:** the Basic ($150/mo) vs Advanced ($375/mo) split is **REST polling vs websocket streaming + deeper history** — *not* endpoint categories. Our design polls REST on an intraday cadence and explicitly does not need real-time push, so **API Basic covers Phases 0–3 and the core of Phase 4.** The only endpoint found explicitly gated as *Premium* is **congressional/politician trades** — which touches only the insider/congress *enrichment* of the flow veto (deferrable, not core).
+**Tier mapping (confirmed from UW pricing page):** API Basic **$125/mo** includes options order flow, stocks, **congressional & insider trades**, market data, and proprietary tools — i.e. **everything all four consumers need**. Basic excludes only the "Premium endpoints" (Forex, Commodities, Economic indicators, Digital currencies, Top movers, IPO calendar, Statistics, Extended fundamentals) — none of which we use. Advanced ($315/mo) adds only **websockets** (our REST polling doesn't need them) and 365- vs 180-day history. So **API Basic covers all four phases**, congress/insider enrichment included. Rate limits: **40,000 req/day, 120/min** — our polling (~3–9k/day across tracked names) is well under.
 
 ## Remaining questions / dependencies
 
-- **Confirm in-account before paying:** is congressional/insider included in Basic or does it need the Premium upgrade (Phase 4 enrichment only); exact REST rate limits vs our per-ticker × intraday volume; whether the base platform sub is required on top of the API plan.
+- **Bundle vs standalone (purchasing only):** standalone API Basic ($125, 180-day history) for a pure pipe, or Whale Bundle Basic ($165, +Retail Pro dashboard + Predictions + $200 data-shop credits, 90-day history) if the UW web dashboard is also wanted. No impact on the integration itself.
 - **Normalization basis:** net premium normalized by what — avg daily option premium volume? market cap? (per-ticker, so cross-name comparable).
 - **Smoothing window:** sessions of look-back for the flow state to avoid intraday flicker.
 - **ToS:** personal-dashboard use of derived UW data (no redistribution) — fine, but note it.
