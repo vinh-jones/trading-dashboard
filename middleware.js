@@ -26,6 +26,7 @@ const BYPASS = new Set([
   "/api/calibrate-forecast",
   "/api/uw-snapshot",
   "/api/uw-assignment-data",
+  "/api/uw-earnings-dates",
   "/api/ingest",
   "/api/ingest-iv",
   "/api/ingest-s5fi",
