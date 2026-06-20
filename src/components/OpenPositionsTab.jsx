@@ -440,14 +440,15 @@ function RedeployPanel({ rd, ov }) {
 
   const flowLabel = ov?.flow == null ? "—" : ov.flow >= 0.2 ? "bullish" : ov.flow <= -0.2 ? "bearish" : "neutral";
   const flowColor = ov?.flow == null ? theme.text.muted : ov.flow >= 0.2 ? theme.green : ov.flow <= -0.2 ? theme.red : theme.text.muted;
+  const flowDisplay = ov?.flow == null ? "—" : `${ov.flow >= 0 ? "+" : ""}${ov.flow.toFixed(2)} · ${flowLabel}`;
 
   const labelStyle = {
     fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase",
     letterSpacing: "0.5px", fontWeight: 500, marginBottom: theme.space[1],
   };
-  const cell = (label, value, valueColor) => (
+  const cell = (label, value, valueColor, title) => (
     <div>
-      <div style={labelStyle}>{label}</div>
+      <div style={{ ...labelStyle, cursor: title ? "help" : undefined }} title={title}>{label}</div>
       <div style={{ color: valueColor ?? theme.text.primary }}>{value}</div>
     </div>
   );
@@ -470,7 +471,7 @@ function RedeployPanel({ rd, ov }) {
         {cell("Premium kept", `${Math.round(rd.kept_pct * 100)}%`)}
         {cell("Time left", `${Math.round(rd.frac_time_left * 100)}% · ${rd.days_remaining}d`)}
         {cell("Close trigger", `≤ $${rd.trigger_mark.toFixed(2)}`)}
-        {cell("Institutional flow", flowLabel, flowColor)}
+        {cell("Institutional flow", flowDisplay, flowColor, "Net options flow on this ticker, −1 (bearish) to +1 (bullish): puts sold + calls bought vs puts bought + calls sold. ≥ +0.2 is bullish and can flip a redeploy into 'let it ride'.")}
       </div>
     </div>
   );
