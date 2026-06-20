@@ -39,7 +39,7 @@ describe("aggregateWhalePutSells (flat)", () => {
 const today = "2026-06-20";
 const filterSigs = [
   {
-    ticker: "AAA", flow_sentiment: 0.5,
+    ticker: "AAA", flow_sentiment: 0.5, gamma_env: 0.28,
     whale_put_sells: [
       { ticker: "AAA", strike: 90,  underlying: 100, premium: 1000000, expiry: "2026-07-20" }, // dte 30, OTM
       { ticker: "AAA", strike: 80,  underlying: 100, premium: 500000,  expiry: "2026-07-20" }, // dte 30, OTM
@@ -85,6 +85,7 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(aaa.top_strike).toBe(90);             // 90 carries more premium than 80
     expect(aaa.top_strike_otm).toBeCloseTo(10, 5);
     expect(aaa.flow_sentiment).toBe(0.5);
+    expect(aaa.gamma_env).toBe(0.28);
     expect(aaa.score_label).toBe("Strong");
     expect(aaa.iv_rank).toBe(70);
 

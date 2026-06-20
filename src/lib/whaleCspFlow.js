@@ -61,7 +61,8 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
   const { scoreByTicker } = opts;
   const flat = aggregateWhalePutSells(uwSignalsList, opts);
 
-  const flowByTicker = new Map((uwSignalsList ?? []).map((s) => [s.ticker, s.flow_sentiment]));
+  const flowByTicker  = new Map((uwSignalsList ?? []).map((s) => [s.ticker, s.flow_sentiment]));
+  const gammaByTicker = new Map((uwSignalsList ?? []).map((s) => [s.ticker, s.gamma_env]));
   const lookupScore = (t) =>
     typeof scoreByTicker?.get === "function" ? scoreByTicker.get(t) : scoreByTicker?.[t];
 
@@ -100,6 +101,7 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
       dte_max:        g.dte_max,
       any_sweep:      g.any_sweep,
       held:           g.held,
+      gamma_env:      gammaByTicker.get(g.ticker) ?? null,
       flow_sentiment: flowByTicker.get(g.ticker) ?? null,
       score_label:    score?.label ?? null,
       iv_rank:        score?.ivRank ?? null,
