@@ -71,6 +71,12 @@ export function fetchSpotExposuresByStrike(ticker) {
   return uwGet(`/stock/${encodeURIComponent(ticker)}/spot-exposures/strike`);
 }
 
+// Max pain by expiry — the pin level where the most option value expires
+// worthless. Endpoint shape not yet confirmed; probed via uw-gex ?debug=1.
+export function fetchMaxPain(ticker) {
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/max-pain`);
+}
+
 // Flow alerts for a ticker (puts + calls, all sides) at or above minPremium.
 export function fetchFlowAlerts(ticker, { minPremium = 50000, limit = 50 } = {}) {
   const qs = new URLSearchParams({ min_premium: String(minPremium), limit: String(limit) });

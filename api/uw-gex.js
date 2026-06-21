@@ -18,7 +18,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { hasUwKey, fetchGreekExposureByStrike, fetchSpotExposuresByStrike } from "./_lib/uwClient.js";
+import { hasUwKey, fetchGreekExposureByStrike, fetchSpotExposuresByStrike, fetchMaxPain } from "./_lib/uwClient.js";
 import { computeGexLevels } from "../src/lib/gexLevels.js";
 
 function getSupabase() {
@@ -135,6 +135,7 @@ export default async function handler(req, res) {
           ticker,
           greek_strike: await probe(fetchGreekExposureByStrike, ticker),
           spot_strike:  await probe(fetchSpotExposuresByStrike, ticker),
+          max_pain:     await probe(fetchMaxPain, ticker),
         });
       }
       return res.status(200).json({ ok: true, debug });
