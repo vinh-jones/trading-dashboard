@@ -93,6 +93,20 @@ async function fetchStrikeProfile(ticker) {
   return rows;
 }
 
+// Per-expiry max-pain (pin level) → { "YYYY-MM-DD": price } for upcoming
+// expiries only. UW returns one row per expiry with `expiry` + `max_pain`.
+function maxPainByExpiry(resp, todayIso) {
+  const rows = resp?.data ?? resp ?? [];
+  if (!Array.isArray(rows)) return null;
+  const map = {};
+  for (const r of rows) {
+    const exp = r?.expiry ? String(r.expiry) : null;
+    const mp = parseFloat(r?.max_pain);
+    if (exp && exp >= todayIso && Number.isFinite(mp)) map[exp] = mp;
+  }
+  return Object.keys(map).length ? map : null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!authorized(req)) return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -101,19 +115,21 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
     const now = new Date().toISOString();
+    const today = now.slice(0, 10);
+
+    // Held tickers — max-pain is scoped to these (pin risk matters on positions
+    // you hold into expiry), keeping the cron under its timeout.
+    const { data: posRows } = await supabase.from("positions").select("ticker");
+    const heldSet = new Set((posRows ?? []).map((r) => r.ticker).filter(Boolean));
 
     const override = (req.query.tickers || "").trim();
     let tickers;
     if (override) {
       tickers = [...new Set(override.toUpperCase().split(",").map((t) => t.trim()).filter(Boolean))];
     } else {
-      const [universe, positions] = await Promise.all([
-        supabase.from("wheel_universe").select("ticker").eq("list_type", "approved"),
-        supabase.from("positions").select("ticker"),
-      ]);
-      const set = new Set();
-      (universe.data  ?? []).forEach((r) => r.ticker && set.add(r.ticker));
-      (positions.data ?? []).forEach((r) => r.ticker && set.add(r.ticker));
+      const { data: universe } = await supabase.from("wheel_universe").select("ticker").eq("list_type", "approved");
+      const set = new Set(heldSet);
+      (universe ?? []).forEach((r) => r.ticker && set.add(r.ticker));
       tickers = [...set].sort();
     }
 
@@ -164,6 +180,10 @@ export default async function handler(req, res) {
           gex_air_pocket:   levels.airPocket,
           gex_refreshed_at: now,
         };
+        // Max-pain only for held (or smoke-tested) tickers — pin risk into expiry.
+        if (heldSet.has(ticker) || override) {
+          patch.max_pain = maxPainByExpiry(await fetchMaxPain(ticker), today);
+        }
         const { error } = await supabase.from("uw_signals").update(patch).eq("ticker", ticker);
         results.push({ ticker, ok: !error, error: error?.message, ...patch });
       } catch (err) {
