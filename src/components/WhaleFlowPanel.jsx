@@ -225,7 +225,7 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.xs, color: theme.text.subtle }}>
             Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>★ green row</span> = whale-confirmed setup: Strong entry score AND bullish flow AND ≥2 prints. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
             <div style={{ marginTop: theme.space[1], color: theme.amber }}>
-              Confirmation, not a buy signal — a ★ means institutions are validating a strike, not that you should deploy. Run your full checklist (chart, P/E, earnings beats, the 2%-on-30Δ rule) and your VIX cash target first.
+              Confirmation, not a buy signal — a ★ means institutions are validating a strike, not that you should deploy. Run your full checklist (chart, P/E, earnings beats, the 2%-on-30Δ rule) and your VIX cash target first. <strong>★ candidacy is observe-only</strong> until the signal scoreboard validates it — watch it, don&apos;t act on it.
             </div>
           </div>
         </div>

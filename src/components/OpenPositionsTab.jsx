@@ -401,12 +401,14 @@ function RedeployIndicator({ rd, ov }) {
   // Flow overrides: close-trigger fired but smart money bullish → let it ride;
   // holding fine but flow turned bearish → shed early.
   if (state === "let_it_ride") {
+    // Observe-only treatment (finance review): dashed + muted so it reads as
+    // "watch", not "act" — this pull-toward-risk signal isn't validated yet.
     return (
       <span style={{
         marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
-        background: `${theme.green}22`, color: theme.green, border: `1px solid ${theme.green}66`,
+        background: `${theme.green}14`, color: theme.green, border: `1px dashed ${theme.green}66`,
         fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
-      }}>▲ let it ride</span>
+      }}>▲ let it ride · watch</span>
     );
   }
   if (state === "shed") {
@@ -481,6 +483,11 @@ function RedeployPanel({ rd, ov }) {
         </span>
         {overridden ? ov.reason : redeployCopy(rd)}
       </div>
+      {state === "let_it_ride" && (
+        <div style={{ marginBottom: theme.space[2], fontSize: theme.size.xs, color: theme.amber }}>
+          Observe-only — this is a pull-toward-risk signal and isn&apos;t validated yet. Watch it; don&apos;t hold past your plan on its say-so until the signal scoreboard earns it.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.sm }}>
         {cell("Ratio vs fresh", `${rd.ratio.toFixed(2)}×`, tint ?? undefined)}
         {cell("Premium kept", `${Math.round(rd.kept_pct * 100)}%`)}
