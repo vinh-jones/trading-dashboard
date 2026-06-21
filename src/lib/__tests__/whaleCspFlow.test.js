@@ -99,7 +99,7 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
       { ticker: "BIG", flow_sentiment: 0.0, whale_put_sells: [
         { ticker: "BIG", strike: 90, underlying: 100, premium: 5_000_000, expiry: "2026-07-20" }, // huge, but flat flow
       ]},
-      { ticker: "CAND", flow_sentiment: 0.4, whale_put_sells: [
+      { ticker: "CAND", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 2, whale_put_sells: [
         { ticker: "CAND", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // small, but candidate
         { ticker: "CAND", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" }, // repeat print (≥2)
       ]},
@@ -111,8 +111,8 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(rows[1].is_candidate).toBe(false);
   });
 
-  it("a Moderate setup is NOT a candidate even with bullish flow + repeat prints (Strong-only gate)", () => {
-    const sigs = [{ ticker: "MOD", flow_sentiment: 0.4, whale_put_sells: [
+  it("a Moderate setup is NOT a candidate even with confirmed flow + repeat prints (Strong-only gate)", () => {
+    const sigs = [{ ticker: "MOD", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 2, whale_put_sells: [
       { ticker: "MOD", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" },
       { ticker: "MOD", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" },
     ]}];
@@ -121,14 +121,24 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(rows[0].is_candidate).toBe(false);
   });
 
-  it("a one-off print is NOT a candidate even with a Strong setup + bullish flow (repeat-activity gate)", () => {
-    const sigs = [{ ticker: "ONE", flow_sentiment: 0.4, whale_put_sells: [
+  it("a one-off print is NOT a candidate even with a Strong setup + confirmed flow (repeat-activity gate)", () => {
+    const sigs = [{ ticker: "ONE", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 2, whale_put_sells: [
       { ticker: "ONE", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // single trade
     ]}];
     const score = new Map([["ONE", { label: "Strong", ivRank: 70 }]]);
     const rows = summarizeWhaleFlowByTicker(sigs, { today, otmOnly: true, scoreByTicker: score });
     expect(rows[0].trade_count).toBe(1);
     expect(rows[0].is_candidate).toBe(false);
+  });
+
+  it("UNconfirmed flow (bullish print but streak too short) is NOT a candidate", () => {
+    const sigs = [{ ticker: "RAW", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 1, whale_put_sells: [
+      { ticker: "RAW", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" },
+      { ticker: "RAW", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" },
+    ]}];
+    const score = new Map([["RAW", { label: "Strong", ivRank: 70 }]]);
+    const rows = summarizeWhaleFlowByTicker(sigs, { today, otmOnly: true, scoreByTicker: score });
+    expect(rows[0].is_candidate).toBe(false); // Strong + repeat trades, but flow streak < 2
   });
 
   it("accepts a plain-object score map and exposes drill-down trades", () => {

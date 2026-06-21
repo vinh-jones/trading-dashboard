@@ -19,6 +19,7 @@ import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeRedeploySignal } from "../lib/redeploySignal";
 import { describeStrikeVsGex } from "../lib/gexLevels";
+import { flowConfirmation } from "../lib/flowSmoothing";
 import { trendOverlay } from "../lib/trendOverlay";
 import { computeAssignmentRisk } from "../lib/assignmentRisk";
 import { useUwSignals } from "../hooks/useUwSignals";
@@ -863,11 +864,15 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
       // Assignment-risk early warning — earnings/flow/gamma leading indicators
       // layered over the price cushion (Consumer 2).
       const uwSig = uwSignals?.get?.(pos.ticker);
+      // Defense (push-toward-safety) uses the intraday-smoothed EMA — single
+      // bearish prints are filtered, but it isn't gated on the multi-day streak
+      // (you should never be blocked from de-risking).
+      const flowSmoothed = uwSig?.flow_ema ?? uwSig?.flow_sentiment ?? null;
       assignmentRisk = computeAssignmentRisk({
         earningsDate:     quoteMap.get(pos.ticker)?.earnings_date ?? null,
         expiry:           pos.expiry_date,
         today:            todayIso,
-        flowSentiment:    uwSig?.flow_sentiment ?? null,
+        flowSentiment:    flowSmoothed,
         gammaEnv:         uwSig?.gamma_env ?? null,
         cushionState:     enrichedPos.cushion_state,
         shortInterestPct: uwSig?.short_interest_pct ?? null,
@@ -897,8 +902,13 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     const profitTargetHit = glPct != null && profitTarget != null && glPct >= profitTarget;
     const cushionBreach   = enrichedPos.cushion_state === "assignment_risk";
     const hardClose       = profitTargetHit || cushionBreach;
+    // let-it-ride (pull-toward-risk) requires CONFIRMED bullish flow (smoothed
+    // EMA + multi-day streak); shed uses the smoothed value directly.
+    const uwSigFlow  = uwSignals?.get?.(pos.ticker);
+    const flowForOverlay = uwSigFlow?.flow_ema ?? uwSigFlow?.flow_sentiment ?? null;
+    const confirmedBullish = flowConfirmation({ flowEma: uwSigFlow?.flow_ema, flowStreak: uwSigFlow?.flow_streak }).bullish;
     const redeployOverlay = redeploy
-      ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null, undefined, { hardClose })
+      ? trendOverlay(redeploy, flowForOverlay, undefined, { hardClose, confirmedBullish })
       : null;
 
     return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex };

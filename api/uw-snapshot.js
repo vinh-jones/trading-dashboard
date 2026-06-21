@@ -19,6 +19,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { hasUwKey, fetchGreekExposure, fetchFlowAlerts } from "./_lib/uwClient.js";
 import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts } from "../src/lib/uwNormalize.js";
+import { updateFlowState } from "../src/lib/flowSmoothing.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -79,10 +80,15 @@ export default async function handler(req, res) {
     const now      = new Date().toISOString();
     const todayStartMs = (() => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d.getTime(); })();
 
+    const today = now.slice(0, 10); // UTC date == ET trading date during market hours
+
     // Greek exposure is daily data — only refetch when we don't already have a
     // gamma_env from today. Keeps intraday runs to one call/ticker (flow only),
     // well within the rate limit + function timeout across the full universe.
-    const { data: existingRows } = await supabase.from("uw_signals").select("ticker, gamma_env, refreshed_at");
+    // Also carries the prior flow EMA/day/streak for the smoothing update.
+    const { data: existingRows } = await supabase
+      .from("uw_signals")
+      .select("ticker, gamma_env, refreshed_at, flow_ema, flow_day, flow_streak");
     const existing = new Map((existingRows ?? []).map((r) => [r.ticker, r]));
 
     const results = [];
@@ -99,10 +105,22 @@ export default async function handler(req, res) {
           gammaEnv = gammaEnvFromGreek(greek);
         }
 
+        const rawFlow = flowSentimentFromAlerts(alerts);
+        const flowState = updateFlowState({
+          raw:        rawFlow,
+          today,
+          prevEma:    prev?.flow_ema    ?? null,
+          prevDay:    prev?.flow_day    ?? null,
+          prevStreak: prev?.flow_streak ?? 0,
+        });
+
         const row = {
           ticker,
           gamma_env:       gammaEnv,
-          flow_sentiment:  flowSentimentFromAlerts(alerts),
+          flow_sentiment:  rawFlow,
+          flow_ema:        flowState.flow_ema,
+          flow_day:        flowState.flow_day,
+          flow_streak:     flowState.flow_streak,
           whale_put_sells: whalePutSellsFromAlerts(alerts),
           next_earnings_date: alerts?.[0]?.next_earnings_date ?? null,
           refreshed_at:    now,

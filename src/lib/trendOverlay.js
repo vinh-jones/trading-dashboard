@@ -34,7 +34,12 @@ export function trendOverlay(redeploy, flowSentiment, config = TREND_OVERLAY_DEF
   }
 
   const { BULLISH, BEARISH } = { ...TREND_OVERLAY_DEFAULTS, ...config };
-  const bullish = flow != null && flow >= BULLISH;
+  // Pull-toward-risk (let-it-ride / hold) requires CONFIRMED bullish flow when
+  // the caller supplies it (smoothed EMA + multi-day streak) — a single bullish
+  // print can't extend a hold. Falls back to the raw threshold when not given
+  // (back-compat). Bearish (shed) stays on the smoothed value, no streak needed:
+  // erring toward closing earlier is the safe direction.
+  const bullish = opts.confirmedBullish != null ? !!opts.confirmedBullish : (flow != null && flow >= BULLISH);
   const bearish = flow != null && flow <= BEARISH;
 
   // Headline: close-trigger fired, but smart money is bullish → hold the winner.
