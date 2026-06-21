@@ -384,65 +384,39 @@ function redeployCopy(rd) {
 }
 
 // Collapsed-row indicator. redeploy = visible chip; watch = muted ratio;
-// hold / underwater are silent (the detail still shows on expand).
-function RedeployIndicator({ rd, ov }) {
+// hold / underwater are silent (the detail still shows on expand). When the
+// profit target is reached, a "target hit" pill is shown alongside whatever the
+// flow overlay says — so a let-it-ride reads as "you can bank it AND flow's
+// bullish," your call, not a hidden one.
+function RedeployIndicator({ rd, ov, profitTargetHit }) {
   if (!rd || rd.skipped) return null;
   const state = ov?.state ?? rd.redeploy_state;
-  // rule_close (a take-profit tier hit, or price in the money) is intentionally
-  // silent: the profit case is already shown by the green target highlight, and
-  // there's no close-on-breach rule to assert — a chip there is false urgency.
-  // The precedence still runs underneath (it suppresses let_it_ride / hold), it
-  // just doesn't render. Falls through to null.
-  // Flow overrides: close-trigger fired but smart money bullish → let it ride;
-  // holding fine but flow turned bearish → shed early.
-  if (state === "let_it_ride") {
-    // Observe-only treatment (finance review): dashed + muted so it reads as
-    // "watch", not "act" — this pull-toward-risk signal isn't validated yet.
-    return (
-      <span style={{
-        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
-        background: `${theme.green}14`, color: theme.green, border: `1px dashed ${theme.green}66`,
-        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
-      }}>▲ let it ride · watch</span>
-    );
-  }
-  if (state === "shed") {
-    return (
-      <span style={{
-        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
-        background: `${theme.amber}22`, color: theme.amber, border: `1px solid ${theme.amber}66`,
-        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
-      }}>⚠ flow turning</span>
-    );
-  }
-  if (state === "redeploy") {
-    return (
-      <span style={{
-        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
-        background: `${theme.blue}22`, color: theme.blue, border: `1px solid ${theme.blue}66`,
-        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
-      }}>↻ {rd.ratio.toFixed(2)}×</span>
-    );
-  }
-  if (state === "watch") {
-    return (
-      <span style={{
-        marginLeft: theme.space[1], color: theme.blue, opacity: 0.75,
-        fontSize: theme.size.xs, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap",
-      }}>{rd.ratio.toFixed(2)}×</span>
-    );
-  }
-  return null;
+  const pill = (key, label, color, dashed) => (
+    <span key={key} style={{
+      marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+      background: `${color}${dashed ? "14" : "22"}`, color, border: `1px ${dashed ? "dashed" : "solid"} ${color}66`,
+      fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+    }}>{label}</span>
+  );
+
+  const chips = [];
+  // Profit target reached — shown first so it reads before the flow overlay.
+  if (profitTargetHit) chips.push(pill("target", "🎯 target hit", theme.green));
+  // Flow overlay. let_it_ride stays observe-only (dashed "watch").
+  if (state === "let_it_ride") chips.push(pill("li", "▲ let it ride · watch", theme.green, true));
+  else if (state === "shed")   chips.push(pill("shed", "⚠ flow turning", theme.amber));
+  else if (state === "redeploy") chips.push(pill("rd", `↻ ${rd.ratio.toFixed(2)}×`, theme.blue));
+  else if (state === "watch") chips.push(
+    <span key="w" style={{ marginLeft: theme.space[1], color: theme.blue, opacity: 0.75, fontSize: theme.size.xs, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap" }}>{rd.ratio.toFixed(2)}×</span>
+  );
+
+  return chips.length ? <>{chips}</> : null;
 }
 
-function RedeployPanel({ rd, ov }) {
+function RedeployPanel({ rd, ov, profitTargetHit }) {
   if (!rd || rd.skipped || rd.redeploy_state === "underwater") return null;
 
   const state      = ov?.state ?? rd.redeploy_state;
-  // rule_close is silent (see RedeployIndicator) — the redeploy/hold question is
-  // moot when a profit target's hit (already green-highlighted) or you're ITM,
-  // and there's no close-on-breach rule to surface. Suppression still ran.
-  if (state === "rule_close") return null;
   const overridden = !!ov?.overridden;
   const HEAD = {
     let_it_ride: { label: "Let it ride", color: theme.green },
@@ -475,6 +449,11 @@ function RedeployPanel({ rd, ov }) {
       borderBottom: `1px solid ${theme.border.default}`,
       padding: `${theme.space[3]}px ${theme.space[4]}px`,
     }}>
+      {profitTargetHit && (
+        <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.green, fontWeight: 600 }}>
+          🎯 Profit target reached — you can bank this now.{state === "let_it_ride" ? " Flow is also bullish (below), so the call is sell-into-strength vs. let it ride — your decision." : ""}
+        </div>
+      )}
       <div style={{ marginBottom: theme.space[2], fontSize: theme.size.sm, color: theme.text.primary }}>
         <span style={{ fontWeight: 600, color: head.color, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: theme.space[2] }}>
           {head.label}
@@ -937,22 +916,21 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     }
 
     // Consumer 4 — flow veto on the redeploy signal (bullish flow → let it ride).
-    // Hard-rule precedence (finance review): if a take-profit tier is hit or the
-    // cushion has breached, that says close — flow/ratio cannot countermand it.
-    const profitTarget   = targetProfitPctForDtePct(dtePct);
+    // Profit target reached is surfaced ALONGSIDE let-it-ride (not used to
+    // suppress it) so the sell-into-strength-vs-ride-it call stays the human's.
+    // (No close-on-breach rule exists, so cushion state isn't treated as a rule.)
+    const profitTarget    = targetProfitPctForDtePct(dtePct);
     const profitTargetHit = glPct != null && profitTarget != null && glPct >= profitTarget;
-    const cushionBreach   = enrichedPos.cushion_state === "assignment_risk";
-    const hardClose       = profitTargetHit || cushionBreach;
     // let-it-ride (pull-toward-risk) requires CONFIRMED bullish flow (smoothed
     // EMA + multi-day streak); shed uses the smoothed value directly.
     const uwSigFlow  = uwSignals?.get?.(pos.ticker);
     const flowForOverlay = uwSigFlow?.flow_ema ?? uwSigFlow?.flow_sentiment ?? null;
     const confirmedBullish = flowConfirmation({ flowEma: uwSigFlow?.flow_ema, flowStreak: uwSigFlow?.flow_streak }).bullish;
     const redeployOverlay = redeploy
-      ? trendOverlay(redeploy, flowForOverlay, undefined, { hardClose, confirmedBullish })
+      ? trendOverlay(redeploy, flowForOverlay, undefined, { confirmedBullish })
       : null;
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex, hardClose, flowStreak: uwSigFlow?.flow_streak ?? null };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex, profitTargetHit, flowStreak: uwSigFlow?.flow_streak ?? null };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -1018,7 +996,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           redeploy_state:   r.redeploy?.redeploy_state ?? null,
           overlay_state:    r.redeployOverlay?.state ?? null,
           assignment_level: r.assignmentRisk?.level ?? null,
-          hard_close:       r.hardClose ?? null,
+          hard_close:       r.profitTargetHit ?? null,
           gex_env:          r.gex?.env ?? null,
           flow_streak:      r.flowStreak ?? null,
         }))
@@ -1045,7 +1023,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           </tr>
         </thead>
         <tbody>
-          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex }, i) => {
+          {sorted.map(({ pos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex, profitTargetHit }, i) => {
             const dtePctColor = dtePct == null ? theme.text.muted
               : dtePct >= 60 ? theme.green
               : dtePct >= 20 ? theme.amber
@@ -1136,7 +1114,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                         <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
                       )}
                       <HoldYieldIndicator hy={holdYield} />
-                      <RedeployIndicator rd={redeploy} ov={redeployOverlay} />
+                      <RedeployIndicator rd={redeploy} ov={redeployOverlay} profitTargetHit={profitTargetHit} />
                       <AssignmentRiskIndicator risk={assignmentRisk} />
                       {hasTagRow && !isExpanded && !isMobile && (
                         <span
@@ -1237,7 +1215,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                         <CushionPanel cushion={pos} dte={dte} />
                       )}
                       <HoldYieldPanel hy={holdYield} />
-                      <RedeployPanel rd={redeploy} ov={redeployOverlay} />
+                      <RedeployPanel rd={redeploy} ov={redeployOverlay} profitTargetHit={profitTargetHit} />
                       {priceTargets && (
                         <PriceTargetPanel targets={priceTargets} position={pos} stockPrice={quoteMap.get(pos.ticker)?.mid ?? null} />
                       )}

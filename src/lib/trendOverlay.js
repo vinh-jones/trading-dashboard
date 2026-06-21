@@ -14,24 +14,17 @@
 
 export const TREND_OVERLAY_DEFAULTS = { BULLISH: 0.2, BEARISH: -0.2 };
 
-// opts.hardClose — a hard rule (profit-target tier hit, cushion breach) already
-// says CLOSE this position. When set, discipline takes precedence: flow may
-// never keep you in past your own rule, and the redeploy ratio can't display
-// "hold". Flow's only remaining freedom is to close *earlier* (shed), which is
-// the safe direction. This is the guardrail from the finance review — the one
-// place flow could override discipline to make you hold longer.
+// The profit-target rule is NOT suppressed here. Rather than hide let_it_ride
+// when a target is hit, the UI surfaces both (let-it-ride + a "target reached"
+// marker) and lets the human make the sell-into-strength-vs-ride-it call — the
+// rule is shown next to the flow, not overridden silently. opts:
+//   confirmedBullish — gate let_it_ride / hold on confirmed (smoothed EMA +
+//   multi-day streak) bullish flow; a single print can't extend a hold. Falls
+//   back to the raw threshold when not supplied (back-compat).
 export function trendOverlay(redeploy, flowSentiment, config = TREND_OVERLAY_DEFAULTS, opts = {}) {
   const base = redeploy && !redeploy.skipped ? redeploy.redeploy_state : null;
   const flow = flowSentiment ?? null;
   if (base == null) return { state: null, base: null, overridden: false, flow, reason: null };
-
-  const { hardClose = false } = opts;
-  if (hardClose) {
-    return {
-      state: "rule_close", base, overridden: true, flow,
-      reason: "A profit-target or risk rule on this position says close — that overrides the redeploy ratio and institutional flow. Flow can close earlier, never hold longer.",
-    };
-  }
 
   const { BULLISH, BEARISH } = { ...TREND_OVERLAY_DEFAULTS, ...config };
   // Pull-toward-risk (let-it-ride / hold) requires CONFIRMED bullish flow when

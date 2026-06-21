@@ -19,7 +19,7 @@
 //     positions
 //   • entry paper-track for ★ / entry-score (counterfactual, separate from live P&L)
 
-const NOTABLE_STATES = ["rule_close", "let_it_ride", "shed"];
+const NOTABLE_STATES = ["let_it_ride", "shed"];
 const RISK_LEVELS = ["elevated", "high"];
 
 export function computeScoreboard(rows = []) {
@@ -36,15 +36,17 @@ export function computeScoreboard(rows = []) {
     byPos.get(r.position_key).push(r);
   }
 
-  // Held-past-rule: per position, days still logged after rule_close first fired.
-  let rulePositions = 0;
-  let heldPastRuleDays = 0;
+  // Held-past-target: per position, days still logged after the profit-target
+  // rule (hard_close) first fired. The profit target is the only actual close
+  // rule, so this is the drift metric — held N days past "you can bank it".
+  let targetPositions = 0;
+  let heldPastTargetDays = 0;
   for (const logs of byPos.values()) {
     const sorted = [...logs].sort((a, b) => String(a.logged_date).localeCompare(String(b.logged_date)));
-    const firstRule = sorted.findIndex((l) => l.overlay_state === "rule_close");
-    if (firstRule >= 0) {
-      rulePositions += 1;
-      heldPastRuleDays += sorted.length - firstRule - 1;
+    const firstHit = sorted.findIndex((l) => l.hard_close === true);
+    if (firstHit >= 0) {
+      targetPositions += 1;
+      heldPastTargetDays += sorted.length - firstHit - 1;
     }
   }
 
@@ -52,13 +54,13 @@ export function computeScoreboard(rows = []) {
     position_days:        list.length,
     distinct_positions:   byPos.size,
     counts: {
-      rule_close:   posByState.rule_close.size,
-      let_it_ride:  posByState.let_it_ride.size,
-      shed:         posByState.shed.size,
+      target_hit:    targetPositions,
+      let_it_ride:   posByState.let_it_ride.size,
+      shed:          posByState.shed.size,
       risk_elevated: posByRisk.elevated.size,
       risk_high:     posByRisk.high.size,
     },
-    rule_close_positions: rulePositions,
-    held_past_rule_days:  heldPastRuleDays,
+    target_positions:      targetPositions,
+    held_past_target_days: heldPastTargetDays,
   };
 }

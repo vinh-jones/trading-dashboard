@@ -52,26 +52,9 @@ describe("trendOverlay — flow veto on redeploy", () => {
   it("threshold is configurable", () => {
     expect(trendOverlay(rd("redeploy"), 0.15, { BULLISH: 0.1, BEARISH: -0.1 }).state).toBe("let_it_ride");
   });
-});
 
-describe("trendOverlay — hard-rule precedence (finance review)", () => {
-  it("hardClose overrides a bullish let-it-ride (flow can't hold you past a rule)", () => {
-    const r = trendOverlay(rd("redeploy"), 0.5, undefined, { hardClose: true });
-    expect(r.state).toBe("rule_close");
-    expect(r.overridden).toBe(true);
-    expect(r.reason).toMatch(/says close/i);
-  });
-
-  it("hardClose suppresses a 'hold' (watch + bullish can't display keep-holding)", () => {
-    const r = trendOverlay(rd("watch"), 0.4, undefined, { hardClose: true });
-    expect(r.state).toBe("rule_close");
-  });
-
-  it("hardClose still surfaces close when the ratio already said redeploy", () => {
-    expect(trendOverlay(rd("redeploy"), 0.0, undefined, { hardClose: true }).state).toBe("rule_close");
-  });
-
-  it("no hardClose → behaviour unchanged", () => {
-    expect(trendOverlay(rd("redeploy"), 0.5, undefined, { hardClose: false }).state).toBe("let_it_ride");
+  it("confirmedBullish gates let_it_ride (a single print can't extend a hold)", () => {
+    expect(trendOverlay(rd("redeploy"), 0.5, undefined, { confirmedBullish: false }).state).toBe("redeploy");
+    expect(trendOverlay(rd("redeploy"), 0.5, undefined, { confirmedBullish: true }).state).toBe("let_it_ride");
   });
 });
