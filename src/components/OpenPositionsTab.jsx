@@ -596,10 +596,22 @@ function GexPanel({ gex }) {
         <span>Your strike <strong style={{ color: theme.text.primary }}>{fmt(gex.strike)}</strong></span>
         <span>Support shelf (+γ below) <strong style={{ color: theme.green }}>{fmt(gex.support)}</strong></span>
         <span>Air pocket (−γ below) <strong style={{ color: theme.red }}>{fmt(gex.airPocket)}</strong></span>
+        {gex.maxPain != null && (
+          <span title="Max pain — the strike where the most option value expires worthless, a pin level the stock tends to gravitate toward by this expiry.">
+            Max pain (exp) <strong style={{ color: gex.maxPain >= gex.strike ? theme.green : theme.red }}>{fmt(gex.maxPain)}</strong>
+          </span>
+        )}
       </div>
       {strikeRead && (
         <div style={{ marginTop: theme.space[2], fontSize: theme.size.sm, color: toneColor }}>
           {strikeRead.text}
+        </div>
+      )}
+      {gex.maxPain != null && gex.strike != null && (
+        <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: gex.maxPain >= gex.strike ? theme.green : theme.red }}>
+          {gex.maxPain >= gex.strike
+            ? `Pin (${fmt(gex.maxPain)}) sits above your strike — the expiry magnet favors your put expiring OTM.`
+            : `Pin (${fmt(gex.maxPain)}) sits below your strike — the expiry magnet pulls toward assignment territory.`}
         </div>
       )}
     </div>
@@ -911,6 +923,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           support:    uwSig.gex_support ?? null,
           resistance: uwSig.gex_resistance ?? null,
           airPocket:  uwSig.gex_air_pocket ?? null,
+          maxPain:    uwSig.max_pain?.[pos.expiry_date] ?? null,
           strike:     pos.strike,
           spot:       quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null,
         };

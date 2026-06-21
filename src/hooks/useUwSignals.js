@@ -19,7 +19,7 @@ export function useUwSignals(tickers) {
       try {
         let query = supabase
           .from("uw_signals")
-          .select("ticker, gamma_env, flow_sentiment, flow_ema, flow_streak, whale_put_sells, short_interest_pct, earnings_expected_move_pct, next_earnings_date, gex_env, gex_net_gamma, gex_support, gex_resistance, gex_air_pocket, gex_refreshed_at, refreshed_at");
+          .select("ticker, gamma_env, flow_sentiment, flow_ema, flow_streak, whale_put_sells, short_interest_pct, earnings_expected_move_pct, next_earnings_date, gex_env, gex_net_gamma, gex_support, gex_resistance, gex_air_pocket, max_pain, gex_refreshed_at, refreshed_at");
         if (Array.isArray(tickers) && tickers.length) query = query.in("ticker", tickers);
 
         const { data, error } = await query;
