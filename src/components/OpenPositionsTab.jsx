@@ -386,6 +386,16 @@ function redeployCopy(rd) {
 function RedeployIndicator({ rd, ov }) {
   if (!rd || rd.skipped) return null;
   const state = ov?.state ?? rd.redeploy_state;
+  // Hard rule (profit target / cushion) says close — discipline over flow/ratio.
+  if (state === "rule_close") {
+    return (
+      <span style={{
+        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
+        background: `${theme.amber}22`, color: theme.amber, border: `1px solid ${theme.amber}66`,
+        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
+      }}>⏹ rule: close</span>
+    );
+  }
   // Flow overrides: close-trigger fired but smart money bullish → let it ride;
   // holding fine but flow turned bearish → shed early.
   if (state === "let_it_ride") {
@@ -432,13 +442,14 @@ function RedeployPanel({ rd, ov }) {
   const state      = ov?.state ?? rd.redeploy_state;
   const overridden = !!ov?.overridden;
   const HEAD = {
+    rule_close:  { label: "Close — your rule", color: theme.amber },
     let_it_ride: { label: "Let it ride", color: theme.green },
     shed:        { label: "Flow turning", color: theme.amber },
     redeploy:    { label: "Redeploy",     color: theme.blue },
     watch:       { label: "Redeploy",     color: theme.blue },
   };
   const head  = HEAD[state] ?? { label: "Redeploy", color: theme.text.muted };
-  const tint  = state === "let_it_ride" ? theme.green : state === "shed" ? theme.amber : state === "redeploy" ? theme.blue : null;
+  const tint  = state === "let_it_ride" ? theme.green : (state === "shed" || state === "rule_close") ? theme.amber : state === "redeploy" ? theme.blue : null;
 
   const flowLabel = ov?.flow == null ? "—" : ov.flow >= 0.2 ? "bullish" : ov.flow <= -0.2 ? "bearish" : "neutral";
   const flowColor = ov?.flow == null ? theme.text.muted : ov.flow >= 0.2 ? theme.green : ov.flow <= -0.2 ? theme.red : theme.text.muted;
@@ -880,8 +891,14 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     }
 
     // Consumer 4 — flow veto on the redeploy signal (bullish flow → let it ride).
+    // Hard-rule precedence (finance review): if a take-profit tier is hit or the
+    // cushion has breached, that says close — flow/ratio cannot countermand it.
+    const profitTarget   = targetProfitPctForDtePct(dtePct);
+    const profitTargetHit = glPct != null && profitTarget != null && glPct >= profitTarget;
+    const cushionBreach   = enrichedPos.cushion_state === "assignment_risk";
+    const hardClose       = profitTargetHit || cushionBreach;
     const redeployOverlay = redeploy
-      ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null)
+      ? trendOverlay(redeploy, uwSignals?.get?.(pos.ticker)?.flow_sentiment ?? null, undefined, { hardClose })
       : null;
 
     return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex };

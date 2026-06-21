@@ -92,9 +92,11 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
     const topTrade = g.trades.find((t) => t.strike === topStrike);
     const score = lookupScore(g.ticker) ?? null;
     const flow  = flowByTicker.get(g.ticker) ?? null;
-    // Candidate = good setup AND bullish institutional flow — the prime "sell a
-    // put here" names, floated to the top.
-    const isCandidate = (score?.label === "Strong" || score?.label === "Moderate") && flow != null && flow > 0.2;
+    // Candidate = STRONG entry setup AND bullish institutional flow AND repeat
+    // activity (≥2 prints, not a one-off). Strong-only + repeat is the Ryan-first
+    // gate from the finance review: a ★ confirms a setup lines up — it is never a
+    // buy signal, and the full OTU checklist still sits above it.
+    const isCandidate = score?.label === "Strong" && flow != null && flow > 0.2 && g.trade_count >= 2;
     out.push({
       ticker:         g.ticker,
       total_premium:  g.total_premium,

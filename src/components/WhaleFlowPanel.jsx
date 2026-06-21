@@ -20,7 +20,7 @@ const SCORE_COLOR = {
 // Column explanations — used for both the header hover tooltip (desktop) and
 // the tap-to-open column guide (mobile). Written for someone still learning.
 const COLUMN_HELP = {
-  "Ticker":     "The stock. ★ + green row = a prime CSP candidate: good setup AND bullish flow. 'held' = you already have a position in it.",
+  "Ticker":     "The stock. ★ + green row = whale-confirmed setup: Strong entry score AND bullish flow AND ≥2 institutional put-sells (not a one-off). It confirms a setup lines up — it is NOT a buy signal. 'held' = you already have a position in it.",
   "Score":      "Your entry quality — IV richness + Bollinger position + trend + gamma/flow. Strong or Moderate = a better setup to sell a put. IVR = IV rank; higher = richer premium (good = ~50+).",
   "Put-sell $": "Total premium institutions collected selling puts here (within the filter). Bigger = more institutional conviction by size. Good = large.",
   "#":          "Number of separate whale put-sell trades. More = repeated conviction, not a one-off. Good = several.",
@@ -223,7 +223,10 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
           </div>
 
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.xs, color: theme.text.subtle }}>
-            Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>★ green row</span> = strong/moderate setup AND bullish flow — your prime CSP candidates. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
+            Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>★ green row</span> = whale-confirmed setup: Strong entry score AND bullish flow AND ≥2 prints. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
+            <div style={{ marginTop: theme.space[1], color: theme.amber }}>
+              Confirmation, not a buy signal — a ★ means institutions are validating a strike, not that you should deploy. Run your full checklist (chart, P/E, earnings beats, the 2%-on-30Δ rule) and your VIX cash target first.
+            </div>
           </div>
         </div>
       )}
