@@ -101,6 +101,7 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
       ]},
       { ticker: "CAND", flow_sentiment: 0.4, whale_put_sells: [
         { ticker: "CAND", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // small, but candidate
+        { ticker: "CAND", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" }, // repeat print (≥2)
       ]},
     ];
     const score = new Map([["BIG", { label: "Neutral", ivRank: 20 }], ["CAND", { label: "Strong", ivRank: 70 }]]);
@@ -108,6 +109,26 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(rows[0].ticker).toBe("CAND");         // candidate first despite less premium
     expect(rows[0].is_candidate).toBe(true);
     expect(rows[1].is_candidate).toBe(false);
+  });
+
+  it("a Moderate setup is NOT a candidate even with bullish flow + repeat prints (Strong-only gate)", () => {
+    const sigs = [{ ticker: "MOD", flow_sentiment: 0.4, whale_put_sells: [
+      { ticker: "MOD", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" },
+      { ticker: "MOD", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" },
+    ]}];
+    const score = new Map([["MOD", { label: "Moderate", ivRank: 55 }]]);
+    const rows = summarizeWhaleFlowByTicker(sigs, { today, otmOnly: true, scoreByTicker: score });
+    expect(rows[0].is_candidate).toBe(false);
+  });
+
+  it("a one-off print is NOT a candidate even with a Strong setup + bullish flow (repeat-activity gate)", () => {
+    const sigs = [{ ticker: "ONE", flow_sentiment: 0.4, whale_put_sells: [
+      { ticker: "ONE", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // single trade
+    ]}];
+    const score = new Map([["ONE", { label: "Strong", ivRank: 70 }]]);
+    const rows = summarizeWhaleFlowByTicker(sigs, { today, otmOnly: true, scoreByTicker: score });
+    expect(rows[0].trade_count).toBe(1);
+    expect(rows[0].is_candidate).toBe(false);
   });
 
   it("accepts a plain-object score map and exposes drill-down trades", () => {
