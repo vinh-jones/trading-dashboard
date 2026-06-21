@@ -539,6 +539,28 @@ function AssignmentRiskPanel({ risk }) {
   );
 }
 
+// ── Decision-attribution logger (finance review cross-cutting #3) ────────────
+// Renders nothing. Posts the current per-CSP signal recommendations once per
+// browser per day (upserted server-side), so the monthly review can later show
+// which signals actually diverged from what was done. Optimistic daily flag so
+// re-renders don't spam; cleared on failure to retry.
+function SignalLog({ snapshots }) {
+  useEffect(() => {
+    if (!snapshots || snapshots.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const flagKey = `signal_log_${today}`;
+    if (localStorage.getItem(flagKey)) return;
+    localStorage.setItem(flagKey, "1"); // optimistic — avoid duplicate posts this session
+    fetch("/api/signal-log", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ snapshots }),
+    }).catch(() => localStorage.removeItem(flagKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshots.length]);
+  return null;
+}
+
 // ── GEX strike-walls expanded panel (Consumer 3) ─────────────────────────────
 
 function GexPanel({ gex }) {
@@ -911,7 +933,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
       ? trendOverlay(redeploy, flowForOverlay, undefined, { hardClose, confirmedBullish })
       : null;
 
-    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex };
+    return { pos: enrichedPos, dte, dtePct, glDollars, glPct, otmPct, displayValue, holdYield, redeploy, redeployOverlay, assignmentRisk, gex, hardClose, flowStreak: uwSigFlow?.flow_streak ?? null };
   });
 
   const sorted = sortCol == null ? enriched : [...enriched].sort((a, b) => {
@@ -966,8 +988,26 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
   const selectedRows = selectable ? enriched.filter(r => selectedKeys.has(positionKey(r.pos))) : [];
   const selectionAgg = selectable ? computeCspAggregates(selectedRows, accountValue) : null;
 
+  // Decision-attribution snapshots — only the CSP table carries the signal
+  // recommendations worth logging.
+  const signalSnapshots = positionType === "csps"
+    ? enriched
+        .filter(r => r.redeploy || r.assignmentRisk)
+        .map(r => ({
+          position_key:     positionKey(r.pos),
+          ticker:           r.pos.ticker,
+          redeploy_state:   r.redeploy?.redeploy_state ?? null,
+          overlay_state:    r.redeployOverlay?.state ?? null,
+          assignment_level: r.assignmentRisk?.level ?? null,
+          hard_close:       r.hardClose ?? null,
+          gex_env:          r.gex?.env ?? null,
+          flow_streak:      r.flowStreak ?? null,
+        }))
+    : [];
+
   return (
     <div style={{ overflowX: "auto" }}>
+      <SignalLog snapshots={signalSnapshots} />
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: theme.size.md }}>
         <thead>
           <tr style={{ borderBottom: `1px solid ${theme.border.strong}` }}>
