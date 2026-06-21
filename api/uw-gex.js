@@ -145,11 +145,16 @@ export default async function handler(req, res) {
     const spotByTicker = new Map();
     for (const q of quoteRows ?? []) spotByTicker.set(q.symbol, q.mid ?? q.last ?? null);
 
+    // Prior env for the hysteresis band (so a name near its gamma flip holds
+    // its label instead of flip-flopping day to day).
+    const { data: priorRows } = await supabase.from("uw_signals").select("ticker, gex_env").in("ticker", tickers);
+    const prevEnvByTicker = new Map((priorRows ?? []).map((r) => [r.ticker, r.gex_env]));
+
     const results = [];
     for (const ticker of tickers) {
       try {
         const rows   = await fetchStrikeProfile(ticker);
-        const levels = computeGexLevels({ rows, spot: spotByTicker.get(ticker) });
+        const levels = computeGexLevels({ rows, spot: spotByTicker.get(ticker), prevEnv: prevEnvByTicker.get(ticker) ?? null });
         const patch = {
           gex_env:          levels.env,
           gex_net_gamma:    levels.netGamma,

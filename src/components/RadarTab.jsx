@@ -1206,6 +1206,14 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
               ⚠ IV component reflects a recently shifted IVR baseline — see IV Trend section
             </div>
           )}
+          <div style={{
+            fontSize:   theme.size.xs,
+            color:      theme.text.subtle,
+            lineHeight: 1.5,
+            marginTop:  theme.space[2],
+          }}>
+            This score ranks <em>attractiveness</em> — it is not a deploy authorization. Your OTU checklist (chart, P/E, earnings beats, the 2%-on-30Δ rule) and VIX cash target sit above it.
+          </div>
         </>
       ) : (
         <div style={{ fontSize: theme.size.sm, color: theme.text.subtle }}>

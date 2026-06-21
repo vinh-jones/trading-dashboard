@@ -21,9 +21,30 @@
 // all-null ("no GEX signal"). The cron normalizes UW's raw by-strike response
 // into `[{ strike, gamma }]`, so this stays shape-independent and testable.
 
-// Net gamma ratio in [-1, 1] above/below this magnitude flips the label;
-// inside the band it's "neutral" (avoids flip-flop near zero).
-const ENV_DEADBAND = 0.05;
+// Environment hysteresis (per finance review): flipping INTO stabilized/choppy
+// requires clearing the wider ENTER band, but the state then HOLDS until the
+// ratio retreats inside the narrower EXIT band. This stops names sitting near
+// their gamma flip (ratio oscillating around zero) from flip-flopping the
+// label day to day. prevEnv is the last persisted env for the ticker.
+const ENV_ENTER = 0.10;
+const ENV_EXIT  = 0.05;
+
+function classifyEnv(ratio, prevEnv) {
+  if (prevEnv === "stabilized") {
+    if (ratio > ENV_EXIT) return "stabilized";
+    if (ratio < -ENV_ENTER) return "choppy";
+    return "neutral";
+  }
+  if (prevEnv === "choppy") {
+    if (ratio < -ENV_EXIT) return "choppy";
+    if (ratio > ENV_ENTER) return "stabilized";
+    return "neutral";
+  }
+  // From neutral / cold start — must clear the wider entry band.
+  if (ratio > ENV_ENTER) return "stabilized";
+  if (ratio < -ENV_ENTER) return "choppy";
+  return "neutral";
+}
 
 function toNum(v) {
   if (v == null) return null;
@@ -31,7 +52,7 @@ function toNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-export function computeGexLevels({ rows, spot } = {}) {
+export function computeGexLevels({ rows, spot, prevEnv = null } = {}) {
   const clean = (Array.isArray(rows) ? rows : [])
     .map((r) => ({ strike: Number(r?.strike), gamma: Number(r?.gamma) }))
     .filter((r) => Number.isFinite(r.strike) && Number.isFinite(r.gamma));
@@ -45,9 +66,7 @@ export function computeGexLevels({ rows, spot } = {}) {
   const totalAbs = clean.reduce((s, r) => s + Math.abs(r.gamma), 0);
   const gammaRatio = totalAbs > 0 ? +(netGamma / totalAbs).toFixed(4) : 0;
 
-  const env = gammaRatio > ENV_DEADBAND ? "stabilized"
-    : gammaRatio < -ENV_DEADBAND ? "choppy"
-    : "neutral";
+  const env = classifyEnv(gammaRatio, prevEnv);
 
   // resistance — dominant positive-gamma bar above spot (a ceiling).
   // support    — dominant positive-gamma bar below spot (a defended floor).

@@ -57,6 +57,9 @@ export function entryScore(
   if (ivComp == null) return null;
   const base  = (1 - bbPosition) * 0.50 + ivComp * 0.50;
   const trend = getTrendState(price, ma50, ma200);
+  // ivTrend.modifier is supplied by the IV-trend classifier (useIvTrends):
+  //   rising 1.10 · stable 1.00 · falling 0.90 · collapsing 0.90 · spiking 0.85
+  // "insufficient" history (or no ivTrend) is a no-op (1.0).
   const ivMod = (ivTrend?.state && ivTrend.state !== "insufficient") ? (ivTrend.modifier ?? 1.0) : 1.0;
   return base
     * (trend?.modifier ?? 1.0)
