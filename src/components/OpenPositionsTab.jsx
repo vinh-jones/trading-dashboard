@@ -25,6 +25,7 @@ import { computeAssignmentRisk } from "../lib/assignmentRisk";
 import { useUwSignals } from "../hooks/useUwSignals";
 import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
+import { SignalLogPanel } from "./SignalLogPanel";
 import { CohortsPanel } from "./CohortsPanel";
 import { PositionHistoryPanel } from "./PositionHistoryPanel";
 import { slugifyCohortName } from "../lib/cohorts";
@@ -1541,6 +1542,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               ))}
             </div>
           </div>
+          {positionTab === "csps" && <SignalLogPanel />}
           {positionTab === "cohorts" ? (
             <CohortsPanel
               cohortEntries={cohortEntries}

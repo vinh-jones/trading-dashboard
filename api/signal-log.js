@@ -27,6 +27,24 @@ function getSupabase() {
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    try {
+      const supabase = getSupabase();
+      const days = Math.min(Math.max(parseInt(req.query.days, 10) || 21, 1), 120);
+      const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      const { data, error } = await supabase
+        .from("signal_log")
+        .select("logged_date, position_key, ticker, redeploy_state, overlay_state, assignment_level, hard_close, gex_env, flow_streak")
+        .gte("logged_date", since)
+        .order("logged_date", { ascending: false });
+      if (error) throw new Error(error.message);
+      return res.status(200).json({ ok: true, rows: data ?? [] });
+    } catch (err) {
+      console.error("[api/signal-log GET]", err.message);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  }
+
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
 
   try {
