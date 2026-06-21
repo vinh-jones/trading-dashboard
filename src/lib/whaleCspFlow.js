@@ -10,6 +10,8 @@
 // spot (out-of-the-money — the normal CSP sell zone). The default filters keep
 // only OTM puts in a 7–65 DTE window — the trades shaped like the ones you sell.
 
+import { flowConfirmation } from "./flowSmoothing.js";
+
 export const WHALE_FLOW_DEFAULTS = { minPremium: 50000, minDte: 7, maxDte: 65, otmOnly: true };
 
 function dteFrom(expiryIso, todayIso) {
@@ -63,6 +65,8 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
 
   const flowByTicker  = new Map((uwSignalsList ?? []).map((s) => [s.ticker, s.flow_sentiment]));
   const gammaByTicker = new Map((uwSignalsList ?? []).map((s) => [s.ticker, s.gamma_env]));
+  const confByTicker  = new Map((uwSignalsList ?? []).map((s) =>
+    [s.ticker, flowConfirmation({ flowEma: s.flow_ema, flowStreak: s.flow_streak })]));
   const lookupScore = (t) =>
     typeof scoreByTicker?.get === "function" ? scoreByTicker.get(t) : scoreByTicker?.[t];
 
@@ -92,11 +96,11 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
     const topTrade = g.trades.find((t) => t.strike === topStrike);
     const score = lookupScore(g.ticker) ?? null;
     const flow  = flowByTicker.get(g.ticker) ?? null;
-    // Candidate = STRONG entry setup AND bullish institutional flow AND repeat
-    // activity (≥2 prints, not a one-off). Strong-only + repeat is the Ryan-first
-    // gate from the finance review: a ★ confirms a setup lines up — it is never a
-    // buy signal, and the full OTU checklist still sits above it.
-    const isCandidate = score?.label === "Strong" && flow != null && flow > 0.2 && g.trade_count >= 2;
+    // Candidate = STRONG entry setup AND CONFIRMED bullish flow (smoothed EMA +
+    // multi-day streak, not a single print) AND repeat whale activity (≥2 prints).
+    // The Ryan-first gate from the finance review: a ★ confirms a setup lines up
+    // — it is never a buy signal, and the full OTU checklist still sits above it.
+    const isCandidate = score?.label === "Strong" && (confByTicker.get(g.ticker)?.bullish ?? false) && g.trade_count >= 2;
     out.push({
       ticker:         g.ticker,
       total_premium:  g.total_premium,
