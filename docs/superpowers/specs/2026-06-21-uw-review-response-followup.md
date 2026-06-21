@@ -76,3 +76,30 @@ case for the ending posture: **let it run.**
 1. **Scoreboard metrics:** when we build it, what's the minimal set that would let you call a signal "earned its keep"? (My starting proposal: per signal — # times it fired, # times it diverged from the action taken, and realized P&L delta on divergence vs. follow.)
 2. **Streak N = 2 days** for confirmed flow — reasonable starting bar, or would you start stricter (3) given the deployment-pull concern?
 3. **C's trend penalty:** leave the multiplicative stack as-is (UW mods capped, trend core), or do you want the *total* modifier swing bounded for auditability?
+
+---
+
+## Addendum — response reviewed, sharpenings shipped (2026-06-21, → 1.150.0)
+
+Finance review **endorsed "let it run"** ("the right call regardless of how the next 3–4 weeks turn out … for you specifically, the urge to keep refining is the drift pattern wearing a productive mask"). Three sharpenings + answers to the open questions came back; all code-level points are now shipped in **1.150.0**.
+
+**Sharpenings → what shipped:**
+
+1. **Extend the asymmetry to the observation period.** Pull-toward-risk signals must be *observe-only* during the run, or "let it run" becomes a backdoor to acting on unvalidated machinery and contaminating the data.
+   → `let_it_ride` now renders as a dashed "watch" chip + "observe-only; don't hold past your plan on its say-so" note; whale `★` footer states observe-only until the scoreboard validates it. Both keep firing/logging. Defensive signals (assignment, GEX, max-pain, `shed`) stay action-usable now.
+
+2. **Distinguish a tuning question from a safety misfire.** A threshold that *feels* off vs a real position = data, log it, wait. A *gated override path behaving wrong* on a live position (e.g. `let_it_ride` holds past a hard rule; `★` fires and the deployment pull is felt) = a real-money event, fix immediately. "Let it run" ≠ "don't look until day 28."
+   → Operating guidance for the run (no code); recorded here.
+
+3. **Build the scoreboard scaffold now, not as a week-4 follow-on** — else week 4 becomes "spend two weeks building, then start reading," pushing the prune to week 6+.
+   → `src/lib/signalScoreboard.js` + a summary strip in the Signal log panel. Computes what the log alone supports today (per-signal frequency; lead drift metric = **days held past a `rule: close`**). Noisy on thin data by design; flips on as data accrues.
+
+**Answers to the open questions:**
+
+- **Q1 — metrics.** Lead metric is **decision-divergence rate vs the Ryan-first baseline**, not P&L: a signal that never diverges from what the rules already say is *redundant and gets cut even if perfectly accurate*. P&L delta is secondary/noisy over a short window. Add **state-accuracy** for descriptive signals (did "choppy" realize higher vol; did "assignment risk" precede breaches — a process measure on untouched positions), and a **separate entry paper-track** (counterfactual for ideas not taken, kept distinct from live P&L). → This is the spec the full scoreboard will be built against.
+- **Q2 — streak N.** Start at **N=3** on the pull-toward-risk side (erring away from pulling toward risk is the safe error). Log raw streak length so N=2/3/4 can be backtested from the log — strict live, flexible in analysis. → **Shipped: STREAK_MIN = 3**; `flow_streak` persisted in `uw_signals` + `signal_log`.
+- **Q3 — trend penalty.** **Leave it.** A downtrend *should* dominate the score (selling puts into a falling knife is the PLTR-below-cost trap); multiplicative compounding of independent bad signs is correct. Auditability is handled by logging per-modifier contributions. → No change; per-modifier breakdown already shown in `ScannerScoreFormula`.
+
+**Confirmed (no code):** `PROFIT_TIERS` (50/60/80) is DTE-conditional on DTE-% remaining, so `hardClose` is not a flat profit ladder firing at the wrong tier.
+
+**State:** build complete; pull-toward-risk signals observe-only; defensive signals live; scoreboard scaffold in place. Next artifact is the **data-driven scoreboard review (~week 4)** — that review, not this one, decides what gets cut.

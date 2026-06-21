@@ -388,16 +388,11 @@ function redeployCopy(rd) {
 function RedeployIndicator({ rd, ov }) {
   if (!rd || rd.skipped) return null;
   const state = ov?.state ?? rd.redeploy_state;
-  // Hard rule (profit target / cushion) says close — discipline over flow/ratio.
-  if (state === "rule_close") {
-    return (
-      <span style={{
-        marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
-        background: `${theme.amber}22`, color: theme.amber, border: `1px solid ${theme.amber}66`,
-        fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
-      }}>⏹ rule: close</span>
-    );
-  }
+  // rule_close (a take-profit tier hit, or price in the money) is intentionally
+  // silent: the profit case is already shown by the green target highlight, and
+  // there's no close-on-breach rule to assert — a chip there is false urgency.
+  // The precedence still runs underneath (it suppresses let_it_ride / hold), it
+  // just doesn't render. Falls through to null.
   // Flow overrides: close-trigger fired but smart money bullish → let it ride;
   // holding fine but flow turned bearish → shed early.
   if (state === "let_it_ride") {
@@ -444,16 +439,19 @@ function RedeployPanel({ rd, ov }) {
   if (!rd || rd.skipped || rd.redeploy_state === "underwater") return null;
 
   const state      = ov?.state ?? rd.redeploy_state;
+  // rule_close is silent (see RedeployIndicator) — the redeploy/hold question is
+  // moot when a profit target's hit (already green-highlighted) or you're ITM,
+  // and there's no close-on-breach rule to surface. Suppression still ran.
+  if (state === "rule_close") return null;
   const overridden = !!ov?.overridden;
   const HEAD = {
-    rule_close:  { label: "Close — your rule", color: theme.amber },
     let_it_ride: { label: "Let it ride", color: theme.green },
     shed:        { label: "Flow turning", color: theme.amber },
     redeploy:    { label: "Redeploy",     color: theme.blue },
     watch:       { label: "Redeploy",     color: theme.blue },
   };
   const head  = HEAD[state] ?? { label: "Redeploy", color: theme.text.muted };
-  const tint  = state === "let_it_ride" ? theme.green : (state === "shed" || state === "rule_close") ? theme.amber : state === "redeploy" ? theme.blue : null;
+  const tint  = state === "let_it_ride" ? theme.green : state === "shed" ? theme.amber : state === "redeploy" ? theme.blue : null;
 
   const flowLabel = ov?.flow == null ? "—" : ov.flow >= 0.2 ? "bullish" : ov.flow <= -0.2 ? "bearish" : "neutral";
   const flowColor = ov?.flow == null ? theme.text.muted : ov.flow >= 0.2 ? theme.green : ov.flow <= -0.2 ? theme.red : theme.text.muted;
