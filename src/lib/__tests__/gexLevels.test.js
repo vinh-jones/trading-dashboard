@@ -39,6 +39,20 @@ describe("computeGexLevels", () => {
     expect(r.gammaRatio).toBe(0);
   });
 
+  it("hysteresis: a weak positive ratio reads neutral from cold but holds 'stabilized' if already there", () => {
+    // net = 1.4, totalAbs = 20 → ratio 0.07 (between EXIT 0.05 and ENTER 0.10)
+    const rows = [{ strike: 90, gamma: 10.7 }, { strike: 110, gamma: -9.3 }];
+    expect(computeGexLevels({ rows, spot: 100 }).gammaRatio).toBe(0.07);
+    expect(computeGexLevels({ rows, spot: 100 }).env).toBe("neutral");                       // cold start
+    expect(computeGexLevels({ rows, spot: 100, prevEnv: "stabilized" }).env).toBe("stabilized"); // holds
+  });
+
+  it("hysteresis: a state releases once the ratio retreats inside the exit band", () => {
+    // ratio ~0.03 (< EXIT 0.05) → drops back to neutral even if previously stabilized
+    const rows = [{ strike: 90, gamma: 10.3 }, { strike: 110, gamma: -9.7 }];
+    expect(computeGexLevels({ rows, spot: 100, prevEnv: "stabilized" }).env).toBe("neutral");
+  });
+
   it("resistance = dominant positive-gamma bar above spot", () => {
     const r = computeGexLevels({
       rows: [

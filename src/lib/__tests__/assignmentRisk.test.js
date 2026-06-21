@@ -83,15 +83,22 @@ describe("computeAssignmentRisk", () => {
     expect(r.factors[0].label).toMatch(/before expiry/);
   });
 
-  it("high short interest adds a med factor", () => {
-    const r = computeAssignmentRisk({ ...base, shortInterestPct: 25, cushionState: "safe" });
-    expect(r.factors.find((f) => f.key === "short")?.severity).toBe("med");
-    expect(r.factors.find((f) => f.key === "short")?.label).toMatch(/25% of float/);
-    expect(r.level).toBe("watch");
+  it("high short interest alone adds nothing (cuts both ways for a put-seller)", () => {
+    const r = computeAssignmentRisk({ ...base, shortInterestPct: 25, gammaEnv: 0.1, cushionState: "safe" });
+    expect(r.factors.find((f) => f.key === "short")).toBeUndefined();
+    expect(r.level).toBe("none");
   });
 
-  it("low short interest adds nothing", () => {
-    const r = computeAssignmentRisk({ ...base, shortInterestPct: 4 });
+  it("high short interest counts only with co-occurring bearish flow", () => {
+    const r = computeAssignmentRisk({ ...base, shortInterestPct: 25, flowSentiment: -0.3, gammaEnv: 0.1, cushionState: "safe" });
+    const short = r.factors.find((f) => f.key === "short");
+    expect(short?.severity).toBe("med");
+    expect(short?.label).toMatch(/25% of float/);
+    expect(r.level).toBe("elevated"); // flow + short = two med factors
+  });
+
+  it("low short interest adds nothing even with bearish flow", () => {
+    const r = computeAssignmentRisk({ ...base, shortInterestPct: 4, flowSentiment: -0.3 });
     expect(r.factors.find((f) => f.key === "short")).toBeUndefined();
   });
 });

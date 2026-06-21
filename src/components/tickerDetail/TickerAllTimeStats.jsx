@@ -10,15 +10,16 @@ function bestWorstSubtitle(t) {
   return `${t.type}${strikePart} · ${formatExpiry(t.close_date)}`;
 }
 
-function Card({ label, value, sub, color, accent, large }) {
+function Card({ label, value, sub, color, accent, large, title }) {
   return (
-    <div style={{
+    <div title={title} style={{
       padding: large ? theme.space[4] : theme.space[3],
       background: theme.bg.surface,
       border: `1px solid ${theme.border.default}`,
       borderLeft: accent ? `3px solid ${accent}` : `1px solid ${theme.border.default}`,
       borderRadius: theme.radius.md,
       minWidth: 0,
+      cursor: title ? "help" : undefined,
     }}>
       <div style={{
         fontSize: theme.size.xs, color: theme.text.muted,
@@ -92,6 +93,7 @@ export function TickerAllTimeStats({ data }) {
           label="Capital efficiency"
           value={stats.capitalEfficiencyPct != null ? `${stats.capitalEfficiencyPct.toFixed(1)}%` : "—"}
           sub="annualized · on total secured capital"
+          title="Annualized realized P&L per dollar-day of secured collateral — a per-deployed-dollar yield for comparing names. NOT a 'deploy more' signal: a higher number just means collateral worked harder, not that you should commit more. Read it against your leverage ceiling, never as a reason to deploy."
           large
         />
         <Card

@@ -77,9 +77,14 @@ export function computeAssignmentRisk(args = {}, config = ASSIGNMENT_RISK_DEFAUL
     factors.push({ key: "gamma", severity: "low", label: "Choppy gamma (fast moves)" });
   }
 
-  // High short interest — crowded/fragile, prone to sharp moves.
-  if (shortInterestPct != null && shortInterestPct >= cfg.HIGH_SHORT_INTEREST) {
-    factors.push({ key: "short", severity: "med", label: `High short interest (${shortInterestPct.toFixed(0)}% of float)` });
+  // High short interest — only counts as assignment risk when bearish flow is
+  // ALSO present (per finance review). High SI alone cuts both ways for a
+  // put-seller: it's squeeze fuel (stock pops, your put wins) as often as
+  // fragility. Requiring bearish flow to co-occur isolates the case where the
+  // fragility is actually realizing rather than flagging every crowded short.
+  const bearishFlowForShort = flowSentiment != null && flowSentiment <= cfg.BEARISH_FLOW;
+  if (shortInterestPct != null && shortInterestPct >= cfg.HIGH_SHORT_INTEREST && bearishFlowForShort) {
+    factors.push({ key: "short", severity: "med", label: `High short interest (${shortInterestPct.toFixed(0)}% of float) into bearish flow` });
   }
 
   factors.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]);
