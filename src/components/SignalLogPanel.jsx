@@ -86,8 +86,8 @@ export function SignalLogPanel() {
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, borderBottom: `1px solid ${theme.border.default}`, display: "flex", flexWrap: "wrap", gap: theme.space[4], fontSize: theme.size.sm }}>
             {[
               { label: "Position-days", value: board.position_days, color: theme.text.primary },
-              { label: "rule:close fired", value: `${board.counts.rule_close} pos`, color: theme.amber },
-              { label: "Held past rule", value: `${board.held_past_rule_days}d`, color: board.held_past_rule_days > 0 ? theme.red : theme.green, title: "Days a position kept being logged after a take-profit/cushion rule said close — the lead drift metric. 0 = you acted on the rule." },
+              { label: "Target hit", value: `${board.counts.target_hit} pos`, color: theme.green },
+              { label: "Held past target", value: `${board.held_past_target_days}d`, color: board.held_past_target_days > 0 ? theme.amber : theme.green, title: "Days a position kept being logged after it hit its profit target — the lead drift metric. 0 = you banked it on time." },
               { label: "let-it-ride (obs)", value: `${board.counts.let_it_ride} pos`, color: theme.text.muted },
               { label: "shed", value: `${board.counts.shed} pos`, color: theme.text.muted },
               { label: "risk elev/high", value: `${board.counts.risk_elevated}/${board.counts.risk_high}`, color: theme.text.muted },

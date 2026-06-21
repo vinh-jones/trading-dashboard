@@ -6,8 +6,8 @@ describe("computeScoreboard", () => {
     const s = computeScoreboard([]);
     expect(s.position_days).toBe(0);
     expect(s.distinct_positions).toBe(0);
-    expect(s.counts.rule_close).toBe(0);
-    expect(s.held_past_rule_days).toBe(0);
+    expect(s.counts.target_hit).toBe(0);
+    expect(s.held_past_target_days).toBe(0);
   });
 
   it("counts distinct positions per notable state and risk level", () => {
@@ -25,17 +25,17 @@ describe("computeScoreboard", () => {
     expect(s.counts.risk_high).toBe(1);
   });
 
-  it("measures days held past rule_close (the drift metric)", () => {
+  it("measures days held past the profit target (hard_close, the drift metric)", () => {
     const rows = [
-      // Position C: rule_close fires day 1, still logged days 2-3 → held 2 days past.
-      { logged_date: "2026-06-20", position_key: "C", overlay_state: "rule_close" },
-      { logged_date: "2026-06-21", position_key: "C", overlay_state: "rule_close" },
-      { logged_date: "2026-06-22", position_key: "C", overlay_state: "watch" },
-      // Position D: rule_close only on its last logged day → 0 held past (acted).
-      { logged_date: "2026-06-22", position_key: "D", overlay_state: "rule_close" },
+      // Position C: target hit day 1, still logged days 2-3 → held 2 days past.
+      { logged_date: "2026-06-20", position_key: "C", hard_close: true },
+      { logged_date: "2026-06-21", position_key: "C", hard_close: true },
+      { logged_date: "2026-06-22", position_key: "C", hard_close: false },
+      // Position D: target hit only on its last logged day → 0 held past (acted).
+      { logged_date: "2026-06-22", position_key: "D", hard_close: true },
     ];
     const s = computeScoreboard(rows);
-    expect(s.rule_close_positions).toBe(2);
-    expect(s.held_past_rule_days).toBe(2); // C contributes 2, D contributes 0
+    expect(s.target_positions).toBe(2);
+    expect(s.held_past_target_days).toBe(2); // C contributes 2, D contributes 0
   });
 });
