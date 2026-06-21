@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { theme } from "../lib/theme";
+import { computeScoreboard } from "../lib/signalScoreboard";
 
 // Decision-attribution read (finance review cross-cutting #3) — the lightweight
 // view over the signal_log the Open Positions tab writes. It surfaces the
@@ -45,6 +46,7 @@ export function SignalLogPanel() {
 
   const flagged = rows.filter((r) => notableTags(r).length > 0);
   const display = showAll ? rows : flagged;
+  const board = computeScoreboard(rows);
 
   const chip = (t, i) => (
     <span key={i} style={{
@@ -79,8 +81,26 @@ export function SignalLogPanel() {
 
       {open && (
         <div style={{ borderTop: `1px solid ${theme.border.default}` }}>
+          {/* Scoreboard scaffold — computable from the log today; flips on as
+              data accrues. Lead drift metric: days held past a rule:close. */}
+          <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, borderBottom: `1px solid ${theme.border.default}`, display: "flex", flexWrap: "wrap", gap: theme.space[4], fontSize: theme.size.sm }}>
+            {[
+              { label: "Position-days", value: board.position_days, color: theme.text.primary },
+              { label: "rule:close fired", value: `${board.counts.rule_close} pos`, color: theme.amber },
+              { label: "Held past rule", value: `${board.held_past_rule_days}d`, color: board.held_past_rule_days > 0 ? theme.red : theme.green, title: "Days a position kept being logged after a take-profit/cushion rule said close — the lead drift metric. 0 = you acted on the rule." },
+              { label: "let-it-ride (obs)", value: `${board.counts.let_it_ride} pos`, color: theme.text.muted },
+              { label: "shed", value: `${board.counts.shed} pos`, color: theme.text.muted },
+              { label: "risk elev/high", value: `${board.counts.risk_elevated}/${board.counts.risk_high}`, color: theme.text.muted },
+            ].map((m) => (
+              <div key={m.label} title={m.title}>
+                <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{m.label}</div>
+                <div style={{ color: m.color, fontWeight: 600, fontFamily: theme.font.mono }}>{m.value}</div>
+              </div>
+            ))}
+          </div>
+
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.xs, color: theme.text.subtle, lineHeight: 1.5 }}>
-            What the signals recommended on each open CSP, captured when you viewed this tab. Fills in over time — the monthly scoreboard (did following a signal help) comes once there&apos;s closed-position history.
+            What the signals recommended on each open CSP, captured when you viewed this tab. Thin early on — the figures above are noisy by design until weeks accrue. Outcome attribution (did following a signal help; divergence vs. your baseline; entry paper-track) is the data-accruing follow-on.
             <button
               onClick={() => setShowAll((s) => !s)}
               style={{ marginLeft: theme.space[2], fontSize: theme.size.xs, fontFamily: "inherit", cursor: "pointer", background: "transparent", border: "none", color: theme.text.muted, textDecoration: "underline" }}

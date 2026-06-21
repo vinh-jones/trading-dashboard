@@ -14,7 +14,11 @@ export const FLOW_SMOOTHING_DEFAULTS = {
   EMA_ALPHA:  0.3,   // weight on the newest reading in the intraday EMA
   BULLISH:    0.2,   // direction thresholds (match trendOverlay)
   BEARISH:   -0.2,
-  STREAK_MIN: 2,     // consecutive in-direction days required to confirm
+  STREAK_MIN: 3,     // consecutive in-direction days required to confirm. Set to
+                     // 3 (not 2) on the pull-toward-risk side per the finance
+                     // review: demand more confirmation before the tool nudges
+                     // toward risk. Raw flow_streak is logged, so N=2/3/4 can be
+                     // backtested from the log without ever running looser live.
 };
 
 export function flowDir(value, config = FLOW_SMOOTHING_DEFAULTS) {

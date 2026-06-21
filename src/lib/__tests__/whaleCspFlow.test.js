@@ -99,7 +99,7 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
       { ticker: "BIG", flow_sentiment: 0.0, whale_put_sells: [
         { ticker: "BIG", strike: 90, underlying: 100, premium: 5_000_000, expiry: "2026-07-20" }, // huge, but flat flow
       ]},
-      { ticker: "CAND", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 2, whale_put_sells: [
+      { ticker: "CAND", flow_sentiment: 0.4, flow_ema: 0.4, flow_streak: 3, whale_put_sells: [
         { ticker: "CAND", strike: 90, underlying: 100, premium: 300_000, expiry: "2026-07-20" }, // small, but candidate
         { ticker: "CAND", strike: 88, underlying: 100, premium: 250_000, expiry: "2026-07-18" }, // repeat print (≥2)
       ]},

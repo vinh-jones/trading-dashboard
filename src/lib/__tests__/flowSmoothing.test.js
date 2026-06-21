@@ -50,15 +50,15 @@ describe("updateFlowState — daily streak", () => {
 });
 
 describe("flowConfirmation — EMA + streak must agree", () => {
-  it("confirms bullish only with both EMA in-direction and streak ≥ N", () => {
-    expect(flowConfirmation({ flowEma: 0.4, flowStreak: 2 }).bullish).toBe(true);
-    expect(flowConfirmation({ flowEma: 0.4, flowStreak: 1 }).bullish).toBe(false); // streak too short
-    expect(flowConfirmation({ flowEma: 0.1, flowStreak: 3 }).bullish).toBe(false); // EMA not bullish
+  it("confirms bullish only with both EMA in-direction and streak ≥ N (N=3)", () => {
+    expect(flowConfirmation({ flowEma: 0.4, flowStreak: 3 }).bullish).toBe(true);
+    expect(flowConfirmation({ flowEma: 0.4, flowStreak: 2 }).bullish).toBe(false); // streak too short
+    expect(flowConfirmation({ flowEma: 0.1, flowStreak: 4 }).bullish).toBe(false); // EMA not bullish
   });
 
-  it("confirms bearish symmetrically", () => {
-    expect(flowConfirmation({ flowEma: -0.4, flowStreak: -2 }).bearish).toBe(true);
-    expect(flowConfirmation({ flowEma: -0.4, flowStreak: -1 }).bearish).toBe(false);
+  it("confirms bearish symmetrically (N=3)", () => {
+    expect(flowConfirmation({ flowEma: -0.4, flowStreak: -3 }).bearish).toBe(true);
+    expect(flowConfirmation({ flowEma: -0.4, flowStreak: -2 }).bearish).toBe(false);
   });
 
   it("null-safe (no flow data yet → not confirmed)", () => {
