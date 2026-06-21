@@ -18,6 +18,7 @@ import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeRedeploySignal } from "../lib/redeploySignal";
+import { describeStrikeVsGex } from "../lib/gexLevels";
 import { trendOverlay } from "../lib/trendOverlay";
 import { computeAssignmentRisk } from "../lib/assignmentRisk";
 import { useUwSignals } from "../hooks/useUwSignals";
@@ -538,6 +539,10 @@ function GexPanel({ gex }) {
   if (!envMeta) return null;
 
   const fmt = (n) => (n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+  const strikeRead = describeStrikeVsGex({ strike: gex.strike, support: gex.support, airPocket: gex.airPocket });
+  const toneColor = strikeRead?.tone === "exposed" ? theme.red
+    : strikeRead?.tone === "defended" ? theme.green
+    : theme.text.muted;
 
   return (
     <div style={{
@@ -553,10 +558,16 @@ function GexPanel({ gex }) {
         {envMeta.note}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: theme.space[4], fontSize: theme.size.sm, color: theme.text.secondary }}>
-        <span>Resistance wall <strong style={{ color: theme.text.primary }}>{fmt(gex.resistance)}</strong></span>
+        <span>Resistance (+γ above) <strong style={{ color: theme.text.primary }}>{fmt(gex.resistance)}</strong></span>
         <span>Your strike <strong style={{ color: theme.text.primary }}>{fmt(gex.strike)}</strong></span>
-        <span>Support / accel. <strong style={{ color: theme.text.primary }}>{fmt(gex.support)}</strong></span>
+        <span>Support shelf (+γ below) <strong style={{ color: theme.green }}>{fmt(gex.support)}</strong></span>
+        <span>Air pocket (−γ below) <strong style={{ color: theme.red }}>{fmt(gex.airPocket)}</strong></span>
       </div>
+      {strikeRead && (
+        <div style={{ marginTop: theme.space[2], fontSize: theme.size.sm, color: toneColor }}>
+          {strikeRead.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -861,6 +872,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
           env:        uwSig.gex_env,
           support:    uwSig.gex_support ?? null,
           resistance: uwSig.gex_resistance ?? null,
+          airPocket:  uwSig.gex_air_pocket ?? null,
           strike:     pos.strike,
           spot:       quoteMap.get(pos.ticker)?.mid ?? quoteMap.get(pos.ticker)?.last ?? null,
         };

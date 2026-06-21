@@ -155,6 +155,7 @@ export default async function handler(req, res) {
           gex_net_gamma:    levels.netGamma,
           gex_support:      levels.support,
           gex_resistance:   levels.resistance,
+          gex_air_pocket:   levels.airPocket,
           gex_refreshed_at: now,
         };
         const { error } = await supabase.from("uw_signals").update(patch).eq("ticker", ticker);
