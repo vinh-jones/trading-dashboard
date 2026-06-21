@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
+import { describeStrikeVsGex } from "../lib/gexLevels";
 import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
@@ -761,7 +762,7 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance, gex_air_pocket } = row;
   const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
@@ -1068,12 +1069,12 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
         const meta = GEX_ENV_META[gex_env];
         const fmt = (n) => (n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
         const sampleStrike = sample?.status === "ok" ? sample.strike : null;
-        let strikeNote = null;
-        if (sampleStrike != null && gex_support != null) {
-          strikeNote = sampleStrike <= gex_support
-            ? `Your sample $${sampleStrike}p sits below the negative-gamma zone (${fmt(gex_support)}) — a break there can accelerate toward your strike. Favor a strike with a positive-gamma wall beneath it.`
-            : `Your sample $${sampleStrike}p sits above the negative-gamma zone (${fmt(gex_support)}) — the acceleration level is below your strike.`;
-        }
+        const strikeRead = sampleStrike != null
+          ? describeStrikeVsGex({ strike: sampleStrike, support: gex_support, airPocket: gex_air_pocket })
+          : null;
+        const toneColor = strikeRead?.tone === "exposed" ? theme.red
+          : strikeRead?.tone === "defended" ? theme.green
+          : theme.text.secondary;
         return (
           <>
             <div style={sectionLabelStyle}>Dealer Gamma (GEX)</div>
@@ -1082,8 +1083,9 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
                 <span style={{ color: theme.text.subtle }}>Environment: </span>
                 <span style={{ color: meta.color, fontWeight: 600 }}>{meta.label.replace("Gamma: ", "")}</span>
               </span>
-              {fieldRow("Resistance wall", fmt(gex_resistance))}
-              {fieldRow("Support / accel.", fmt(gex_support))}
+              {fieldRow("Resistance (+γ above)", fmt(gex_resistance))}
+              {fieldRow("Support shelf (+γ below)", fmt(gex_support), theme.green)}
+              {fieldRow("Air pocket (−γ below)", fmt(gex_air_pocket), theme.red)}
             </div>
             <div style={{
               fontSize:     theme.size.sm,
@@ -1095,8 +1097,10 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
               border:       `1px solid ${theme.border.default}`,
             }}>
               {GEX_EXPLANATIONS[gex_env](ticker)}
-              {strikeNote && (
-                <div style={{ marginTop: theme.space[2], color: theme.text.secondary }}>{strikeNote}</div>
+              {strikeRead && (
+                <div style={{ marginTop: theme.space[2], color: toneColor }}>
+                  Sample ${sampleStrike}p: {strikeRead.text}
+                </div>
               )}
             </div>
           </>
