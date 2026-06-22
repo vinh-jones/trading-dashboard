@@ -20,6 +20,7 @@ import { createClient } from "@supabase/supabase-js";
 import { hasUwKey, fetchGreekExposure, fetchFlowAlerts } from "./_lib/uwClient.js";
 import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts } from "../src/lib/uwNormalize.js";
 import { updateFlowState } from "../src/lib/flowSmoothing.js";
+import { mergeWhalePutSells } from "../src/lib/whaleCspFlow.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -88,7 +89,7 @@ export default async function handler(req, res) {
     // Also carries the prior flow EMA/day/streak for the smoothing update.
     const { data: existingRows } = await supabase
       .from("uw_signals")
-      .select("ticker, gamma_env, refreshed_at, flow_ema, flow_day, flow_streak");
+      .select("ticker, gamma_env, refreshed_at, flow_ema, flow_day, flow_streak, whale_put_sells");
     const existing = new Map((existingRows ?? []).map((r) => [r.ticker, r]));
 
     const results = [];
@@ -114,6 +115,11 @@ export default async function handler(req, res) {
           prevStreak: prev?.flow_streak ?? 0,
         });
 
+        // Whale put-sells accumulate into a rolling ~2-week window (merge +
+        // dedupe + prune) rather than overwriting, so a ticker's institutional
+        // put-selling persists instead of vanishing after one 15-min snapshot.
+        const whalePutSells = mergeWhalePutSells(prev?.whale_put_sells, whalePutSellsFromAlerts(alerts), { nowMs: Date.now() });
+
         const row = {
           ticker,
           gamma_env:       gammaEnv,
@@ -121,7 +127,7 @@ export default async function handler(req, res) {
           flow_ema:        flowState.flow_ema,
           flow_day:        flowState.flow_day,
           flow_streak:     flowState.flow_streak,
-          whale_put_sells: whalePutSellsFromAlerts(alerts),
+          whale_put_sells: whalePutSells,
           next_earnings_date: alerts?.[0]?.next_earnings_date ?? null,
           refreshed_at:    now,
         };

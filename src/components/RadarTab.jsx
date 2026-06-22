@@ -1378,7 +1378,7 @@ export function RadarTab({ positions = null, account = null }) {
     const m = new Map();
     for (const r of rows) {
       const s = entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment);
-      m.set(r.ticker, { label: scoreLabel(s), ivRank: r.iv_rank });
+      m.set(r.ticker, { label: scoreLabel(s), ivRank: r.iv_rank, score: s });
     }
     return m;
   }, [rows, ivTrendsByTicker]);

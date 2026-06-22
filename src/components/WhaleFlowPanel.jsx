@@ -49,12 +49,26 @@ function gammaChip(g) {
 // are selling puts, fused with the Radar entry score. Filtered to your CSP
 // window (7-65 DTE, OTM) by default; toggle to see everything. Each row expands
 // to its individual trades.
+// Value a column sorts on. Strings (Ticker) compare lexically; everything else
+// numerically with nulls forced to the bottom regardless of direction.
+const SORT_KEYS = {
+  "Ticker":     (r) => r.ticker ?? "",
+  "Score":      (r) => r.score_num,
+  "Put-sell $": (r) => r.total_premium,
+  "#":          (r) => r.trade_count,
+  "Top strike": (r) => r.top_strike_otm,
+  "Flow":       (r) => r.flow_sentiment,
+  "Gamma":      (r) => r.gamma_env,
+};
+
 export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
   const { uwSignals } = useUwSignals();
   const [open, setOpen]           = useState(false);
   const [filtered, setFiltered]   = useState(true);
   const [expanded, setExpanded]   = useState(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [sortCol, setSortCol]     = useState("Score"); // default: best setups on top
+  const [sortDir, setSortDir]     = useState("desc");
 
   const rows = useMemo(() => {
     const list = [...uwSignals.values()];
@@ -65,16 +79,49 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
     return summarizeWhaleFlowByTicker(list, opts);
   }, [uwSignals, heldTickers, scoreByTicker, filtered]);
 
+  const sortedRows = useMemo(() => {
+    const get = SORT_KEYS[sortCol] ?? SORT_KEYS["Score"];
+    const arr = [...rows];
+    arr.sort((a, b) => {
+      if (sortCol === "Ticker") {
+        const c = String(get(a)).localeCompare(String(get(b)));
+        return sortDir === "desc" ? -c : c;
+      }
+      const av = get(a), bv = get(b);
+      const an = av == null || !Number.isFinite(Number(av)) ? null : Number(av);
+      const bn = bv == null || !Number.isFinite(Number(bv)) ? null : Number(bv);
+      if (an == null && bn == null) return 0;
+      if (an == null) return 1;   // nulls always last
+      if (bn == null) return -1;
+      if (an !== bn) return sortDir === "desc" ? bn - an : an - bn;
+      return (b.total_premium ?? 0) - (a.total_premium ?? 0); // tiebreak: bigger size first
+    });
+    return arr;
+  }, [rows, sortCol, sortDir]);
+
   if (uwSignals.size === 0) return null;
 
-  const th = (label, align = "left") => (
-    <th title={COLUMN_HELP[label]} style={{
-      textAlign: align, padding: `${theme.space[2]}px ${theme.space[3]}px`,
-      color: theme.text.muted, fontWeight: 500, fontSize: theme.size.xs,
-      textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap",
-      cursor: "help", textDecoration: "underline dotted", textUnderlineOffset: 3,
-    }}>{label}</th>
-  );
+  function handleSort(col) {
+    if (sortCol === col) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortCol(col); setSortDir("desc"); }
+  }
+
+  const th = (label, align = "left") => {
+    const active = sortCol === label;
+    return (
+      <th title={COLUMN_HELP[label]} onClick={() => handleSort(label)} style={{
+        textAlign: align, padding: `${theme.space[2]}px ${theme.space[3]}px`,
+        color: active ? theme.text.primary : theme.text.muted, fontWeight: active ? 600 : 500,
+        fontSize: theme.size.xs, textTransform: "uppercase", letterSpacing: "0.5px",
+        whiteSpace: "nowrap", cursor: "pointer", userSelect: "none",
+      }}>
+        {label}
+        <span style={{ marginLeft: 4, opacity: active ? 0.8 : 0.25, fontSize: theme.size.xs }}>
+          {active ? (sortDir === "desc" ? "▼" : "▲") : "⇅"}
+        </span>
+      </th>
+    );
+  };
   const td = (content, style = {}) => (
     <td style={{ padding: `${theme.space[2]}px ${theme.space[3]}px`, ...style }}>{content}</td>
   );
@@ -140,7 +187,7 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {sortedRows.map((r) => {
                   const isOpen   = expanded === r.ticker;
                   const fc       = flowChip(r.flow_sentiment);
                   const gc       = gammaChip(r.gamma_env);
@@ -223,7 +270,7 @@ export function WhaleFlowPanel({ heldTickers, scoreByTicker }) {
           </div>
 
           <div style={{ padding: `${theme.space[2]}px ${theme.space[4]}px`, fontSize: theme.size.xs, color: theme.text.subtle }}>
-            Tickers ranked by total institutional put-sell premium. <span style={{ color: theme.green }}>★ green row</span> = whale-confirmed setup: Strong entry score AND bullish flow AND ≥2 prints. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
+            Tap a column header to sort — defaults to entry <strong>Score</strong>, so the best setups sit on top and you can scan their <strong>Flow</strong> column for bullish names. <span style={{ color: theme.green }}>★ green row</span> = whale-confirmed setup: Strong score AND bullish flow AND ≥2 prints. Gamma: <span style={{ color: theme.green }}>stable</span> = CSP-friendly, <span style={{ color: theme.red }}>choppy</span> = caution. Click a row for the individual trades.
             <div style={{ marginTop: theme.space[1], color: theme.amber }}>
               Confirmation, not a buy signal — a ★ means institutions are validating a strike, not that you should deploy. Run your full checklist (chart, P/E, earnings beats, the 2%-on-30Δ rule) and your VIX cash target first. <strong>★ candidacy is observe-only</strong> until the signal scoreboard validates it — watch it, don&apos;t act on it.
             </div>
