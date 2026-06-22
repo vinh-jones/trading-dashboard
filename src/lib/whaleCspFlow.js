@@ -14,6 +14,46 @@ import { flowConfirmation } from "./flowSmoothing.js";
 
 export const WHALE_FLOW_DEFAULTS = { minPremium: 50000, minDte: 7, maxDte: 65, otmOnly: true };
 
+// Rolling-window accumulation (uw-snapshot writes whale_put_sells each run).
+// UW's flow-alerts endpoint is a short recent-activity window, so a plain
+// overwrite makes prints vanish minutes after they cross. Instead we merge each
+// snapshot's fresh prints into the stored list, dedupe, stamp first-seen, and
+// prune to a rolling window — so a ticker's institutional put-selling persists
+// for ~2 weeks rather than one 15-min snapshot.
+export const WHALE_WINDOW_DAYS = 14;
+
+// Stable per-print key for dedupe across snapshots. Built from the fields a
+// print already carries (no UW id needed): a $50k+ print at a given strike /
+// expiry with a specific size + underlying is effectively unique; genuinely
+// identical prints collapsing to one is an acceptable rare undercount.
+export function whalePrintKey(p) {
+  return [p?.ticker, p?.strike, p?.expiry, p?.premium, p?.size ?? "", p?.underlying ?? ""].join("|");
+}
+
+export function mergeWhalePutSells(prev, fresh, { nowMs = Date.now(), windowDays = WHALE_WINDOW_DAYS } = {}) {
+  const cutoff = nowMs - windowDays * 86400000;
+  const nowIso = new Date(nowMs).toISOString();
+  const byKey = new Map();
+
+  // Carry prior prints, preserving their first-seen stamp (back-fill one on the
+  // transition run for any that predate stamping).
+  for (const p of Array.isArray(prev) ? prev : []) {
+    byKey.set(whalePrintKey(p), p?.seen_at ? p : { ...p, seen_at: nowIso });
+  }
+  // Add fresh prints only if unseen — stamp first-seen now.
+  for (const p of Array.isArray(fresh) ? fresh : []) {
+    const k = whalePrintKey(p);
+    if (!byKey.has(k)) byKey.set(k, { ...p, seen_at: nowIso });
+  }
+
+  return [...byKey.values()]
+    .filter((p) => {
+      const t = Date.parse(p.seen_at ?? "");
+      return Number.isFinite(t) ? t >= cutoff : true;
+    })
+    .sort((a, b) => (Number(b.premium) || 0) - (Number(a.premium) || 0));
+}
+
 function dteFrom(expiryIso, todayIso) {
   if (!expiryIso) return null;
   const today = todayIso ? Date.parse(`${todayIso}T00:00:00Z`) : Date.now();
@@ -114,6 +154,7 @@ export function summarizeWhaleFlowByTicker(uwSignalsList, opts = {}) {
       gamma_env:      gammaByTicker.get(g.ticker) ?? null,
       flow_sentiment: flow,
       score_label:    score?.label ?? null,
+      score_num:      score?.score ?? null,
       iv_rank:        score?.ivRank ?? null,
       is_candidate:   isCandidate,
       trades:         g.trades,

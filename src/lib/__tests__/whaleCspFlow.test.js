@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aggregateWhalePutSells, summarizeWhaleFlowByTicker } from "../whaleCspFlow";
+import { aggregateWhalePutSells, summarizeWhaleFlowByTicker, mergeWhalePutSells, whalePrintKey } from "../whaleCspFlow";
 
 const signals = [
   {
@@ -149,5 +149,49 @@ describe("summarizeWhaleFlowByTicker (CSP shortlist)", () => {
     expect(aaa.score_label).toBe("Moderate");
     expect(Array.isArray(aaa.trades)).toBe(true);
     expect(aaa.trades.length).toBe(2);
+  });
+});
+
+describe("mergeWhalePutSells — rolling window", () => {
+  const now = Date.parse("2026-06-21T16:00:00Z");
+  const day = 86400000;
+  const print = (over) => ({ ticker: "MU", strike: 1000, expiry: "2026-07-31", premium: 3_250_000, size: 100, underlying: 1188, ...over });
+
+  it("stamps fresh prints with first-seen and keeps them", () => {
+    const merged = mergeWhalePutSells([], [print()], { nowMs: now });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].seen_at).toBe(new Date(now).toISOString());
+  });
+
+  it("dedupes a print that reappears in a later snapshot (keeps original seen_at)", () => {
+    const first = mergeWhalePutSells([], [print()], { nowMs: now });
+    const later = mergeWhalePutSells(first, [print()], { nowMs: now + day });
+    expect(later).toHaveLength(1);
+    expect(later[0].seen_at).toBe(new Date(now).toISOString()); // not re-stamped
+  });
+
+  it("accumulates distinct prints and sorts by premium desc", () => {
+    const a = print({ strike: 1000, premium: 3_250_000 });
+    const b = print({ strike: 980, premium: 5_000_000 });
+    const merged = mergeWhalePutSells([a], [b], { nowMs: now });
+    expect(merged.map((p) => p.strike)).toEqual([980, 1000]);
+  });
+
+  it("prunes prints older than the window", () => {
+    const old = { ...print(), seen_at: new Date(now - 15 * day).toISOString() };
+    const fresh = print({ strike: 990 });
+    const merged = mergeWhalePutSells([old], [fresh], { nowMs: now, windowDays: 14 });
+    expect(merged.map((p) => p.strike)).toEqual([990]); // 15-day-old dropped
+  });
+
+  it("back-fills seen_at on transition (prior prints without a stamp)", () => {
+    const legacy = print(); // no seen_at
+    const merged = mergeWhalePutSells([legacy], [], { nowMs: now });
+    expect(merged[0].seen_at).toBe(new Date(now).toISOString());
+  });
+
+  it("key is stable across snapshots for the same print", () => {
+    expect(whalePrintKey(print())).toBe(whalePrintKey(print()));
+    expect(whalePrintKey(print({ strike: 990 }))).not.toBe(whalePrintKey(print()));
   });
 });
