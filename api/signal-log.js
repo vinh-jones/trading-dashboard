@@ -34,7 +34,7 @@ export default async function handler(req, res) {
       const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
       const { data, error } = await supabase
         .from("signal_log")
-        .select("logged_date, position_key, ticker, redeploy_state, overlay_state, assignment_level, hard_close, gex_env, flow_streak")
+        .select("logged_date, position_key, ticker, redeploy_state, overlay_state, assignment_level, hard_close, gex_env, flow_streak, flow_alert, flow_tape")
         .gte("logged_date", since)
         .order("logged_date", { ascending: false });
       if (error) throw new Error(error.message);
@@ -64,6 +64,8 @@ export default async function handler(req, res) {
         hard_close:       typeof s.hard_close === "boolean" ? s.hard_close : null,
         gex_env:          s.gex_env ?? null,
         flow_streak:      Number.isFinite(s.flow_streak) ? s.flow_streak : null,
+        flow_alert:       Number.isFinite(s.flow_alert) ? s.flow_alert : null,
+        flow_tape:        Number.isFinite(s.flow_tape) ? s.flow_tape : null,
       }));
 
     if (rows.length === 0) return res.status(200).json({ ok: true, logged: 0 });

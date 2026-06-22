@@ -103,3 +103,31 @@ Finance review **endorsed "let it run"** ("the right call regardless of how the 
 **Confirmed (no code):** `PROFIT_TIERS` (50/60/80) is DTE-conditional on DTE-% remaining, so `hardClose` is not a flat profit ladder firing at the wrong tier.
 
 **State:** build complete; pull-toward-risk signals observe-only; defensive signals live; scoreboard scaffold in place. Next artifact is the **data-driven scoreboard review (~week 4)** — that review, not this one, decides what gets cut.
+
+---
+
+## Addendum 2 — CCJ flow investigation (2026-06-22, → 1.152.1)
+
+First live scoreboard data point, on a real position (CCJ 107p, 4 DTE). The app's flow read (`flow_ema` ≈ −0.49, bearish) contradicted an independent UW-tape pull (+0.34 bullish). Investigated end to end.
+
+**Diagnosis — it's a definition gap, not staleness or a sign bug.**
+- The stored `flow_sentiment` was **fresh** (cron ran 10 min prior) and the formula (`flowSentimentFromAlerts`) is **correct** — so it's not stale and not inverted. (An interim "+0.49, app is buggy" claim was wrong — it came from a stale UW MCP response that returned nothing past 06-18 on a trading day. Corrected.)
+- Our `flow_sentiment` is computed over UW's **flow-alerts subset** (curated "unusual" prints). Today that subset skews **bearish** (near-money, near-term put-*buying* — genuine downside hedging). The **full tape** (finance Claude / UW aggregate buckets) is **bullish** — dominated by big far-OTM put-*sales* (yield harvesting). Same day, opposite signs, because they're **different populations**. A single signed number flattens a two-sided tape.
+
+**The deeper finding (finance review) — one scalar serving three consumers that want different definitions:**
+- **Assignment defense (D) + `shed`** want "is someone positioning for a near-term move against my short put" → the **alert subset** (near-money/near-term) is arguably the *right* source.
+- **Whale candidacy (G)** is Ryan's screen (bid-side puts ≥$50k, 7–65 DTE, OTM) → the **bid-side put-selling tape** (bullish-leaning).
+- **`let_it_ride` (F-pull)** wants net conviction → closer to the **full tape**.
+- Collapsing these into one `flow_sentiment` scalar is the original sin. **This is a week-4 definitional call — parked, not built now** (redefining three ways today is exactly the build-more energy we agreed to stop).
+
+**Done now (instrumentation, not building):**
+1. **Log both flow readings side by side** — `signal_log` gains `flow_alert` (alert-subset value the app uses) and `flow_tape` (full-tape value). Same principle as logging raw streak length: capture both during the window so week-4 adjudicates from data, not guesswork. (`flow_tape` is null until the snapshot cron sources it — queued on UW MCP, see below.)
+2. **Fixed a real logger bug the investigation surfaced:** `signal_log` was recording **pre-load snapshots** (null gex/flow, assignment "none") because it logged on first render before quotes/UW signals loaded, then the once-per-day flag locked the garbage in. CCJ's 06-21/06-22 rows were all null despite the live panel showing HIGH/shed/choppy. Now gated on `quotes + UW signals loaded` before logging — so the scoreboard captures the real rendered state. **(Without this, the entire week-4 review would have been built on null data.)**
+
+**Queued on the UW MCP (it keeps disconnecting):**
+- **Definitive check:** `get_flow_alerts` + `get_flow_per_strike` read against the DB at the same instant — isolates alert-subset (−0.49) vs full-tape (+0.34) with no stale-data noise.
+- **Source `flow_tape`:** once the per-strike/aggregate endpoint shape is confirmed, compute the full-tape value in `uw-snapshot` → `uw_signals.flow_tape` → flows into the log automatically.
+
+**Cautions carried forward:**
+- "Working as designed → −0.49 is a *real* read" is true as a *measurement* but does **not** make it a useful *signal*. A narrow alert read can be real and still predict nothing. The scoreboard decides; "working as designed" must not smuggle in "therefore keep it."
+- CCJ decision unchanged: **close/roll on assignment mechanics** (pinned at strike, max pain 106 below, negative gamma), not flow. Flow gave a contestable read; defensive signals held — the observe-only/defensive-trustworthy split, vindicated on day one.

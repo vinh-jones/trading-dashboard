@@ -986,20 +986,32 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
   const selectionAgg = selectable ? computeCspAggregates(selectedRows, accountValue) : null;
 
   // Decision-attribution snapshots — only the CSP table carries the signal
-  // recommendations worth logging.
-  const signalSnapshots = positionType === "csps"
+  // recommendations worth logging. Gate on the async data (quotes + UW signals)
+  // actually being loaded: otherwise the first render logs a pre-load snapshot
+  // (null gex/flow, assignment "none") and the once-per-day flag locks that
+  // garbage in. Also log BOTH flow readings side by side (finance review):
+  // flow_alert = the alert-subset value the app uses; flow_tape = the full-tape
+  // value (null until the snapshot cron wires it) — so week-4 can adjudicate
+  // which definition earns its keep from data, not from guessing.
+  const loggingReady = (quoteMap?.size ?? 0) > 0 && (uwSignals?.size ?? 0) > 0;
+  const signalSnapshots = (positionType === "csps" && loggingReady)
     ? enriched
         .filter(r => r.redeploy || r.assignmentRisk)
-        .map(r => ({
-          position_key:     positionKey(r.pos),
-          ticker:           r.pos.ticker,
-          redeploy_state:   r.redeploy?.redeploy_state ?? null,
-          overlay_state:    r.redeployOverlay?.state ?? null,
-          assignment_level: r.assignmentRisk?.level ?? null,
-          hard_close:       r.profitTargetHit ?? null,
-          gex_env:          r.gex?.env ?? null,
-          flow_streak:      r.flowStreak ?? null,
-        }))
+        .map(r => {
+          const uwSig = uwSignals?.get?.(r.pos.ticker);
+          return {
+            position_key:     positionKey(r.pos),
+            ticker:           r.pos.ticker,
+            redeploy_state:   r.redeploy?.redeploy_state ?? null,
+            overlay_state:    r.redeployOverlay?.state ?? null,
+            assignment_level: r.assignmentRisk?.level ?? null,
+            hard_close:       r.profitTargetHit ?? null,
+            gex_env:          r.gex?.env ?? null,
+            flow_streak:      r.flowStreak ?? null,
+            flow_alert:       uwSig?.flow_ema ?? null,
+            flow_tape:        uwSig?.flow_tape ?? null,
+          };
+        })
     : [];
 
   return (
