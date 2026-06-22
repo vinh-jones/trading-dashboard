@@ -39,7 +39,7 @@ export function useRadar() {
             .in("ticker", approvedTickers),
           supabase
             .from("uw_signals")
-            .select("ticker, gamma_env, flow_sentiment, flow_ema, flow_streak, flow_tape, gex_env, gex_support, gex_resistance, gex_air_pocket")
+            .select("ticker, gamma_env, flow_sentiment, flow_ema, flow_streak, flow_tape_ema, gex_env, gex_support, gex_resistance, gex_air_pocket")
             .in("ticker", approvedTickers),
         ]);
 
@@ -94,7 +94,7 @@ export function useRadar() {
             flow_sentiment:        uw.flow_sentiment  ?? null,
             flow_ema:              uw.flow_ema        ?? null,
             flow_streak:           uw.flow_streak     ?? null,
-            flow_tape:             uw.flow_tape       ?? null,
+            flow_tape_ema:         uw.flow_tape_ema   ?? null,
             gex_env:               uw.gex_env         ?? null,
             gex_support:           uw.gex_support     ?? null,
             gex_resistance:        uw.gex_resistance  ?? null,

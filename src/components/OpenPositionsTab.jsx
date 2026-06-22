@@ -926,15 +926,16 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     //   • shed (push-toward-safety) → the alert-subset EMA (flow_ema). Single
     //     bearish prints are smoothed out, but no streak gate — erring toward
     //     closing earlier is the safe direction.
-    //   • let-it-ride / hold (pull-toward-risk) → the full-tape conviction
-    //     reading (flow_tape) ONLY, never the alert subset. flow_tape is null
-    //     until the snapshot cron sources it, so confirmedBullish is false and
+    //   • let-it-ride / hold (pull-toward-risk) → the SMOOTHED full-tape
+    //     conviction (flow_tape_ema) + its own multi-day streak (flow_tape_streak),
+    //     never the alert subset. Both are null until the snapshot (held) / gex
+    //     (universe) crons source the tape, so confirmedBullish stays false and
     //     let-it-ride stays QUIET rather than extending a hold on the wrong
-    //     definition. (The tape's own confirmation lands with flow_tape sourcing.)
+    //     definition — or on a single print (the streak gate is the rigor).
     const uwSigFlow  = uwSignals?.get?.(pos.ticker);
     const flowForOverlay = uwSigFlow?.flow_ema ?? uwSigFlow?.flow_sentiment ?? null;
-    const flowTape = uwSigFlow?.flow_tape ?? null;
-    const confirmedBullish = flowConfirmation({ flowEma: flowTape, flowStreak: uwSigFlow?.flow_tape_streak }).bullish;
+    const flowTapeEma = uwSigFlow?.flow_tape_ema ?? null;
+    const confirmedBullish = flowConfirmation({ flowEma: flowTapeEma, flowStreak: uwSigFlow?.flow_tape_streak }).bullish;
     const redeployOverlay = redeploy
       ? trendOverlay(redeploy, flowForOverlay, undefined, { confirmedBullish })
       : null;
@@ -998,10 +999,11 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
   // recommendations worth logging. Gate on the async data (quotes + UW signals)
   // actually being loaded: otherwise the first render logs a pre-load snapshot
   // (null gex/flow, assignment "none") and the once-per-day flag locks that
-  // garbage in. Also log BOTH flow readings side by side (finance review):
-  // flow_alert = the alert-subset value the app uses; flow_tape = the full-tape
-  // value (null until the snapshot cron wires it) — so week-4 can adjudicate
-  // which definition earns its keep from data, not from guessing.
+  // garbage in. Also log BOTH flow readings side by side (finance review), each
+  // the SMOOTHED value its consumer actually keys on: flow_alert = the
+  // alert-subset EMA (flow_ema); flow_tape = the full-tape EMA (flow_tape_ema,
+  // null until the crons source it) — so week-4 can adjudicate which definition
+  // earns its keep from data, not from guessing.
   const loggingReady = (quoteMap?.size ?? 0) > 0 && (uwSignals?.size ?? 0) > 0;
   const signalSnapshots = (positionType === "csps" && loggingReady)
     ? enriched
@@ -1018,7 +1020,7 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
             gex_env:          r.gex?.env ?? null,
             flow_streak:      r.flowStreak ?? null,
             flow_alert:       uwSig?.flow_ema ?? null,
-            flow_tape:        uwSig?.flow_tape ?? null,
+            flow_tape:        uwSig?.flow_tape_ema ?? null,
           };
         })
     : [];

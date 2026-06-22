@@ -40,6 +40,26 @@ export function flowSentimentFromAlerts(alerts) {
   return (bullish - bearish) / total;
 }
 
+// Flow sentiment from the FULL options tape (get_flow_per_strike rows), the
+// conviction reading the let-it-ride overlay and the entry-score nudge consume.
+// Same bull/bear mapping as flowSentimentFromAlerts, but summed across every
+// strike's directional premium instead of the unusual-activity alert subset —
+// which is why the tape can read bullish while the alert subset reads bearish
+// (near-money hedging dominates the alerts; far-OTM put-selling dominates the
+// tape). Premium fields are strings. Returns (bullish − bearish) / total in
+// [-1, 1], or null when there's no directional premium.
+export function flowTapeFromTape(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  let bullish = 0, bearish = 0;
+  for (const r of rows) {
+    bullish += (Number(r?.call_premium_ask_side) || 0) + (Number(r?.put_premium_bid_side) || 0);
+    bearish += (Number(r?.call_premium_bid_side) || 0) + (Number(r?.put_premium_ask_side) || 0);
+  }
+  const total = bullish + bearish;
+  if (total === 0) return null;
+  return (bullish - bearish) / total;
+}
+
 // The Consumer-5 "whale CSP flow" list: institutions selling puts (Ryan's
 // screen). Filters the same flow-alert pull to bid-side puts ≥ minPremium,
 // keeps the fields the UI needs, sorted by premium desc.

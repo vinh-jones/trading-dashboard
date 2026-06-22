@@ -4,7 +4,7 @@
     "api/uw-snapshot.js": { "maxDuration": 60 },
     "api/uw-assignment-data.js": { "maxDuration": 60 },
     "api/uw-earnings-dates.js": { "maxDuration": 60 },
-    "api/uw-gex.js": { "maxDuration": 60 }
+    "api/uw-gex.js": { "maxDuration": 120 }
   },
   "crons": [
     {

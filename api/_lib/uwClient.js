@@ -10,6 +10,7 @@
  * Docs: https://api.unusualwhales.com/docs
  *   GET /api/stock/{ticker}/greek-exposure
  *   GET /api/stock/{ticker}/flow-alerts
+ *   GET /api/stock/{ticker}/flow-per-strike
  */
 
 const UW_BASE = "https://api.unusualwhales.com/api";
@@ -81,6 +82,14 @@ export function fetchMaxPain(ticker) {
 export function fetchFlowAlerts(ticker, { minPremium = 50000, limit = 50 } = {}) {
   const qs = new URLSearchParams({ min_premium: String(minPremium), limit: String(limit) });
   return uwGet(`/stock/${encodeURIComponent(ticker)}/flow-alerts?${qs}`);
+}
+
+// Flow per strike — the FULL options tape for the last trading day, aggregated
+// by strike (call/put bid- and ask-side premium per strike). Drives the
+// full-tape conviction reading (flow_tape) via flowTapeFromTape. uwGet unwraps
+// `{ data: [...] }` to the rows array.
+export function fetchFlowPerStrike(ticker) {
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/flow-per-strike`);
 }
 
 // Short interest + float (slow-changing). Latest row has short_float_perc as a
