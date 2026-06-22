@@ -921,11 +921,20 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
     // (No close-on-breach rule exists, so cushion state isn't treated as a rule.)
     const profitTarget    = targetProfitPctForDtePct(dtePct);
     const profitTargetHit = glPct != null && profitTarget != null && glPct >= profitTarget;
-    // let-it-ride (pull-toward-risk) requires CONFIRMED bullish flow (smoothed
-    // EMA + multi-day streak); shed uses the smoothed value directly.
+    // Flow-split: the two directions of the overlay key off DIFFERENT flow
+    // definitions because they measure different things.
+    //   • shed (push-toward-safety) → the alert-subset EMA (flow_ema). Single
+    //     bearish prints are smoothed out, but no streak gate — erring toward
+    //     closing earlier is the safe direction.
+    //   • let-it-ride / hold (pull-toward-risk) → the full-tape conviction
+    //     reading (flow_tape) ONLY, never the alert subset. flow_tape is null
+    //     until the snapshot cron sources it, so confirmedBullish is false and
+    //     let-it-ride stays QUIET rather than extending a hold on the wrong
+    //     definition. (The tape's own confirmation lands with flow_tape sourcing.)
     const uwSigFlow  = uwSignals?.get?.(pos.ticker);
     const flowForOverlay = uwSigFlow?.flow_ema ?? uwSigFlow?.flow_sentiment ?? null;
-    const confirmedBullish = flowConfirmation({ flowEma: uwSigFlow?.flow_ema, flowStreak: uwSigFlow?.flow_streak }).bullish;
+    const flowTape = uwSigFlow?.flow_tape ?? null;
+    const confirmedBullish = flowConfirmation({ flowEma: flowTape, flowStreak: uwSigFlow?.flow_tape_streak }).bullish;
     const redeployOverlay = redeploy
       ? trendOverlay(redeploy, flowForOverlay, undefined, { confirmedBullish })
       : null;
