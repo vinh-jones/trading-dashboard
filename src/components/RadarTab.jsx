@@ -532,9 +532,11 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
 }
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_sentiment, gex_env } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_tape, gex_env } = row;
   const bucket   = bbBucket(bb_position);
-  const score    = entryScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend, gamma_env, flow_sentiment);
+  // Entry-score flow nudge is a conviction consumer → keys off the full-tape
+  // reading (flow_tape), null until sourced (flowMod becomes a no-op until then).
+  const score    = entryScore(bb_position, iv, iv_rank, last, ma_50, ma_200, ivTrend, gamma_env, flow_tape);
   const ivComp   = compositeIv(iv, iv_rank);
   const trend    = getTrendState(last, ma_50, ma_200);
   const label    = scoreLabel(score);
@@ -1377,7 +1379,7 @@ export function RadarTab({ positions = null, account = null }) {
   const scoreByTicker = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
-      const s = entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment);
+      const s = entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_tape);
       m.set(r.ticker, { label: scoreLabel(s), ivRank: r.iv_rank, score: s });
     }
     return m;
@@ -1497,7 +1499,7 @@ export function RadarTab({ positions = null, account = null }) {
       const d = sortBy.dir === "asc" ? 1 : -1;  // multiplier: asc=1, desc=-1
 
       const getVal = {
-        score:        r => entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment),
+        score:        r => entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_tape),
         bb:           r => r.bb_position,
         iv_rank:      r => r.iv_rank,
         iv_raw:       r => r.iv,
@@ -1522,7 +1524,7 @@ export function RadarTab({ positions = null, account = null }) {
   }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext, ivTrendsByTicker]);
 
   const strongCount = useMemo(() =>
-    processedRows.filter(r => scoreLabel(entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_sentiment)) === "Strong").length,
+    processedRows.filter(r => scoreLabel(entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_tape)) === "Strong").length,
     [processedRows, ivTrendsByTicker]
   );
 
