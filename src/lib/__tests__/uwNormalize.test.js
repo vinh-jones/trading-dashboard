@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts } from "../uwNormalize";
+import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts, flowTapeFromTape } from "../uwNormalize";
 
 // Real get_greek_exposure_by_ticker shape (NVDA, trimmed to 2 days).
 const greekRows = [
@@ -44,6 +44,41 @@ describe("flowSentimentFromAlerts", () => {
   it("null when empty or no premium", () => {
     expect(flowSentimentFromAlerts([])).toBeNull();
     expect(flowSentimentFromAlerts([{ type: "put", total_bid_side_prem: "0", total_ask_side_prem: "0" }])).toBeNull();
+  });
+});
+
+describe("flowTapeFromTape", () => {
+  // Real get_flow_per_strike .data shape: per-strike rows with STRING premium
+  // fields. Same bull/bear mapping as flowSentimentFromAlerts, summed over the
+  // whole tape rather than the alert subset.
+  it("calls-bought (ask) + puts-sold (bid) only → fully bullish (+1)", () => {
+    const rows = [
+      { call_premium_ask_side: "5000", call_premium_bid_side: "0", put_premium_ask_side: "0", put_premium_bid_side: "0" },
+      { call_premium_ask_side: "0",    call_premium_bid_side: "0", put_premium_ask_side: "0", put_premium_bid_side: "3000" },
+    ];
+    expect(flowTapeFromTape(rows)).toBeCloseTo(1, 5);
+  });
+  it("nets calls-bought + puts-sold (bull) vs calls-sold + puts-bought (bear)", () => {
+    const rows = [
+      { call_premium_ask_side: "30", call_premium_bid_side: "20", put_premium_ask_side: "0",  put_premium_bid_side: "0" },   // +30 / -20
+      { call_premium_ask_side: "0",  call_premium_bid_side: "0",  put_premium_ask_side: "50", put_premium_bid_side: "100" }, // +100 / -50
+    ];
+    // bullish 130, bearish 70 → (130-70)/200 = 0.30
+    expect(flowTapeFromTape(rows)).toBeCloseTo(0.30, 5);
+  });
+  it("ignores non-directional (mid) premium — only the bid/ask sides count", () => {
+    const rows = [
+      // huge total call_premium but the only directional fill is 100 at the ask
+      { call_premium: "999999", call_premium_ask_side: "100", call_premium_bid_side: "0", put_premium: "888", put_premium_ask_side: "0", put_premium_bid_side: "0" },
+    ];
+    expect(flowTapeFromTape(rows)).toBeCloseTo(1, 5);
+  });
+  it("null when empty, null, or no directional premium", () => {
+    expect(flowTapeFromTape([])).toBeNull();
+    expect(flowTapeFromTape(null)).toBeNull();
+    expect(flowTapeFromTape([
+      { call_premium_ask_side: "0", call_premium_bid_side: "0", put_premium_ask_side: "0", put_premium_bid_side: "0" },
+    ])).toBeNull();
   });
 });
 

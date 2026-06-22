@@ -9,7 +9,15 @@
  * the few numbers that drive a CSP decision (net-gamma environment + the
  * positive-gamma support/resistance walls — see src/lib/gexLevels.js), and
  * writes them onto the ticker's uw_signals row. Uses .update() so it only
- * touches the gex_* fields, leaving flow/gamma/short/earnings intact.
+ * touches the gex_* (and flow_tape_*) fields, leaving the alert-subset
+ * flow/gamma/short/earnings intact.
+ *
+ * Also sources the FULL-TAPE conviction (flow_tape → smoothed flow_tape_ema/
+ * streak) for the whole approved universe here, on this slower twice-daily run:
+ * the entry-score nudge reads flow_tape_ema across the radar, not just held
+ * names, and a per-ticker tape call across all ~55 names is too many for the
+ * 15-min uw-snapshot budget. Held names also refresh their tape every 15 min
+ * via uw-snapshot; the extra blend here is harmless.
  *
  * The exact UW by-strike field names aren't locked yet, so the normalizer is
  * tolerant (candidate field lists) and ?debug=1 probes both candidate endpoints
@@ -18,8 +26,10 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { hasUwKey, fetchGreekExposureByStrike, fetchSpotExposuresByStrike, fetchMaxPain } from "./_lib/uwClient.js";
+import { hasUwKey, fetchGreekExposureByStrike, fetchSpotExposuresByStrike, fetchMaxPain, fetchFlowPerStrike } from "./_lib/uwClient.js";
 import { computeGexLevels } from "../src/lib/gexLevels.js";
+import { flowTapeFromTape } from "../src/lib/uwNormalize.js";
+import { updateFlowState } from "../src/lib/flowSmoothing.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -163,9 +173,18 @@ export default async function handler(req, res) {
     for (const q of quoteRows ?? []) spotByTicker.set(q.symbol, q.mid ?? q.last ?? null);
 
     // Prior env for the hysteresis band (so a name near its gamma flip holds
-    // its label instead of flip-flopping day to day).
-    const { data: priorRows } = await supabase.from("uw_signals").select("ticker, gex_env").in("ticker", tickers);
-    const prevEnvByTicker = new Map((priorRows ?? []).map((r) => [r.ticker, r.gex_env]));
+    // its label instead of flip-flopping day to day), plus prior flow_tape
+    // smoothing state to advance the EMA/streak.
+    const { data: priorRows } = await supabase
+      .from("uw_signals")
+      .select("ticker, gex_env, flow_tape_ema, flow_tape_day, flow_tape_streak")
+      .in("ticker", tickers);
+    const prevEnvByTicker  = new Map((priorRows ?? []).map((r) => [r.ticker, r.gex_env]));
+    const prevTapeByTicker = new Map((priorRows ?? []).map((r) => [r.ticker, {
+      ema:    r.flow_tape_ema,
+      day:    r.flow_tape_day,
+      streak: r.flow_tape_streak,
+    }]));
 
     const results = [];
     for (const ticker of tickers) {
@@ -183,6 +202,27 @@ export default async function handler(req, res) {
         // Max-pain only for held (or smoke-tested) tickers — pin risk into expiry.
         if (heldSet.has(ticker) || override) {
           patch.max_pain = maxPainByExpiry(await fetchMaxPain(ticker), today);
+        }
+        // Full-tape conviction for the whole approved universe. Own try so a
+        // tape failure never blocks the GEX write; on failure the patch simply
+        // omits the flow_tape_* fields and .update() leaves them untouched. Its
+        // OWN EMA/day/streak (updateFlowState) — same smoothing as the held path.
+        try {
+          const tapeRaw = flowTapeFromTape(await fetchFlowPerStrike(ticker));
+          const pt = prevTapeByTicker.get(ticker) ?? {};
+          const tapeState = updateFlowState({
+            raw:        tapeRaw,
+            today,
+            prevEma:    pt.ema    ?? null,
+            prevDay:    pt.day    ?? null,
+            prevStreak: pt.streak ?? 0,
+          });
+          patch.flow_tape        = tapeRaw;
+          patch.flow_tape_ema    = tapeState.flow_ema;
+          patch.flow_tape_day    = tapeState.flow_day;
+          patch.flow_tape_streak = tapeState.flow_streak;
+        } catch (tapeErr) {
+          console.warn(`[api/uw-gex] flow-per-strike failed for ${ticker}:`, tapeErr?.message ?? tapeErr);
         }
         const { error } = await supabase.from("uw_signals").update(patch).eq("ticker", ticker);
         results.push({ ticker, ok: !error, error: error?.message, ...patch });

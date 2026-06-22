@@ -7,7 +7,10 @@
  *
  * For each ticker: fetch greek exposure + flow alerts from Unusual Whales,
  * normalize to the scalars the entry score consumes (gamma_env, flow_sentiment)
- * plus the whale put-sell list, and upsert into uw_signals.
+ * plus the whale put-sell list, and upsert into uw_signals. For HELD tickers it
+ * also pulls the full options tape (flow-per-strike) → smoothed flow_tape_ema/
+ * streak (the conviction reading); the full approved universe's tape is sourced
+ * on the slower uw-gex run.
  *
  * Rate-limited by uwClient (≈109/min). Default scope = open positions so a run
  * comfortably fits the function timeout under UW's 120/min cap. If Unusual
@@ -17,8 +20,8 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { hasUwKey, fetchGreekExposure, fetchFlowAlerts } from "./_lib/uwClient.js";
-import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts } from "../src/lib/uwNormalize.js";
+import { hasUwKey, fetchGreekExposure, fetchFlowAlerts, fetchFlowPerStrike } from "./_lib/uwClient.js";
+import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts, flowTapeFromTape } from "../src/lib/uwNormalize.js";
 import { updateFlowState } from "../src/lib/flowSmoothing.js";
 import { mergeWhalePutSells } from "../src/lib/whaleCspFlow.js";
 
@@ -89,8 +92,17 @@ export default async function handler(req, res) {
     // Also carries the prior flow EMA/day/streak for the smoothing update.
     const { data: existingRows } = await supabase
       .from("uw_signals")
-      .select("ticker, gamma_env, refreshed_at, flow_ema, flow_day, flow_streak, whale_put_sells");
+      .select("ticker, gamma_env, refreshed_at, flow_ema, flow_day, flow_streak, flow_tape, flow_tape_ema, flow_tape_day, flow_tape_streak, whale_put_sells");
     const existing = new Map((existingRows ?? []).map((r) => [r.ticker, r]));
+
+    // Full-tape conviction (flow_tape) is fetched only for HELD tickers on this
+    // 15-min run — one extra UW call each for ~a dozen names, comfortably under
+    // the timeout. The full approved universe's tape is sourced on the slower
+    // twice-daily uw-gex run instead; a per-ticker tape call across all ~55
+    // approved names here would blow the 60s budget (55×2 calls × 550ms). Names
+    // that aren't held carry their prior tape state forward unchanged.
+    const { data: posRows } = await supabase.from("positions").select("ticker");
+    const heldSet = new Set((posRows ?? []).map((r) => r.ticker).filter(Boolean));
 
     const results = [];
     for (const ticker of tickers) {
@@ -115,6 +127,27 @@ export default async function handler(req, res) {
           prevStreak: prev?.flow_streak ?? 0,
         });
 
+        // Full-tape conviction — held names only. Gets its OWN EMA/day/streak
+        // (updateFlowState) so let-it-ride keeps the multi-day rigor and never
+        // nudges toward risk on a single print. Non-held: carry prior forward.
+        let tapeRaw    = prev?.flow_tape        ?? null;
+        let tapeEma    = prev?.flow_tape_ema    ?? null;
+        let tapeDay    = prev?.flow_tape_day    ?? null;
+        let tapeStreak = prev?.flow_tape_streak ?? 0;
+        if (heldSet.has(ticker)) {
+          tapeRaw = flowTapeFromTape(await fetchFlowPerStrike(ticker));
+          const tapeState = updateFlowState({
+            raw:        tapeRaw,
+            today,
+            prevEma:    prev?.flow_tape_ema    ?? null,
+            prevDay:    prev?.flow_tape_day    ?? null,
+            prevStreak: prev?.flow_tape_streak ?? 0,
+          });
+          tapeEma    = tapeState.flow_ema;
+          tapeDay    = tapeState.flow_day;
+          tapeStreak = tapeState.flow_streak;
+        }
+
         // Whale put-sells accumulate into a rolling ~2-week window (merge +
         // dedupe + prune) rather than overwriting, so a ticker's institutional
         // put-selling persists instead of vanishing after one 15-min snapshot.
@@ -127,6 +160,10 @@ export default async function handler(req, res) {
           flow_ema:        flowState.flow_ema,
           flow_day:        flowState.flow_day,
           flow_streak:     flowState.flow_streak,
+          flow_tape:        tapeRaw,
+          flow_tape_ema:    tapeEma,
+          flow_tape_day:    tapeDay,
+          flow_tape_streak: tapeStreak,
           whale_put_sells: whalePutSells,
           next_earnings_date: alerts?.[0]?.next_earnings_date ?? null,
           refreshed_at:    now,
