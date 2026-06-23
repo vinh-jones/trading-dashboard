@@ -48,6 +48,47 @@ export function serializePerPosition(perPosition) {
 }
 
 /**
+ * Map a v2 forecast result onto the pipeline fields a snapshot row carries.
+ *
+ * Single source of truth shared by every snapshot writer (EOD cron via
+ * /api/snapshot, intraday live fallback via /api/eod-snapshot, /api/sync). Two
+ * hand-maintained copies of this mapping previously drifted apart, which is why
+ * the intraday snapshot showed stale flat-60% pipeline numbers while the
+ * dashboard read the v2 fields. Keep it here so they cannot diverge again.
+ *
+ * Emits both:
+ *   - legacy flat-60% fields (open_premium_expected, pipeline_implied_monthly) —
+ *     retained for backwards compatibility; NOT what the dashboard reads.
+ *   - v2 fields (forecast_month_total, forward_pipeline_premium, …) — the
+ *     calendar-month-aware, per-position-capture numbers the dashboard shows.
+ *
+ * When forecastV2 is null (computeForecastV2 failed), v2 fields null-fill and the
+ * legacy fields still compute, so a v2 failure never blanks the pipeline block.
+ */
+export function pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium }) {
+  const gross               = openPremiumGross ?? 0;
+  const mtd                 = mtdPremium ?? 0;
+  const openPremiumExpected = Math.round(gross * 0.6);
+  return {
+    open_premium_gross:            gross,
+    open_premium_expected:         openPremiumExpected,
+    pipeline_implied_monthly:      mtd + openPremiumExpected,
+    // v2 forecast fields — null-filled if v2 computation failed
+    forecast_realized_to_date:     forecastV2?.forecast_realized_to_date     ?? null,
+    forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining ?? null,
+    forecast_this_month_std:       forecastV2?.forecast_this_month_std       ?? null,
+    forecast_month_total:          forecastV2?.forecast_month_total          ?? null,
+    forecast_target_gap:           forecastV2?.forecast_target_gap           ?? null,
+    forward_pipeline_premium:      forecastV2?.forward_pipeline_premium      ?? null,
+    csp_pipeline_premium:          forecastV2?.csp_pipeline_premium          ?? null,
+    cc_pipeline_premium:           forecastV2?.cc_pipeline_premium           ?? null,
+    below_cost_cc_premium:         forecastV2?.below_cost_cc_premium         ?? null,
+    pipeline_phase:                forecastV2?.pipeline_phase                ?? null,
+    forecast_per_position:         forecastV2 ? serializePerPosition(forecastV2.per_position) : null,
+  };
+}
+
+/**
  * Build the v2 pipeline forecast from current Supabase state. Caller passes
  * already-fetched positions (avoids a duplicate round-trip for callers that
  * already loaded them) and the day's VIX.

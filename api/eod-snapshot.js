@@ -19,6 +19,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
+import { computeForecastV2, pipelineSnapshotFields } from "./_lib/computeForecastV2.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
 import {
@@ -586,9 +587,19 @@ export default async function handler(req, res) {
       ...(positions.open_csps ?? []),
       ...(positions.assigned_shares ?? []).filter((s) => s.active_cc).map((s) => s.active_cc),
     ];
-    const openPremiumGross    = Math.round(pipelinePositions.reduce((s, p) => s + (p.premium_collected || 0), 0));
-    const openPremiumExpected = Math.round(openPremiumGross * 0.60);
-    const mtd                 = accountSnap.month_to_date_premium ?? 0;
+    const openPremiumGross = Math.round(pipelinePositions.reduce((s, p) => s + (p.premium_collected || 0), 0));
+    const mtd              = accountSnap.month_to_date_premium ?? 0;
+
+    // v2 pipeline forecast — same engine the dashboard and the EOD-cron snapshot
+    // use, so intraday pipeline numbers match instead of falling back to the
+    // legacy flat-60% lump sum. Non-blocking: a v2 failure null-fills the v2
+    // fields and the legacy flat-60% fields still populate.
+    let forecastV2 = null;
+    try {
+      ({ forecastV2 } = await computeForecastV2({ supabase, today, vix, positions: positionRows }));
+    } catch (v2Err) {
+      console.error("[api/eod-snapshot] v2 forecast failed (non-blocking):", v2Err);
+    }
 
     const allLeaps = [
       ...(positions.open_leaps ?? []),
@@ -613,9 +624,7 @@ export default async function handler(req, res) {
       overdeployed:   band && cashPct != null ? cashPct < band.floorPct  : null,
       underdeployed:  band && cashPct != null ? cashPct > band.ceilingPct : null,
       mtd_premium_collected:      mtd,
-      open_premium_gross:         openPremiumGross,
-      open_premium_expected:      openPremiumExpected,
-      pipeline_implied_monthly:   mtd + openPremiumExpected,
+      ...pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium: mtd }),
       vix,
       vix_band:                   band?.sentiment ?? null,
       open_csp_count:             (positions.open_csps ?? []).length,

@@ -23,7 +23,7 @@ import { getVixBand } from "../src/lib/vixBand.js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
 import {
   computeForecastV2,
-  serializePerPosition,
+  pipelineSnapshotFields,
   buildPositionStateRows,
 } from "./_lib/computeForecastV2.js";
 import { computeAssignedShareIncome } from "./_lib/computeAssignedShareIncome.js";
@@ -221,13 +221,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // 7. Open premium pipeline (CSPs and CCs only) — legacy flat-60%
+  // 7. Open premium pipeline (CSPs and CCs only). Shared helper emits the legacy
+  // flat-60% fields (retained for 30-day backcompat per spec §Implementation
+  // Note 9) plus the v2 forecast fields the dashboard reads.
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
   );
-  // Retained for 30-day backcompat per spec §Implementation Note 9.
-  const openPremiumExpected  = Math.round(openPremiumGross * 0.60);
-  const pipelineImplied      = mtdPremium + openPremiumExpected;
+  const pipelineFields = pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium });
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
@@ -268,21 +268,7 @@ export default async function handler(req, res) {
     assigned_share_tickers:    assignedShares.length,
     total_open_positions:      positions.length,
     mtd_premium_collected:     mtdPremium,
-    open_premium_gross:        openPremiumGross,
-    open_premium_expected:     openPremiumExpected,
-    pipeline_implied_monthly:  pipelineImplied,
-    // v2 forecast fields — null-filled if v2 computation failed
-    forecast_realized_to_date:     forecastV2?.forecast_realized_to_date      ?? null,
-    forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining  ?? null,
-    forecast_this_month_std:       forecastV2?.forecast_this_month_std        ?? null,
-    forecast_month_total:          forecastV2?.forecast_month_total           ?? null,
-    forecast_target_gap:           forecastV2?.forecast_target_gap            ?? null,
-    forward_pipeline_premium:      forecastV2?.forward_pipeline_premium       ?? null,
-    csp_pipeline_premium:          forecastV2?.csp_pipeline_premium           ?? null,
-    cc_pipeline_premium:           forecastV2?.cc_pipeline_premium            ?? null,
-    below_cost_cc_premium:         forecastV2?.below_cost_cc_premium          ?? null,
-    pipeline_phase:                forecastV2?.pipeline_phase                 ?? null,
-    forecast_per_position:         forecastV2 ? serializePerPosition(forecastV2.per_position) : null,
+    ...pipelineFields,
     ticker_allocations:        tickerAllocations,
     any_ticker_above_10pct:    anyAbove10,
     any_ticker_above_15pct:    anyAbove15,
@@ -381,7 +367,7 @@ export default async function handler(req, res) {
     free_cash_pct: freeCashPct,
     within_band: withinBand,
     mtd_premium: mtdPremium,
-    pipeline_implied: pipelineImplied,
+    pipeline_implied: pipelineFields.pipeline_implied_monthly,
     forecast_v2: forecastV2 ? {
       month_total:   forecastV2.forecast_month_total,
       target_gap:    forecastV2.forecast_target_gap,
