@@ -51,28 +51,23 @@ export function serializePerPosition(perPosition) {
  * Map a v2 forecast result onto the pipeline fields a snapshot row carries.
  *
  * Single source of truth shared by every snapshot writer (EOD cron via
- * /api/snapshot, intraday live fallback via /api/eod-snapshot, /api/sync). Two
- * hand-maintained copies of this mapping previously drifted apart, which is why
- * the intraday snapshot showed stale flat-60% pipeline numbers while the
+ * /api/snapshot, intraday live fallback via /api/eod-snapshot, /api/sync). A
+ * hand-maintained copy of this mapping once drifted apart from the canonical
+ * one, which is why intraday snapshots showed stale pipeline numbers while the
  * dashboard read the v2 fields. Keep it here so they cannot diverge again.
  *
- * Emits both:
- *   - legacy flat-60% fields (open_premium_expected, pipeline_implied_monthly) —
- *     retained for backwards compatibility; NOT what the dashboard reads.
- *   - v2 fields (forecast_month_total, forward_pipeline_premium, …) — the
- *     calendar-month-aware, per-position-capture numbers the dashboard shows.
+ * Emits open_premium_gross (raw premium across open positions) plus the v2
+ * forecast fields (forecast_month_total, forward_pipeline_premium, …) — the
+ * calendar-month-aware, per-position-capture numbers the dashboard shows. The
+ * legacy flat-60% fields (open_premium_expected, pipeline_implied_monthly) were
+ * retired in v1.154.3; nothing read them and they only caused confusion.
  *
- * When forecastV2 is null (computeForecastV2 failed), v2 fields null-fill and the
- * legacy fields still compute, so a v2 failure never blanks the pipeline block.
+ * When forecastV2 is null (computeForecastV2 failed), the v2 fields null-fill so
+ * a v2 failure never blanks the pipeline block.
  */
-export function pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium }) {
-  const gross               = openPremiumGross ?? 0;
-  const mtd                 = mtdPremium ?? 0;
-  const openPremiumExpected = Math.round(gross * 0.6);
+export function pipelineSnapshotFields({ forecastV2, openPremiumGross }) {
   return {
-    open_premium_gross:            gross,
-    open_premium_expected:         openPremiumExpected,
-    pipeline_implied_monthly:      mtd + openPremiumExpected,
+    open_premium_gross:            openPremiumGross ?? 0,
     // v2 forecast fields — null-filled if v2 computation failed
     forecast_realized_to_date:     forecastV2?.forecast_realized_to_date     ?? null,
     forecast_this_month_remaining: forecastV2?.forecast_this_month_remaining ?? null,

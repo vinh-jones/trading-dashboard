@@ -23,11 +23,7 @@ const FORECAST_V2 = {
 
 describe("pipelineSnapshotFields", () => {
   it("carries the v2 forecast numbers (the ones the dashboard reads) through verbatim", () => {
-    const fields = pipelineSnapshotFields({
-      forecastV2: FORECAST_V2,
-      openPremiumGross: 14644,
-      mtdPremium: 2633,
-    });
+    const fields = pipelineSnapshotFields({ forecastV2: FORECAST_V2, openPremiumGross: 14644 });
     expect(fields.forecast_month_total).toBe(3883);
     expect(fields.forward_pipeline_premium).toBe(10405);
     expect(fields.forecast_this_month_remaining).toBe(1250);
@@ -40,54 +36,35 @@ describe("pipelineSnapshotFields", () => {
     expect(fields.pipeline_phase).toBe("Flexible");
   });
 
-  it("retains the legacy flat-60% fields alongside the v2 fields", () => {
-    const fields = pipelineSnapshotFields({
-      forecastV2: FORECAST_V2,
-      openPremiumGross: 14644,
-      mtdPremium: 2633,
-    });
+  it("emits open_premium_gross but NOT the retired flat-60% fields", () => {
+    const fields = pipelineSnapshotFields({ forecastV2: FORECAST_V2, openPremiumGross: 14644 });
     expect(fields.open_premium_gross).toBe(14644);
-    expect(fields.open_premium_expected).toBe(Math.round(14644 * 0.6)); // 8786
-    expect(fields.pipeline_implied_monthly).toBe(2633 + 8786);          // 11419
+    expect("open_premium_expected" in fields).toBe(false);
+    expect("pipeline_implied_monthly" in fields).toBe(false);
   });
 
   it("serializes per-position rows into forecast_per_position", () => {
-    const fields = pipelineSnapshotFields({
-      forecastV2: FORECAST_V2,
-      openPremiumGross: 14644,
-      mtdPremium: 2633,
-    });
+    const fields = pipelineSnapshotFields({ forecastV2: FORECAST_V2, openPremiumGross: 14644 });
     expect(Array.isArray(fields.forecast_per_position)).toBe(true);
     expect(fields.forecast_per_position).toHaveLength(1);
     expect(fields.forecast_per_position[0].ticker).toBe("SHOP");
     expect(fields.forecast_per_position[0].capture_pct).toBe(0.6);
   });
 
-  it("null-fills every v2 field when forecastV2 is null but still computes legacy fields", () => {
+  it("null-fills every v2 field when forecastV2 is null (computeForecastV2 failed)", () => {
     // Mirrors the computeForecastV2-failed path: v2 fields go null, the snapshot
-    // still writes the legacy flat-60% pipeline numbers.
-    const fields = pipelineSnapshotFields({
-      forecastV2: null,
-      openPremiumGross: 14644,
-      mtdPremium: 2633,
-    });
+    // still records the raw open_premium_gross.
+    const fields = pipelineSnapshotFields({ forecastV2: null, openPremiumGross: 14644 });
+    expect(fields.open_premium_gross).toBe(14644);
     expect(fields.forecast_month_total).toBeNull();
     expect(fields.forward_pipeline_premium).toBeNull();
     expect(fields.forecast_this_month_remaining).toBeNull();
     expect(fields.pipeline_phase).toBeNull();
     expect(fields.forecast_per_position).toBeNull();
-    // legacy fields still present
-    expect(fields.open_premium_expected).toBe(8786);
-    expect(fields.pipeline_implied_monthly).toBe(11419);
   });
 
-  it("treats a missing mtdPremium as zero", () => {
-    const fields = pipelineSnapshotFields({
-      forecastV2: null,
-      openPremiumGross: 1000,
-      mtdPremium: undefined,
-    });
-    expect(fields.open_premium_expected).toBe(600);
-    expect(fields.pipeline_implied_monthly).toBe(600);
+  it("treats a missing openPremiumGross as zero", () => {
+    const fields = pipelineSnapshotFields({ forecastV2: null });
+    expect(fields.open_premium_gross).toBe(0);
   });
 });

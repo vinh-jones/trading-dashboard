@@ -624,7 +624,7 @@ export default async function handler(req, res) {
       overdeployed:   band && cashPct != null ? cashPct < band.floorPct  : null,
       underdeployed:  band && cashPct != null ? cashPct > band.ceilingPct : null,
       mtd_premium_collected:      mtd,
-      ...pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium: mtd }),
+      ...pipelineSnapshotFields({ forecastV2, openPremiumGross }),
       vix,
       vix_band:                   band?.sentiment ?? null,
       open_csp_count:             (positions.open_csps ?? []).length,

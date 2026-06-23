@@ -227,7 +227,7 @@ export default async function handler(req, res) {
   const openPremiumGross = [...openCSPs, ...openCCs].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
   );
-  const pipelineFields = pipelineSnapshotFields({ forecastV2, openPremiumGross, mtdPremium });
+  const pipelineFields = pipelineSnapshotFields({ forecastV2, openPremiumGross });
 
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
@@ -367,7 +367,6 @@ export default async function handler(req, res) {
     free_cash_pct: freeCashPct,
     within_band: withinBand,
     mtd_premium: mtdPremium,
-    pipeline_implied: pipelineFields.pipeline_implied_monthly,
     forecast_v2: forecastV2 ? {
       month_total:   forecastV2.forecast_month_total,
       target_gap:    forecastV2.forecast_target_gap,
