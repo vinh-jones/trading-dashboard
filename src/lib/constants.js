@@ -11,6 +11,9 @@ export const SUBTYPE_LABELS = {
   Assigned:    "Assigned",
   "Roll Loss": "Roll Loss",
   "Bear Call": "Bear Call Spread",
+  "Bull Put":  "Bull Put Spread",
+  "Bull Call": "Bull Call Spread",
+  "Bear Put":  "Bear Put Spread",
   "Bear Debit":"Bear Debit Spread",
   Sold:        "Shares Sold",
   Exit:        "Position Exit",
@@ -27,5 +30,5 @@ export const MONTHS = [
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const VERSION = "1.155.3";
+export const VERSION = "1.155.4";
 

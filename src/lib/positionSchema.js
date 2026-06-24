@@ -31,6 +31,11 @@ export function getOpenCSPs(positions) {
   return positions?.open_csps ?? [];
 }
 
+/** Top-level open vertical spreads. Returns [] if absent. */
+export function getOpenSpreads(positions) {
+  return positions?.open_spreads ?? [];
+}
+
 /**
  * All assigned-share blocks. Returns [] if absent.
  * Each entry has shape `{ ticker, positions, active_cc, open_leaps, cost_basis_total, ... }`.

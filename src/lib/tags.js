@@ -109,6 +109,7 @@ export function groupStrategicTagsByPosition(entries, positions) {
   const validKeys = new Set();
   (positions?.open_csps ?? []).forEach(p => validKeys.add(positionKey(p)));
   (positions?.open_leaps ?? []).forEach(p => validKeys.add(positionKey(p)));
+  (positions?.open_spreads ?? []).forEach(p => validKeys.add(positionKey(p)));
   (positions?.assigned_shares ?? []).forEach(s => {
     validKeys.add(positionKey({ ticker: s.ticker, type: "Shares" }));
     if (s.active_cc) validKeys.add(positionKey({ ...s.active_cc, type: "CC" }));
