@@ -106,6 +106,8 @@ Sorting/columns follow the existing table conventions. The Spreads tab is not `s
 
 Extend option-symbol collection to add **both** legs of each open spread: for a put spread, two puts (`short_strike`, `long_strike`); for a call spread, two calls. Reuses `buildOccSymbol` + `quoteMap`. Spread mark computed client-side from the two leg mids.
 
+**Amendment (discovered in Stage 3):** the design missed a second position-data path. `api/quotes.js` derives symbols server-side from the **Supabase `positions` table**, populated by `lib/syncSheets.js` — NOT from the frontend or from `parseSheets`. So enabling leg quotes required writing `open_spread` rows into that table (`syncSheets.js`, second leg in the `lots` JSONB) in addition to the `buildInstruments` branch. The same Supabase path feeds the v2 forecaster (§8), so `reshapePositions` must also emit `open_spreads`. Verified: Public.com quotes XSP **index** legs cleanly, and `buildOccSymbol` already produces the correct index format — both originally-flagged risks are resolved.
+
 **Risks to verify during build:**
 - Whether the quote feed returns clean quotes for **index** option legs (XSP/SPX). Cushion-to-breakeven (§4) does not depend on this, so the tab is useful regardless.
 - `buildOccSymbol` may need a format tweak for index option symbols (e.g. XSP/SPXW roots). Verify against the provider before relying on leg quotes.

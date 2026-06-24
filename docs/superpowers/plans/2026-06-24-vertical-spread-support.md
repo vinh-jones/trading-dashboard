@@ -891,6 +891,8 @@ git push origin main
 
 ## Task 10: Quote both spread legs
 
+> **AMENDMENT (applied during impl, commit `5beb8f4`, v1.157.2):** This task's original premise was WRONG. `useQuotes.js` does a bare `GET /api/quotes` with no request body — the server derives option symbols from the **Supabase `positions` table** (`api/quotes.js refreshQuotes`), which is populated by a SECOND sync path the design missed: `lib/syncSheets.js` (not `parseSheets.js`). So the real fix is: (1) `lib/syncSheets.js` — destructure `open_spreads` and add an `open_spread` block to `positionRows` (short leg → `strike`; second leg + `right`/`is_credit`/flags → the existing `lots` JSONB column; `position_type` is plain text so no migration). (2) `api/quotes.js` — add `lots` to the positions `.select(...)`, and add a `Spread` branch in `buildInstruments` (before the strike/expiry guard) that emits both leg OCC symbols from `strike` + `row.lots.long_strike` using `row.lots.right`. `useQuotes.js` is NOT touched. Verified: Public.com quotes XSP index legs cleanly; `buildOccSymbol` produces the correct `XSP260731P00708000` format; prod `positions` schema confirmed (only PK constraint, `lots` nullable jsonb). Test: `api/__tests__/quotesSpread.test.js` asserts `buildInstruments` emits both legs. The original (incorrect) step-by-step below is retained for history only.
+
 **Files:**
 - Modify: `api/quotes.js:121-138` (the symbol-building loop)
 - Modify: the frontend quote-request builder (`src/hooks/useQuotes.js`) to include spread rows
@@ -1124,8 +1126,11 @@ git push origin main
 
 ## Task 14: Credit spreads into the v2 forecast pipeline
 
+> **AMENDMENT (discovered during Stage 3):** `api/eod-snapshot.js` reads positions from **Supabase** (`supabase.from("positions").select("*")` ~line 448), then `reshapePositions(positionRows)` (~line 471) rebuilds the nested `{ open_csps, open_leaps, assigned_shares }` object that feeds the pipeline. Task 10 (v1.157.2) already writes `open_spread` rows to that Supabase table, so the data is present — but **`reshapePositions` must be extended to emit `open_spreads`** (reconstructing each entry from the row + `lots` JSONB, e.g. via `deriveSpread` from `lib/spreadMath.js`, which `api/` may import) BEFORE the `pipelinePositions` change below will see any spread. Add that to this task. Find `reshapePositions` in `api/_lib/`.
+
 **Files:**
-- Modify: `api/eod-snapshot.js:586-590`
+- Modify: `api/_lib/` `reshapePositions` (emit `open_spreads` from `position_type === "open_spread"` rows)
+- Modify: `api/eod-snapshot.js:586-590` (add credit spreads to `pipelinePositions`)
 - Test: `api/__tests__/pipelineSnapshotFields.test.js` (append a spread case if the test constructs `pipelinePositions`; otherwise add a focused test asserting the reducer includes credit spreads)
 
 - [ ] **Step 1: Add open credit spreads to `pipelinePositions`**
