@@ -76,7 +76,10 @@ export function SpreadsTable({ rows, quoteMap, uwSignals, isMobile }) {
                   </span>
                   {s.assignable
                     ? (assignmentRisk && assignmentRisk.level !== "none" && (
-                        <span style={{ marginLeft: 6, color: assignmentRisk.level === "high" ? theme.red : theme.amber, fontSize: theme.size.xs }}>
+                        <span
+                          title={assignmentRisk.factors?.map(f => f.label).join(" · ") || undefined}
+                          style={{ marginLeft: 6, color: assignmentRisk.level === "high" ? theme.red : theme.amber, fontSize: theme.size.xs, cursor: assignmentRisk.factors?.length ? "help" : undefined }}
+                        >
                           ⚠ assignment risk · {assignmentRisk.level}
                         </span>
                       ))
