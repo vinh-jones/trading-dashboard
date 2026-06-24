@@ -127,9 +127,8 @@ On close (close_date + exit_cost filled), the row flows to `trades.json` and ren
 
 ## 8. Forecast pipeline integration (`pipelineForecast.js`, `api/eod-snapshot.js`)
 
-- Open **credit** spreads are added to `pipelinePositions` (currently `open_csps` + CCs) in `eod-snapshot.js` so their `premium_collected` (capturable credit) feeds `open_premium_gross` and the v2 forecaster's forward projection.
-- The v2 forecaster's `expectedFinalCapturePct` is keyed on position state via a calibration map. **First approximation: reuse the CSP calibration bucket** for spreads — there is not enough spread history to calibrate a dedicated curve, and spreads are infrequent. Flagged as an approximation to refine once history accrues (a dedicated spread calibration bucket is a future follow-up).
-- Verify during step 1/5 that the forecaster's state derivation (DTE, capture %, RoR from `capital_fronted`) behaves sensibly for a spread's risk/reward (max loss as capital, not naked-put collateral).
+- Open **credit** spreads are added to `pipelinePositions` (currently `open_csps` + CCs) in `eod-snapshot.js`, AND to the cron snapshot's reducer in `api/snapshot.js`, so their `premium_collected` (capturable credit) feeds `open_premium_gross` consistently across the cron-persisted and live-fallback paths. The Supabase round-trip also requires `reshapePositions` (`api/_lib/`) to emit `open_spreads` from `position_type === "open_spread"` rows.
+- **RESOLVED (user decision during impl):** credit spreads are **NOT** fed into the per-position v2 *forward* forecast (`forecast_month_total` / `forward_pipeline_premium`). Reason: `derivePositionState` is built around a single option leg's mid (`buildOccForPosition`), which a two-leg spread doesn't have; forcing it would push an unvalidated approximation into the calibrated pipeline for an infrequent instrument. Spreads count in `open_premium_gross` (open) + realized premium (MTD/History) only. The exclusion is documented at `derivePositionState`'s guard. A spread-specific forward forecast (spread mark + % captured, reusing the CSP curve) is a deliberate future follow-up if spread frequency justifies it.
 
 ## Build order
 
