@@ -12,6 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { buildOccSymbol } from "./_lib/occ.js";
+import { CASH_SETTLED_INDICES } from "../lib/spreadMath.js";
 import { sendOpsAlert } from "./_lib/notify.js";
 import { isMarketOpenExtended as isMarketOpen } from "./_marketHours.js";
 
@@ -112,17 +113,23 @@ async function fetchPublicQuotes(token, instruments, attempt = 1) {
 
 export function buildInstruments(rows, extraEquityTickers = []) {
   const equitySymbols = new Set();
+  const indexSymbols  = new Set();
   const optionSymbols = new Set();
 
   // Equity tickers with no position row of their own (e.g. a strategy-basket
   // shares lot whose CSP was assigned and synced away) still need a live mark.
   for (const t of extraEquityTickers) if (t) equitySymbols.add(t);
 
+  // Underlying mark — cash-settled index roots (XSP/SPX/NDX/…) only quote as
+  // INDEX on Public.com (EQUITY returns UNKNOWN), so route them there or the
+  // cushion-to-breakeven column stays dark for index spreads.
+  const addUnderlying = (t) => CASH_SETTLED_INDICES.has(t) ? indexSymbols.add(t) : equitySymbols.add(t);
+
   for (const row of rows) {
     const { ticker, type, strike, expiry_date, position_type } = row;
 
-    // Always fetch the underlying equity price
-    equitySymbols.add(ticker);
+    // Always fetch the underlying price (index or equity)
+    addUnderlying(ticker);
 
     // Vertical spreads carry a second leg in `row.lots` — quote both legs.
     // Handled before the strike/expiry guard so the long leg isn't dropped.
@@ -151,8 +158,9 @@ export function buildInstruments(rows, extraEquityTickers = []) {
   }
 
   const equityInstruments = [...equitySymbols].map(s => ({ symbol: s, type: "EQUITY" }));
+  const indexInstruments  = [...indexSymbols].map(s => ({ symbol: s, type: "INDEX" }));
   const optionInstruments = [...optionSymbols].map(s => ({ symbol: s, type: "OPTION" }));
-  return { equityInstruments, optionInstruments };
+  return { equityInstruments, indexInstruments, optionInstruments };
 }
 
 // ── Fetch option Greeks from Public.com ───────────────────────────────────────
@@ -231,23 +239,25 @@ async function refreshQuotes(supabase) {
 
   if (!rows?.length && !declaredShareTickers.length) return [];
 
-  const { equityInstruments, optionInstruments } = buildInstruments(rows ?? [], declaredShareTickers);
+  const { equityInstruments, indexInstruments, optionInstruments } = buildInstruments(rows ?? [], declaredShareTickers);
 
   // 2. Authenticate (uses cached 24h token, fetches new one only if expired)
   const token = await getPublicAccessToken(supabase);
 
   // 3. Fetch in two sequential batches — serialized to avoid bursting Public.com's rate limit
   let equityQuotes = [];
+  let indexQuotes  = [];
   let optionQuotes = [];
   try {
     if (equityInstruments.length) equityQuotes = await fetchPublicQuotes(token, equityInstruments);
+    if (indexInstruments.length)  indexQuotes  = await fetchPublicQuotes(token, indexInstruments);
     if (optionInstruments.length) optionQuotes = await fetchPublicQuotes(token, optionInstruments);
   } catch (err) {
     await maybeAlertOnPublicComError(supabase, err, "quotes");
     throw err;
   }
 
-  const allQuotes = [...equityQuotes, ...optionQuotes];
+  const allQuotes = [...equityQuotes, ...indexQuotes, ...optionQuotes];
 
   // 4. Upsert into quotes table
   const now = new Date().toISOString();

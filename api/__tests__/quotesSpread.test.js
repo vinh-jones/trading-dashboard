@@ -25,7 +25,10 @@ describe("buildInstruments — vertical spreads", () => {
     expect(symbols).toHaveLength(2);
   });
 
-  it("still emits the underlying equity instrument for the spread ticker", () => {
+  it("routes a cash-settled index underlying to an INDEX instrument (not EQUITY)", () => {
+    // XSP/SPX/... only quote as INDEX on Public.com — fetching as EQUITY returns
+    // UNKNOWN, leaving the cushion column dark. Route them to INDEX so the
+    // underlying spot resolves.
     const rows = [
       {
         ticker: "XSP",
@@ -37,8 +40,18 @@ describe("buildInstruments — vertical spreads", () => {
       },
     ];
 
-    const { equityInstruments } = buildInstruments(rows);
-    expect(equityInstruments).toEqual([{ symbol: "XSP", type: "EQUITY" }]);
+    const { equityInstruments, indexInstruments } = buildInstruments(rows);
+    expect(indexInstruments).toEqual([{ symbol: "XSP", type: "INDEX" }]);
+    expect(equityInstruments).not.toContainEqual({ symbol: "XSP", type: "EQUITY" });
+  });
+
+  it("keeps an equity underlying as EQUITY and emits no index instruments", () => {
+    const rows = [
+      { ticker: "AAPL", type: "CSP", strike: 200, expiry_date: "2026-07-31", position_type: "open_csp" },
+    ];
+    const { equityInstruments, indexInstruments } = buildInstruments(rows);
+    expect(equityInstruments).toContainEqual({ symbol: "AAPL", type: "EQUITY" });
+    expect(indexInstruments).toEqual([]);
   });
 });
 
