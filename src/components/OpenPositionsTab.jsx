@@ -1436,27 +1436,32 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   const accountValue = account?.account_value || 1;
   const allocMap = {};
   open_csps.forEach(p => {
-    if (!allocMap[p.ticker]) allocMap[p.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    if (!allocMap[p.ticker]) allocMap[p.ticker] = { csp: 0, shares: 0, leaps: 0, spread: 0 };
     allocMap[p.ticker].csp += (p.capital_fronted || 0);
   });
   assigned_shares.forEach(s => {
     const sharesTotal = s.positions.reduce((sum, lot) => sum + (lot.fronted || 0), 0);
     const leapsTotal  = (s.open_leaps ?? []).reduce((sum, l) => sum + (l.capital_fronted || 0), 0);
-    if (!allocMap[s.ticker]) allocMap[s.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    if (!allocMap[s.ticker]) allocMap[s.ticker] = { csp: 0, shares: 0, leaps: 0, spread: 0 };
     allocMap[s.ticker].shares += sharesTotal;
     allocMap[s.ticker].leaps  += leapsTotal;
   });
   open_leaps.forEach(l => {
-    if (!allocMap[l.ticker]) allocMap[l.ticker] = { csp: 0, shares: 0, leaps: 0 };
+    if (!allocMap[l.ticker]) allocMap[l.ticker] = { csp: 0, shares: 0, leaps: 0, spread: 0 };
     allocMap[l.ticker].leaps += (l.capital_fronted || 0);
   });
+  allOpenSpreads.forEach(s => {
+    if (!allocMap[s.ticker]) allocMap[s.ticker] = { csp: 0, shares: 0, leaps: 0, spread: 0 };
+    allocMap[s.ticker].spread += (s.capital_fronted || 0);
+  });
   const allocRows = Object.entries(allocMap)
-    .map(([ticker, { csp, shares, leaps }]) => ({
+    .map(([ticker, { csp, shares, leaps, spread }]) => ({
       ticker,
       cspPct:    csp    / accountValue,
       sharesPct: shares / accountValue,
       leapsPct:  leaps  / accountValue,
-      totalPct:  (csp + shares + leaps) / accountValue,
+      spreadPct: spread / accountValue,
+      totalPct:  (csp + shares + leaps + spread) / accountValue,
     }))
     .sort((a, b) => b.totalPct - a.totalPct);
   const SCALE = Math.max(allocRows[0]?.totalPct ?? 0.20, 0.20);
@@ -1506,6 +1511,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               const sharesW = (row.sharesPct / SCALE) * 100;
               const leapsW  = (row.leapsPct  / SCALE) * 100;
               const cspW    = (row.cspPct    / SCALE) * 100;
+              const spreadW = (row.spreadPct / SCALE) * 100;
               return (
                 <div key={row.ticker} style={{ display: "flex", alignItems: "center", gap: theme.space[2], marginBottom: theme.space[1] }}>
                   <div style={{ width: 52, fontSize: theme.size.sm, fontWeight: 700, color: theme.text.primary, textAlign: "right", flexShrink: 0 }}>
@@ -1514,7 +1520,8 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
                   <div style={{ flex: 1, height: 16, background: theme.border.default, borderRadius: 2, position: "relative" }}>
                     {row.sharesPct > 0 && <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${sharesW}%`, background: theme.chart.shares, borderRadius: "2px 0 0 2px" }} />}
                     {row.leapsPct  > 0 && <div style={{ position: "absolute", left: `${sharesW}%`, top: 0, height: "100%", width: `${leapsW}%`, background: theme.chart.leaps }} />}
-                    {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: theme.blue, borderRadius: "0 2px 2px 0" }} />}
+                    {row.cspPct    > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW}%`, top: 0, height: "100%", width: `${cspW}%`, background: theme.blue, borderRadius: row.spreadPct > 0 ? 0 : "0 2px 2px 0" }} />}
+                    {row.spreadPct > 0 && <div style={{ position: "absolute", left: `${sharesW + leapsW + cspW}%`, top: 0, height: "100%", width: `${spreadW}%`, background: theme.amber, borderRadius: "0 2px 2px 0" }} />}
                     <div style={{ position: "absolute", left: `${(0.10 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: theme.text.muted, opacity: 0.8, zIndex: 2 }} />
                     <div style={{ position: "absolute", left: `${(0.15 / SCALE) * 100}%`, top: -3, bottom: -3, width: 1, background: theme.red, opacity: 0.8, zIndex: 2 }} />
                   </div>
@@ -1528,6 +1535,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               <span><span style={{ color: theme.chart.shares }}>■</span> Shares</span>
               <span><span style={{ color: theme.chart.leaps }}>■</span> LEAPS</span>
               <span><span style={{ color: theme.blue }}>■</span> CSP</span>
+              <span><span style={{ color: theme.amber }}>■</span> Spread</span>
               <span style={{ marginLeft: 8 }}><span style={{ color: theme.text.muted }}>│</span> 10%</span>
               <span><span style={{ color: theme.red }}>│</span> 15%</span>
             </div>
