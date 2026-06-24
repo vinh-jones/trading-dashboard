@@ -121,6 +121,8 @@ export default async function handler(req, res) {
   const openCCs       = positions.filter(p => p.position_type === "open_csp" && p.type === "CC");
   const openLEAPS     = positions.filter(p => p.position_type === "open_leaps");
   const assignedShares = positions.filter(p => p.position_type === "assigned_shares");
+  // Credit spreads carry premium_collected = max_gain; is_credit lives in the lots JSONB.
+  const openSpreadsCredit = positions.filter(p => p.position_type === "open_spread" && p.lots?.is_credit);
 
   // 5. Per-ticker allocations and total deployed
   // Each position has capital_fronted which is the total for that row.
@@ -224,7 +226,7 @@ export default async function handler(req, res) {
   // 7. Open premium pipeline (CSPs and CCs only). Shared helper emits the legacy
   // flat-60% fields (retained for 30-day backcompat per spec §Implementation
   // Note 9) plus the v2 forecast fields the dashboard reads.
-  const openPremiumGross = [...openCSPs, ...openCCs].reduce(
+  const openPremiumGross = [...openCSPs, ...openCCs, ...openSpreadsCredit].reduce(
     (sum, p) => sum + (p.premium_collected || 0), 0
   );
   const pipelineFields = pipelineSnapshotFields({ forecastV2, openPremiumGross });

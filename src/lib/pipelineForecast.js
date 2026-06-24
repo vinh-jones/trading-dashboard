@@ -295,6 +295,11 @@ export function buildOccForPosition(row) {
  * @returns {Object|null} state, or null if unable to derive (caller should skip)
  */
 export function derivePositionState(position, quoteBySymbol, costBasis, today) {
+  // Vertical spreads are intentionally excluded from the per-position v2 forward
+  // forecast: this model is built around a single option leg's mid, which a
+  // two-leg spread doesn't have. Credit spreads still count in open-premium-gross
+  // and realized premium — just not the forward projection. Revisit with
+  // spread-specific state derivation if spread frequency justifies it.
   if (!position || !['CSP', 'CC'].includes(position.type)) return null;
   const type = position.type === 'CSP' ? 'csp' : 'cc';
 
