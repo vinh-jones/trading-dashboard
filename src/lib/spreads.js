@@ -34,7 +34,7 @@ export function spreadMark({ shortMid, longMid }) {
 export function spreadUnrealized({ credit, shortMid, longMid, contracts, is_credit, max_gain }) {
   const mark = spreadMark({ shortMid, longMid });
   if (mark == null || credit == null || !contracts) {
-    return { mark: null, gl_dollars: null, gl_pct: null, pct_captured: null, close_50: false };
+    return { mark: null, gl_dollars: null, pct_captured: null, close_50: false };
   }
   // Credit spread: you collected `credit`, it costs `mark` to close now.
   const gl_dollars = is_credit
@@ -44,7 +44,6 @@ export function spreadUnrealized({ credit, shortMid, longMid, contracts, is_cred
   return {
     mark,
     gl_dollars: Math.round(gl_dollars),
-    gl_pct: max_gain ? gl_dollars / max_gain : null,
     pct_captured,
     close_50: pct_captured != null && pct_captured >= 0.5,
   };
