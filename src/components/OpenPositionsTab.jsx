@@ -5,7 +5,7 @@ import { useWindowWidth } from "../hooks/useWindowWidth";
 import { useRollAnalysis } from "../hooks/useRollAnalysis";
 import { formatDollars, formatDollarsFull, formatExpiry } from "../lib/format";
 import { calcDTE, allocColor, buildOccSymbol } from "../lib/trading";
-import { getOpenLEAPs, getCostBasisPerShare } from "../lib/positionSchema";
+import { getOpenLEAPs, getCostBasisPerShare, getOpenSpreads } from "../lib/positionSchema";
 import {
   shortOptionGlDollars,
   shortOptionGlPct,
@@ -27,6 +27,7 @@ import { computeCspAggregates } from "../lib/cspAggregates";
 import { CspSelectionBar } from "./CspSelectionBar";
 import { SignalLogPanel } from "./SignalLogPanel";
 import { CohortsPanel } from "./CohortsPanel";
+import { SpreadsTable } from "./SpreadsTable";
 import { PositionHistoryPanel } from "./PositionHistoryPanel";
 import { slugifyCohortName } from "../lib/cohorts";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
@@ -1429,6 +1430,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   // ── Derived position lists ────────────────────────────────────────────────
   const open_ccs = assigned_shares.map(pos => pos.active_cc).filter(Boolean);
   const allOpenLeaps = getOpenLEAPs(positions);
+  const allOpenSpreads = getOpenSpreads(positions);
 
   // ── Allocation chart data ─────────────────────────────────────────────────
   const accountValue = account?.account_value || 1;
@@ -1487,8 +1489,9 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
   const positionTabs = [
     { key: "csps",    label: `CSPs (${open_csps.length})`,      rows: open_csps     },
     { key: "ccs",     label: `CCs (${open_ccs.length})`,        rows: open_ccs      },
-    { key: "leaps",   label: `LEAPs (${allOpenLeaps.length})`,  rows: allOpenLeaps  },
-    { key: "cohorts", label: `Cohorts (${cohortCount})`,        rows: []            },
+    { key: "leaps",   label: `LEAPs (${allOpenLeaps.length})`,  rows: allOpenLeaps   },
+    { key: "spreads", label: `Spreads (${allOpenSpreads.length})`, rows: allOpenSpreads },
+    { key: "cohorts", label: `Cohorts (${cohortCount})`,        rows: []             },
   ];
   const activeTab = positionTabs.find(t => t.key === positionTab);
 
@@ -1564,6 +1567,8 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               onSelectTag={setSelectedCohortTag}
               onCohortsChanged={() => setCohortRefreshKey(k => k + 1)}
             />
+          ) : positionTab === "spreads" ? (
+            <SpreadsTable rows={allOpenSpreads} quoteMap={quoteMap} isMobile={isMobile} />
           ) : (
             <PositionsTable
               rows={activeTab?.rows ?? []}
