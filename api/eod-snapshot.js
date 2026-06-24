@@ -582,10 +582,14 @@ export default async function handler(req, res) {
     const band    = getVixBand(vix);
     const cashPct = accountSnap.free_cash_pct_est ?? null;
 
-    // Pipeline from live positions (CSPs + active CCs)
+    // Pipeline from live positions (CSPs + active CCs + open credit spreads).
+    // Credit spreads carry premium_collected = max_gain, so they sum into
+    // openPremiumGross like any other premium source. Debit spreads are
+    // directional (premium_collected null) and excluded by the is_credit filter.
     const pipelinePositions = [
       ...(positions.open_csps ?? []),
       ...(positions.assigned_shares ?? []).filter((s) => s.active_cc).map((s) => s.active_cc),
+      ...(positions.open_spreads ?? []).filter((s) => s.is_credit),
     ];
     const openPremiumGross = Math.round(pipelinePositions.reduce((s, p) => s + (p.premium_collected || 0), 0));
     const mtd              = accountSnap.month_to_date_premium ?? 0;

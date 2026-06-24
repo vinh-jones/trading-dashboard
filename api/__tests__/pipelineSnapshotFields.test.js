@@ -68,3 +68,26 @@ describe("pipelineSnapshotFields", () => {
     expect(fields.open_premium_gross).toBe(0);
   });
 });
+
+// Mirrors the pipelinePositions reducer in api/eod-snapshot.js: open credit
+// spreads carry premium_collected = max_gain and sum into openPremiumGross;
+// debit spreads (premium_collected null) are excluded by the is_credit filter.
+describe("pipeline includes open credit spreads", () => {
+  it("sums credit-spread premium into openPremiumGross", () => {
+    const positions = {
+      open_csps: [{ premium_collected: 500 }],
+      assigned_shares: [],
+      open_spreads: [
+        { is_credit: true,  premium_collected: 1056 },
+        { is_credit: false, premium_collected: null }, // debit excluded
+      ],
+    };
+    const pipelinePositions = [
+      ...(positions.open_csps ?? []),
+      ...(positions.assigned_shares ?? []).filter((s) => s.active_cc).map((s) => s.active_cc),
+      ...(positions.open_spreads ?? []).filter((s) => s.is_credit),
+    ];
+    const openPremiumGross = Math.round(pipelinePositions.reduce((s, p) => s + (p.premium_collected || 0), 0));
+    expect(openPremiumGross).toBe(1556);
+  });
+});

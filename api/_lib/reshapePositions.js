@@ -4,7 +4,7 @@
  * Converts a flat array of position rows from Supabase back into the nested
  * shape that OpenPositionsTab, allocation chart, pipeline calculator, and
  * the Focus Engine expect:
- *   { assigned_shares: [...], open_csps: [...], open_leaps: [...] }
+ *   { assigned_shares: [...], open_csps: [...], open_leaps: [...], open_spreads: [...] }
  *
  * Shared by /api/data (frontend load) and /api/snapshot (EOD alert evaluation)
  * so both read the same canonical shape.
@@ -15,6 +15,7 @@ export function reshapePositions(rows) {
   const ccRows       = rows.filter(r => r.position_type === "open_csp" && r.type === "CC");
   const cspRows      = rows.filter(r => r.position_type === "open_csp" && r.type === "CSP");
   const leapRows     = rows.filter(r => r.position_type === "open_leaps");
+  const spreadRows   = rows.filter(r => r.position_type === "open_spread");
 
   const assigned_shares = assignedRows.map(r => {
     const activeCC    = ccRows.find(cc => cc.ticker === r.ticker) || null;
@@ -94,5 +95,40 @@ export function reshapePositions(rows) {
       notes:           l.notes,
     }));
 
-  return { assigned_shares, open_csps, open_leaps };
+  // Open vertical spreads. The sync writes the short leg as `strike` and the
+  // second leg + classification flags into the `lots` JSONB; reconstruct the
+  // full open_spreads entry the parser produced so the Spreads tab, allocation
+  // chart, and forecast reducer read identical fields whether the data came
+  // from src/data/positions.json (parseSheets) or from Supabase (syncSheets).
+  // max_loss == capital_fronted; for credit spreads max_gain == premium_collected.
+  const open_spreads = spreadRows.map(r => {
+    const lots = r.lots || {};
+    return {
+      ticker:            r.ticker,
+      type:              r.type || "Spread",
+      subtype:           r.subtype ?? null,
+      is_credit:         lots.is_credit ?? null,
+      right:             lots.right ?? null,
+      short_strike:      r.strike ?? null,
+      long_strike:       lots.long_strike ?? null,
+      strike:            r.strike ?? null,          // short leg — positionKey + quotes guard
+      width:             lots.width ?? null,
+      contracts:         r.contracts ?? null,
+      credit:            r.entry_cost ?? null,
+      open_date:         r.open_date,
+      expiry_date:       r.expiry_date,
+      days_to_expiry:    r.days_to_expiry ?? null,
+      max_gain:          lots.is_credit ? (r.premium_collected ?? null) : null,
+      max_loss:          r.capital_fronted ?? null,
+      breakeven:         lots.breakeven ?? null,
+      capital_fronted:   r.capital_fronted ?? null,
+      premium_collected: r.premium_collected ?? null,
+      settlement:        lots.settlement ?? null,
+      assignable:        lots.assignable ?? null,
+      source:            r.source,
+      notes:             r.notes,
+    };
+  });
+
+  return { assigned_shares, open_csps, open_leaps, open_spreads };
 }
