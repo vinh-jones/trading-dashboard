@@ -283,6 +283,8 @@ git push origin main
 
 Refactor note: `processLeapsShares` and `buildPositions` are not currently exported. Export them so the parser logic is unit-testable without network I/O.
 
+**Amendment (applied during impl):** the live sheet puts a bare `SPREAD` in `txnType` (col 7) and the directional label in the **description** (col 3, `Bull Put Spread (Max gain $1094)`); historical closed spread rows do the same. So `classifySpread` substring-matches the four canonical phrases, and the parser classifies via `classifySpread(txnType) ?? classifySpread(desc)`. The Task-4 fixture below was updated to the real row shape (col 7 `"SPREAD"`, label in col 3). Implemented in commit `bb05d66` (v1.155.3).
+
 - [ ] **Step 1: Write the failing test**
 
 ```js

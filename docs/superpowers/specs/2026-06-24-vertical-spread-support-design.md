@@ -30,7 +30,7 @@ First-class is also what the reserved `open_spreads` slot in `positionSchema.js`
 
 ## 1. Input contract (LEAPS/Shares sheet)
 
-`txnType` (col 7) is the single source of truth for type + direction + right (put/call) + credit/debit.
+The spread's directional label drives type + direction + right (put/call) + credit/debit. **Amendment (2026-06-24, during impl):** the live sheet — and all historical closed spread rows — carry a bare `SPREAD` in `txnType` (col 7) and the directional label in the **description** (col 3, e.g. `Bull Put Spread (Max gain $1094)`). So classification reads `classifySpread(txnType) ?? classifySpread(description)`, substring-matching the four canonical phrases. `txnType` wins if ever canonicalized; otherwise the description (where the label actually lives) is used. No sheet change required.
 
 | col idx | field | rule |
 |---|---|---|
