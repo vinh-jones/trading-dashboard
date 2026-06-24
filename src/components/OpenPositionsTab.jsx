@@ -18,7 +18,7 @@ import { computePriceTargets } from "../lib/blackScholes";
 import { computeCushion } from "../lib/cushionBreach";
 import { computeHoldYield } from "../lib/holdYield";
 import { computeRedeploySignal } from "../lib/redeploySignal";
-import { describeStrikeVsGex } from "../lib/gexLevels";
+import { describeStrikeVsGex, describeMaxPainVsStrike } from "../lib/gexLevels";
 import { flowConfirmation } from "../lib/flowSmoothing";
 import { trendOverlay } from "../lib/trendOverlay";
 import { computeAssignmentRisk } from "../lib/assignmentRisk";
@@ -562,6 +562,11 @@ function GexPanel({ gex }) {
   const toneColor = strikeRead?.tone === "exposed" ? theme.red
     : strikeRead?.tone === "defended" ? theme.green
     : theme.text.muted;
+  const maxPainRead  = describeMaxPainVsStrike({ maxPain: gex.maxPain, strike: gex.strike });
+  const maxPainColor = maxPainRead?.tone === "above" ? theme.green
+    : maxPainRead?.tone === "at" ? theme.amber
+    : maxPainRead?.tone === "below" ? theme.red
+    : theme.text.primary;
 
   return (
     <div style={{
@@ -583,7 +588,7 @@ function GexPanel({ gex }) {
         <span>Air pocket (−γ below) <strong style={{ color: theme.red }}>{fmt(gex.airPocket)}</strong></span>
         {gex.maxPain != null && (
           <span title="Max pain — the strike where the most option value expires worthless, a pin level the stock tends to gravitate toward by this expiry.">
-            Max pain (exp) <strong style={{ color: gex.maxPain >= gex.strike ? theme.green : theme.red }}>{fmt(gex.maxPain)}</strong>
+            Max pain (exp) <strong style={{ color: maxPainColor }}>{fmt(gex.maxPain)}</strong>
           </span>
         )}
       </div>
@@ -592,11 +597,9 @@ function GexPanel({ gex }) {
           {strikeRead.text}
         </div>
       )}
-      {gex.maxPain != null && gex.strike != null && (
-        <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: gex.maxPain >= gex.strike ? theme.green : theme.red }}>
-          {gex.maxPain >= gex.strike
-            ? `Pin (${fmt(gex.maxPain)}) sits above your strike — the expiry magnet favors your put expiring OTM.`
-            : `Pin (${fmt(gex.maxPain)}) sits below your strike — the expiry magnet pulls toward assignment territory.`}
+      {maxPainRead && (
+        <div style={{ marginTop: theme.space[1], fontSize: theme.size.sm, color: maxPainColor }}>
+          {maxPainRead.text}
         </div>
       )}
     </div>

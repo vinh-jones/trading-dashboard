@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeGexLevels, describeStrikeVsGex } from "../gexLevels";
+import { computeGexLevels, describeStrikeVsGex, describeMaxPainVsStrike } from "../gexLevels";
 
 describe("computeGexLevels", () => {
   it("null-safe on empty rows", () => {
@@ -131,5 +131,25 @@ describe("describeStrikeVsGex", () => {
   it("null-safe", () => {
     expect(describeStrikeVsGex({ strike: null, support: 95, airPocket: 90 })).toBeNull();
     expect(describeStrikeVsGex({ strike: 92, support: null, airPocket: null }).tone).toBe("neutral");
+  });
+});
+
+describe("describeMaxPainVsStrike", () => {
+  it("above — pin over the strike favors the put expiring OTM", () => {
+    expect(describeMaxPainVsStrike({ maxPain: 70, strike: 65 }).tone).toBe("above");
+  });
+  it("at — pin exactly at the strike is borderline, not favorable", () => {
+    // regression: a pin == strike used to read as 'above / favors OTM' (green)
+    expect(describeMaxPainVsStrike({ maxPain: 65, strike: 65 }).tone).toBe("at");
+  });
+  it("below — pin under the strike pulls toward assignment", () => {
+    expect(describeMaxPainVsStrike({ maxPain: 60, strike: 65 }).tone).toBe("below");
+  });
+  it("coerces a string strike (the DB stores it as text) — 65 vs '65' is 'at'", () => {
+    expect(describeMaxPainVsStrike({ maxPain: 65, strike: "65" }).tone).toBe("at");
+  });
+  it("null-safe", () => {
+    expect(describeMaxPainVsStrike({ maxPain: null, strike: 65 })).toBeNull();
+    expect(describeMaxPainVsStrike({ maxPain: 65, strike: null })).toBeNull();
   });
 });

@@ -107,3 +107,22 @@ export function describeStrikeVsGex({ strike, support, airPocket } = {}) {
   return { tone: "neutral", level: null,
     text: `Strike sits above the nearest gamma walls — no strong dealer support or acceleration at this level.` };
 }
+
+// Plain-language read of the max-pain pin relative to a short-put strike. For a
+// put seller, a pin ABOVE the strike is a tailwind (the expiry magnet sits where
+// the put is OTM); a pin exactly AT the strike is borderline (the magnet pulls
+// price to at-the-money — no cushion); a pin BELOW the strike pulls toward
+// assignment. Strike comes from the DB as a string, so coerce both. The `at`
+// case is distinct on purpose: `maxPain >= strike` used to fold a pin AT the
+// strike into the favorable bucket, which over-states the cushion. Pure + null-safe.
+export function describeMaxPainVsStrike({ maxPain, strike } = {}) {
+  const mp = toNum(maxPain);
+  const k  = toNum(strike);
+  if (mp == null || k == null) return null;
+  if (mp > k) return { tone: "above",
+    text: `Pin ($${mp}) sits above your strike — the expiry magnet favors your put expiring OTM.` };
+  if (mp === k) return { tone: "at",
+    text: `Pin ($${mp}) sits right at your strike — the magnet pulls toward at-the-money, so no cushion.` };
+  return { tone: "below",
+    text: `Pin ($${mp}) sits below your strike — the expiry magnet pulls toward assignment territory.` };
+}
