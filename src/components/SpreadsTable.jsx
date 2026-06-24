@@ -1,9 +1,9 @@
 // src/components/SpreadsTable.jsx
 import React from "react";
 import { theme } from "../lib/theme";
-import { calcDTE } from "../lib/trading";
+import { calcDTE, buildOccSymbol } from "../lib/trading";
 import { formatExpiry, formatDollars } from "../lib/format";
-import { cushionToBreakeven } from "../lib/spreads";
+import { cushionToBreakeven, spreadUnrealized } from "../lib/spreads";
 
 const labelSt = {
   padding: `${theme.space[2]}px ${theme.space[3]}px`, textAlign: "left",
@@ -34,6 +34,8 @@ export function SpreadsTable({ rows, quoteMap, isMobile }) {
             <th style={{ ...labelSt, textAlign: "right" }}>Max Loss</th>
             <th style={{ ...labelSt, textAlign: "right" }}>Breakeven</th>
             <th style={{ ...labelSt, textAlign: "right" }}>Cushion</th>
+            <th style={{ ...labelSt, textAlign: "right" }}>G/L</th>
+            <th style={{ ...labelSt, textAlign: "right" }}>Captured</th>
           </tr>
         </thead>
         <tbody>
@@ -42,6 +44,12 @@ export function SpreadsTable({ rows, quoteMap, isMobile }) {
             const spot = quoteMap.get(s.ticker)?.mid ?? quoteMap.get(s.ticker)?.last ?? null;
             const cush = cushionToBreakeven({ spot, breakeven: s.breakeven, subtype: s.subtype });
             const rightTag = s.right === "put" ? "p" : "c";
+            const isCall = s.right === "call";
+            const shortSym = s.expiry_date && s.short_strike != null ? buildOccSymbol(s.ticker, s.expiry_date, isCall, s.short_strike) : null;
+            const longSym  = s.expiry_date && s.long_strike  != null ? buildOccSymbol(s.ticker, s.expiry_date, isCall, s.long_strike)  : null;
+            const shortMid = shortSym ? (quoteMap.get(shortSym)?.mid ?? null) : null;
+            const longMid  = longSym  ? (quoteMap.get(longSym)?.mid  ?? null) : null;
+            const ur = spreadUnrealized({ credit: s.credit, shortMid, longMid, contracts: s.contracts, is_credit: s.is_credit, max_gain: s.max_gain });
             return (
               <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                 <td style={{ ...cellSt, fontWeight: 700 }}>{s.ticker}</td>
@@ -59,6 +67,13 @@ export function SpreadsTable({ rows, quoteMap, isMobile }) {
                 <td style={{ ...cellSt, textAlign: "right" }}>{s.breakeven}</td>
                 <td style={{ ...cellSt, textAlign: "right", color: cush ? cushionColor(cush.state) : theme.text.muted }}>
                   {cush ? `${cush.distance_pct >= 0 ? "+" : ""}${(cush.distance_pct * 100).toFixed(1)}%` : "—"}
+                </td>
+                <td style={{ ...cellSt, textAlign: "right", color: ur.gl_dollars == null ? theme.text.muted : ur.gl_dollars >= 0 ? theme.green : theme.red }}>
+                  {ur.gl_dollars == null ? "—" : formatDollars(ur.gl_dollars)}
+                </td>
+                <td style={{ ...cellSt, textAlign: "right" }}>
+                  {ur.pct_captured == null ? "—" : `${Math.round(ur.pct_captured * 100)}%`}
+                  {ur.close_50 && <span style={{ marginLeft: 4, color: theme.green, fontWeight: 600 }}>🎯</span>}
                 </td>
               </tr>
             );
