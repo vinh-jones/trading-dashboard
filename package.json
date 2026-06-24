@@ -1,7 +1,7 @@
 {
   "name": "trading-dashboard",
   "private": true,
-  "version": "1.156.3",
+  "version": "1.157.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
