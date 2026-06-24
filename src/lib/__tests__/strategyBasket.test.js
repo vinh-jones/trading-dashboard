@@ -259,3 +259,55 @@ describe("shareCoverageWarnings", () => {
     expect(shareCoverageWarnings(members)).toEqual([]);
   });
 });
+
+describe("vertical spreads", () => {
+  // Open-spread position shape as it arrives from useData (parseSheets open_spreads):
+  // carries `credit` (not entry_cost), `long_strike`, `right`, `is_credit`.
+  const spreadPos = {
+    ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put",
+    is_credit: true, credit: 0.66, capital_fronted: 6944, contracts: 16,
+    expiry_date: "2026-07-31", open_date: "2026-06-24",
+  };
+  const spreadEntry = { tags: ["strategy:sofi-makeup"], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31" };
+  const shortSym = buildOccSymbol("XSP", "2026-07-31", false, 708);
+  const longSym  = buildOccSymbol("XSP", "2026-07-31", false, 703);
+
+  it("resolveBasket tuple-matches an open spread and carries both legs + credit as entryCost", () => {
+    const members = resolveBasket("strategy:sofi-makeup", { openPositions: [spreadPos], trades: [], entries: [spreadEntry] });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({
+      status: "open", role: "recovery", ticker: "XSP", type: "Spread",
+      strike: 708, longStrike: 703, right: "put", isCredit: true,
+      entryCost: 0.66, capitalFronted: 6944, contracts: 16,
+    });
+  });
+
+  it("memberUnrealized marks a credit spread from BOTH legs: (credit - (shortMid - longMid)) x 100 x contracts", () => {
+    const member = { status: "open", role: "recovery", ticker: "XSP", type: "Spread", strike: 708, longStrike: 703, right: "put", isCredit: true, entryCost: 0.66, contracts: 16, expiry: "2026-07-31" };
+    // mark = 5.53 - 4.86 = 0.67 → (0.66 - 0.67) * 100 * 16 = -16
+    const quoteMap = new Map([[shortSym, { mid: 5.53 }], [longSym, { mid: 4.86 }]]);
+    expect(memberUnrealized(member, quoteMap)).toBe(-16);
+  });
+
+  it("is unmarked (null) when a spread leg has no quote", () => {
+    const member = { status: "open", role: "recovery", ticker: "XSP", type: "Spread", strike: 708, longStrike: 703, right: "put", isCredit: true, entryCost: 0.66, contracts: 16, expiry: "2026-07-31" };
+    expect(memberUnrealized(member, new Map([[shortSym, { mid: 5.53 }]]))).toBe(null);
+  });
+
+  it("capitalDeployed and unrealizedCushion include the open spread", () => {
+    const members = resolveBasket("strategy:sofi-makeup", { openPositions: [spreadPos], trades: [], entries: [spreadEntry] });
+    expect(capitalDeployed(members)).toBe(6944);
+    const quoteMap = new Map([[shortSym, { mid: 5.53 }], [longSym, { mid: 4.86 }]]);
+    const { total, marked } = unrealizedCushion(members, quoteMap);
+    expect(total).toBe(-16);
+    expect(marked).toBe(1);
+  });
+
+  it("a closed credit spread contributes its realized credit to realizedRecovery", () => {
+    const closedSpreadTrade = { id: "xsp-c", ticker: "XSP", type: "Spread", subtype: "Bull Put", strike: 708, expiry_date: "2026-07-31", contracts: 16, premium_collected: 1056, close_date: "2026-07-31" };
+    const e = [{ tags: ["strategy:x"], trade_id: "xsp-c", ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31" }];
+    const members = resolveBasket("strategy:x", { openPositions: [], trades: [closedSpreadTrade], entries: e });
+    expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 1056 });
+    expect(realizedRecovery(members)).toBe(1056);
+  });
+});

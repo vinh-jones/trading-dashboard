@@ -3,7 +3,7 @@ import { useData } from "../hooks/useData";
 import { useQuotes } from "../hooks/useQuotes";
 import { theme } from "../lib/theme";
 import { TYPE_COLORS } from "../lib/constants";
-import { getOpenCSPs, getOpenCCs, getOpenLEAPs } from "../lib/positionSchema";
+import { getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads } from "../lib/positionSchema";
 import {
   resolveBasket, basketTarget, capitalDeployed,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
@@ -56,6 +56,8 @@ function flattenOpen(positions) {
     ...getOpenCSPs(positions).map(p => ({ ...p, type: "CSP" })),
     ...getOpenCCs(positions).map(p => ({ ...p, type: "CC" })),
     ...getOpenLEAPs(positions).map(p => ({ ...p, type: "LEAPS" })),
+    // Spreads already carry type:"Spread" + their second leg (long_strike/right/is_credit).
+    ...getOpenSpreads(positions),
   ];
 }
 
@@ -353,7 +355,8 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               const open = m.status === "open";
               const gl = open ? memberUnrealized(m, quoteMap) : m.realized;
               const days = open ? daysSince(m.openDate) : m.daysHeld;
-              const isShort = m.type === "CSP" || m.type === "CC";
+              // Credit spreads behave like shorts for "kept": gl / (credit × contracts × 100) = % of max gain captured.
+              const isShort = m.type === "CSP" || m.type === "CC" || (m.type === "Spread" && m.isCredit);
               const kept = m.role === "baseline"
                 ? null
                 : open
@@ -417,9 +420,11 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               const pctOfTarget = (!open && m.role === "recovery" && target > 0 && m.realized != null)
                 ? ` · ${((m.realized / target) * 100).toFixed(1)}% of target`
                 : "";
+              const strikeLabel = m.strike == null ? null
+                : (m.type === "Spread" && m.longStrike != null ? `$${m.strike}/${m.longStrike}` : `$${m.strike}`);
               const detail = m.role === "baseline"
                 ? "Baseline loss"
-                : `${m.strike != null ? `$${m.strike} · ` : ""}${open ? "open" : "closed"}${pctOfTarget}`;
+                : `${strikeLabel != null ? `${strikeLabel} · ` : ""}${open ? "open" : "closed"}${pctOfTarget}`;
 
               return (
                 <div key={`${m.status}-${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
