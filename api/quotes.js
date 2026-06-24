@@ -110,7 +110,7 @@ async function fetchPublicQuotes(token, instruments, attempt = 1) {
 
 // ── Build instrument list from positions ──────────────────────────────────────
 
-function buildInstruments(rows, extraEquityTickers = []) {
+export function buildInstruments(rows, extraEquityTickers = []) {
   const equitySymbols = new Set();
   const optionSymbols = new Set();
 
@@ -123,6 +123,19 @@ function buildInstruments(rows, extraEquityTickers = []) {
 
     // Always fetch the underlying equity price
     equitySymbols.add(ticker);
+
+    // Vertical spreads carry a second leg in `row.lots` — quote both legs.
+    // Handled before the strike/expiry guard so the long leg isn't dropped.
+    if (type === "Spread") {
+      const longStrike = row.lots?.long_strike;
+      const right = row.lots?.right;
+      if (expiry_date && right && strike != null) {
+        const isCall = right === "call";
+        optionSymbols.add(buildOccSymbol(ticker, expiry_date, isCall, strike));       // short leg
+        if (longStrike != null) optionSymbols.add(buildOccSymbol(ticker, expiry_date, isCall, longStrike)); // long leg
+      }
+      continue;
+    }
 
     // Build OCC symbol for options
     if (!strike || !expiry_date) continue;
@@ -199,7 +212,7 @@ async function refreshQuotes(supabase) {
   // 1. Load open positions
   const { data: rows, error } = await supabase
     .from("positions")
-    .select("ticker, type, strike, expiry_date, position_type");
+    .select("ticker, type, strike, expiry_date, position_type, lots");
 
   if (error) throw new Error(`Supabase positions fetch failed: ${error.message}`);
 
