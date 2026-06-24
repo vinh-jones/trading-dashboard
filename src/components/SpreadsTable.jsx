@@ -2,7 +2,6 @@
 import React from "react";
 import { theme } from "../lib/theme";
 import { calcDTE } from "../lib/trading";
-import { dtePctRemaining } from "../lib/positionMetrics";
 import { formatExpiry, formatDollars } from "../lib/format";
 import { cushionToBreakeven } from "../lib/spreads";
 
