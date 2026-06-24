@@ -1568,7 +1568,7 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
               onCohortsChanged={() => setCohortRefreshKey(k => k + 1)}
             />
           ) : positionTab === "spreads" ? (
-            <SpreadsTable rows={allOpenSpreads} quoteMap={quoteMap} isMobile={isMobile} />
+            <SpreadsTable rows={allOpenSpreads} quoteMap={quoteMap} uwSignals={uwSignals} isMobile={isMobile} />
           ) : (
             <PositionsTable
               rows={activeTab?.rows ?? []}

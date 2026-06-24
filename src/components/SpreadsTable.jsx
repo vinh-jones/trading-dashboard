@@ -4,6 +4,7 @@ import { theme } from "../lib/theme";
 import { calcDTE, buildOccSymbol } from "../lib/trading";
 import { formatExpiry, formatDollars } from "../lib/format";
 import { cushionToBreakeven, spreadUnrealized } from "../lib/spreads";
+import { computeAssignmentRisk } from "../lib/assignmentRisk";
 
 const labelSt = {
   padding: `${theme.space[2]}px ${theme.space[3]}px`, textAlign: "left",
@@ -16,7 +17,7 @@ function cushionColor(state) {
   return state === "breached" ? theme.red : state === "warn" ? theme.amber : theme.green;
 }
 
-export function SpreadsTable({ rows, quoteMap, isMobile }) {
+export function SpreadsTable({ rows, quoteMap, uwSignals, isMobile }) {
   if (!rows.length) {
     return <div style={{ fontSize: theme.size.sm, color: theme.text.subtle, padding: "12px 0" }}>No open spreads.</div>;
   }
@@ -50,6 +51,21 @@ export function SpreadsTable({ rows, quoteMap, isMobile }) {
             const shortMid = shortSym ? (quoteMap.get(shortSym)?.mid ?? null) : null;
             const longMid  = longSym  ? (quoteMap.get(longSym)?.mid  ?? null) : null;
             const ur = spreadUnrealized({ credit: s.credit, shortMid, longMid, contracts: s.contracts, is_credit: s.is_credit, max_gain: s.max_gain });
+            const uwSig = uwSignals?.get?.(s.ticker);
+            const flowSmoothed = uwSig?.flow_ema ?? uwSig?.flow_sentiment ?? null;
+            const assignmentRisk = s.assignable
+              ? computeAssignmentRisk({
+                  earningsDate: quoteMap.get(s.ticker)?.earnings_date ?? null,
+                  expiry: s.expiry_date,
+                  today: new Date().toISOString().slice(0, 10),
+                  flowSentiment: flowSmoothed,
+                  gammaEnv: uwSig?.gamma_env ?? null,
+                  cushionState: cush?.state === "breached" ? "assignment_risk" : "safe",
+                  shortInterestPct: uwSig?.short_interest_pct ?? null,
+                  expectedMovePct: uwSig?.earnings_expected_move_pct ?? null,
+                  spot, strike: s.short_strike,
+                })
+              : null;
             return (
               <tr key={i} style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                 <td style={{ ...cellSt, fontWeight: 700 }}>{s.ticker}</td>
@@ -58,6 +74,13 @@ export function SpreadsTable({ rows, quoteMap, isMobile }) {
                   <span style={{ marginLeft: 6, color: theme.text.subtle, fontSize: theme.size.xs }}>
                     {s.contracts}x · {s.subtype}{s.settlement === "cash" ? " · cash-settled" : ""}
                   </span>
+                  {s.assignable
+                    ? (assignmentRisk && assignmentRisk.level !== "none" && (
+                        <span style={{ marginLeft: 6, color: assignmentRisk.level === "high" ? theme.red : theme.amber, fontSize: theme.size.xs }}>
+                          ⚠ assignment risk · {assignmentRisk.level}
+                        </span>
+                      ))
+                    : <span style={{ marginLeft: 6, color: theme.text.subtle, fontSize: theme.size.xs }}>no early assignment</span>}
                 </td>
                 {!isMobile && <td style={cellSt}>{formatExpiry(s.expiry_date)}</td>}
                 <td style={{ ...cellSt, textAlign: "right" }}>{dte != null ? `${dte}d` : "—"}</td>
