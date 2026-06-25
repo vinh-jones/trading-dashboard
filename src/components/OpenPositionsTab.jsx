@@ -392,23 +392,26 @@ function redeployCopy(rd) {
 function RedeployIndicator({ rd, ov, profitTargetHit }) {
   if (!rd || rd.skipped) return null;
   const state = ov?.state ?? rd.redeploy_state;
-  const pill = (key, label, color, dashed) => (
-    <span key={key} style={{
+  const pill = (key, label, color, dashed, title) => (
+    <span key={key} title={title} style={{
       marginLeft: theme.space[1], padding: "1px 6px", borderRadius: theme.radius.pill,
       background: `${color}${dashed ? "14" : "22"}`, color, border: `1px ${dashed ? "dashed" : "solid"} ${color}66`,
       fontSize: theme.size.xs, fontWeight: 600, lineHeight: 1.4, flexShrink: 0, whiteSpace: "nowrap",
     }}>{label}</span>
   );
 
+  // Icon-only in the collapsed row so a verbose chip never stretches the ticker
+  // column (worst offender on mobile). The full label lives in the hover title
+  // and the expanded RedeployPanel; the redeploy ratio moves there too.
   const chips = [];
   // Profit target reached — shown first so it reads before the flow overlay.
-  if (profitTargetHit) chips.push(pill("target", "🎯 target hit", theme.green));
-  // Flow overlay. let_it_ride stays observe-only (dashed "watch").
-  if (state === "let_it_ride") chips.push(pill("li", "▲ let it ride · watch", theme.green, true));
-  else if (state === "shed")   chips.push(pill("shed", "⚠ flow turning", theme.amber));
-  else if (state === "redeploy") chips.push(pill("rd", `↻ ${rd.ratio.toFixed(2)}×`, theme.blue));
+  if (profitTargetHit) chips.push(pill("target", "🎯", theme.green, false, "Target hit"));
+  // Flow overlay. let_it_ride stays observe-only (dashed).
+  if (state === "let_it_ride") chips.push(pill("li", "▲", theme.green, true, "Let it ride · watch"));
+  else if (state === "shed")   chips.push(pill("shed", "⚠", theme.amber, false, "Flow turning"));
+  else if (state === "redeploy") chips.push(pill("rd", "↻", theme.blue, false, `Redeploy · ${rd.ratio.toFixed(2)}×`));
   else if (state === "watch") chips.push(
-    <span key="w" style={{ marginLeft: theme.space[1], color: theme.blue, opacity: 0.75, fontSize: theme.size.xs, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap" }}>{rd.ratio.toFixed(2)}×</span>
+    <span key="w" title={`Approaching redeploy line · ${rd.ratio.toFixed(2)}×`} style={{ marginLeft: theme.space[1], color: theme.blue, opacity: 0.75, fontSize: theme.size.xs, fontWeight: 500, flexShrink: 0, whiteSpace: "nowrap" }}>{rd.ratio.toFixed(2)}×</span>
   );
 
   return chips.length ? <>{chips}</> : null;
