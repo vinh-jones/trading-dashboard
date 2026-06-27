@@ -24,3 +24,14 @@ export function normCDF(x) {
   const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
   return 0.5 * (1 + sign * y);
 }
+
+/**
+ * Standard normal probability density φ(x) = e^(−x²/2) / √(2π).
+ * Exact (closed form, not an approximation) — used by the option-Greek
+ * partials (gamma/vega/theta) in ./greeks.js.
+ * @param {number} x
+ * @returns {number} φ(x)
+ */
+export function normPDF(x) {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
