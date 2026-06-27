@@ -13,6 +13,7 @@ const EarningsTab        = lazyNamed(() => import("./EarningsTab"),        "Earn
 const TickersTab         = lazyNamed(() => import("./TickersTab"),         "TickersTab");
 const TickerDetailView   = lazyNamed(() => import("./tickerDetail"),       "TickerDetailView");
 const StrategyBasketTab  = lazyNamed(() => import("./StrategyBasketTab"),  "StrategyBasketTab");
+const RiskTab            = lazyNamed(() => import("./RiskTab"),            "RiskTab");
 
 function TabLoading() {
   return (
@@ -115,6 +116,7 @@ export function ExploreView({
             onOpenBasket={onOpenBasket}
           />
         )}
+        {active === "risk"      && <RiskTab positions={positions} account={account} />}
         {active === "tickers"   && <TickersTab onOpenTickerDetail={onOpenTickerDetail} />}
         {active === "radar"     && <RadarTab positions={positions} account={account} />}
         {active === "ai-thesis" && <AIThesisTab positions={positions} account={account} />}
