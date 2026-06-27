@@ -1,10 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import { useQuotes } from "./useQuotes";
-import { computeRiskUnits } from "../lib/riskEngine";
-import {
-  getOpenCSPs, getOpenCCs, getOpenLEAPs, getAssignedShares, getOpenSpreads,
-} from "../lib/positionSchema";
+import { computeRiskUnits, heldTickers } from "../lib/riskEngine";
 
 /**
  * useRiskUnits — assembles live inputs for the descriptive-only risk engine.
@@ -14,15 +11,6 @@ import {
  * uses), then runs the pure riskEngine. Returns the engine output plus quote
  * freshness and loading/error state.
  */
-function heldTickers(positions) {
-  const set = new Set();
-  for (const p of getOpenCSPs(positions))      if (p.ticker)  set.add(p.ticker);
-  for (const c of getOpenCCs(positions))       if (c.ticker)  set.add(c.ticker);
-  for (const l of getOpenLEAPs(positions))     if (l.ticker)  set.add(l.ticker);
-  for (const s of getAssignedShares(positions))if (s.ticker)  set.add(s.ticker);
-  for (const sp of getOpenSpreads(positions))  if (sp.ticker) set.add(sp.ticker);
-  return [...set];
-}
 
 export function useRiskUnits(positions) {
   const { quoteMap, refreshedAt, loading: quotesLoading, error: quotesError } = useQuotes();

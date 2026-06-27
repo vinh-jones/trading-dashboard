@@ -27,6 +27,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { buildOccSymbol } from "./_lib/occ.js";
+import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
 
@@ -597,6 +598,19 @@ export default async function handler(req, res) {
     };
   }
 
+  // ── Risk units (descriptive-only) ──
+  let risk = null, riskText = "";
+  try {
+    const out = await buildSnapshotRisk(supabase, positions, {
+      todayIso: today,
+      accountValue: effectiveSnapshot?.account_value ?? accountSnap?.account_value ?? null,
+    });
+    risk = out.risk;
+    riskText = out.text;
+  } catch (err) {
+    console.warn("[api/intraday-snapshot] risk block failed:", err.message);
+  }
+
   // ── Radar rows ──
   const quotesLookup = {};
   for (const q of allQuotes) quotesLookup[q.symbol] = q;
@@ -632,12 +646,13 @@ export default async function handler(req, res) {
     ok: true,
     date: today,
     time: nowStr,
-    text,
+    text: riskText ? `${text}\n${riskText}\n` : text,
     data: {
       account_summary: effectiveSnapshot,
       positions,
       position_flags: flagsMap,
       today_trades: todayTrades,
+      risk,
       macro: { ai_context: macroAiContext, posture: macroPosture },
       market: { spy: spyQuote, qqq: qqqQuote, vix: liveVix },
       radar: radarRows,

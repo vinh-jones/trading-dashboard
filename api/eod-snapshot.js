@@ -22,6 +22,7 @@ import { reshapePositions } from "./_lib/reshapePositions.js";
 import { computeForecastV2, pipelineSnapshotFields } from "./_lib/computeForecastV2.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
+import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
 import {
   detectLifespans,
   buildLifespan,
@@ -732,6 +733,19 @@ export default async function handler(req, res) {
     return a.ticker.localeCompare(b.ticker);
   });
 
+  // ── Risk units (descriptive-only) ──
+  let risk = null, riskText = "";
+  try {
+    const out = await buildSnapshotRisk(supabase, positions, {
+      todayIso: today,
+      accountValue: effectiveSnapshot?.account_value ?? null,
+    });
+    risk = out.risk;
+    riskText = out.text;
+  } catch (err) {
+    console.warn("[api/eod-snapshot] risk block failed:", err.message);
+  }
+
   const text = buildTextBlob({
     today,
     dailySnapshot: effectiveSnapshot,
@@ -750,7 +764,7 @@ export default async function handler(req, res) {
     ok:    true,
     date:  today,
     time:  nowStr,
-    text,
+    text: riskText ? `${text}\n${riskText}\n` : text,
     data_completeness: {
       cushion_missing_iv:      cushionMissingIv,
       recovery_missing_iv:     recoveryMissingIv,
@@ -760,6 +774,7 @@ export default async function handler(req, res) {
       account_summary: effectiveSnapshot,
       positions,
       journal_entries: journalEntries,
+      risk,
       macro: { ai_context: macroAiContext, posture: macroPosture },
       market: { spy: spyQuote, qqq: qqqQuote, vix: liveVix },
       radar: radarRows,

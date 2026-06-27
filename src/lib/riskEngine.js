@@ -31,6 +31,17 @@ const DAY_MS = 86400000;
 export const DEFAULT_SPX_SHOCKS = [-8, -5, -3, 0, 3];
 export const DEFAULT_IV_SHOCKS  = [-5, 0, 5, 10];
 
+// Distinct underlying tickers across all open positions (CSP/CC/LEAP/shares/spread).
+export function heldTickers(positions) {
+  const set = new Set();
+  for (const p of getOpenCSPs(positions))       if (p.ticker)  set.add(p.ticker);
+  for (const c of getOpenCCs(positions))        if (c.ticker)  set.add(c.ticker);
+  for (const l of getOpenLEAPs(positions))      if (l.ticker)  set.add(l.ticker);
+  for (const s of getAssignedShares(positions)) if (s.ticker)  set.add(s.ticker);
+  for (const sp of getOpenSpreads(positions))   if (sp.ticker) set.add(sp.ticker);
+  return [...set];
+}
+
 // ── Beta shrinkage (Blume): pull two-thirds toward the market beta of 1.0. ───
 // Fixes static raw beta and the "beta converges toward 1 in a crisis" concern.
 export function adjBeta(rawBeta) {
