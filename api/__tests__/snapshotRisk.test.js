@@ -20,7 +20,7 @@ function makeSupabase({ quotes = [], fundamentals = [] }) {
 
 const positions = {
   open_csps: [{ ticker: "NVDA", strike: 100, expiry_date: "2026-08-21", contracts: 2, capital_fronted: 20000 }],
-  open_leaps: [{ ticker: "GOOGL", strike: 150, expiry_date: "2027-08-20", contracts: 1, entry_cost: 9000 }],
+  open_leaps: [{ ticker: "GOOGL", strike: 150, expiry_date: "2027-08-20", contracts: 1, capital_fronted: 9000, entry_cost: 90 }],
   assigned_shares: [{ ticker: "HOOD", cost_basis_total: 50000, positions: [{ description: "100 shares", fronted: 50000 }] }],
   open_spreads: [],
 };

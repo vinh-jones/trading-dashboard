@@ -185,12 +185,21 @@ function optionLeg(kind, ticker, right, sign, pos, capital, ctx) {
   };
 }
 
+// LEAP capital at risk = total premium paid. `capital_fronted` is the canonical
+// total; `entry_cost` is PER-SHARE, so it must be ×100×contracts to become a
+// dollar figure (using it raw understates LEAP capital ~100×).
+function leapCapital(l) {
+  if (l.capital_fronted != null) return l.capital_fronted;
+  if (l.entry_cost != null && l.contracts) return l.entry_cost * 100 * l.contracts;
+  return 0;
+}
+
 export function buildRiskLegs(positions, ctx) {
   const legs = [];
 
   for (const p of getOpenCSPs(positions))   legs.push(optionLeg("CSP",  p.ticker, "put",  -1, p, p.capital_fronted, ctx));
   for (const c of getOpenCCs(positions))    legs.push(optionLeg("CC",   c.ticker, "call", -1, c, 0,                ctx)); // capital sits in shares
-  for (const l of getOpenLEAPs(positions))  legs.push(optionLeg("LEAP", l.ticker, "call", +1, l, l.entry_cost ?? l.capital_fronted, ctx));
+  for (const l of getOpenLEAPs(positions))  legs.push(optionLeg("LEAP", l.ticker, "call", +1, l, leapCapital(l),   ctx));
 
   for (const s of getAssignedShares(positions)) {
     const shares  = getTotalShareCount(s);

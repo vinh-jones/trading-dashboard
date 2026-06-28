@@ -148,7 +148,7 @@ describe("aggregateRisk", () => {
 describe("buildRiskLegs (pure, injected deps)", () => {
   const positions = {
     open_csps: [{ ticker: "NVDA", strike: 100, expiry_date: "2026-08-21", contracts: 2, capital_fronted: 20000 }],
-    open_leaps: [{ ticker: "GOOGL", strike: 150, expiry_date: "2027-08-20", contracts: 1, entry_cost: 9000 }],
+    open_leaps: [{ ticker: "GOOGL", strike: 150, expiry_date: "2027-08-20", contracts: 1, capital_fronted: 9000, entry_cost: 90 }],
     assigned_shares: [{ ticker: "HOOD", cost_basis_total: 50000, positions: [{ description: "100 shares", fronted: 50000 }] }],
     open_spreads: [],
   };
@@ -180,6 +180,17 @@ describe("buildRiskLegs (pure, injected deps)", () => {
     expect(csp.quoteDelta).toBe(-0.30);
     expect(csp.betaAdj).toBeCloseTo(0.67 * 1.6 + 0.33, 6); // 1.402
     expect(csp.covered).toBe(true);
+  });
+
+  it("LEAP capital uses capital_fronted (total $), not per-share entry_cost", () => {
+    const leap = buildRiskLegs(positions, ctx).find((l) => l.kind === "LEAP");
+    expect(leap.capital).toBe(9000);          // capital_fronted, NOT entry_cost (90)
+  });
+
+  it("LEAP capital falls back to entry_cost×100×contracts when capital_fronted absent", () => {
+    const pos = { open_leaps: [{ ticker: "X", strike: 10, expiry_date: "2027-08-20", contracts: 2, entry_cost: 3.5 }] };
+    const leg = buildRiskLegs(pos, ctx).find((l) => l.kind === "LEAP");
+    expect(leg.capital).toBe(3.5 * 100 * 2);  // 700
   });
 
   it("marks a leg uncovered when IV is missing", () => {
