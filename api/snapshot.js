@@ -21,6 +21,8 @@ import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
+import { reshapePositions } from "./_lib/reshapePositions.js";
+import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
 import {
   computeForecastV2,
   pipelineSnapshotFields,
@@ -309,6 +311,36 @@ export default async function handler(req, res) {
     } catch (stateErr) {
       console.error("[api/snapshot] position_daily_state unexpected error:", stateErr);
     }
+  }
+
+  // 9c. Capture the descriptive-only risk-unit readout — one row per market day.
+  // Instruments the Phase-1 observation window: the greeks feeding these numbers
+  // are ephemeral (quotes upsert on symbol, overwriting prior IV/delta), so this
+  // is the only record of what the risk looked like today — and the basis for
+  // (predicted risk -> realized P&L) validation. Non-blocking; a failure here
+  // never aborts the snapshot. No-ops gracefully until the risk_snapshots table
+  // exists (see migrations/2026-06-28-risk-snapshots.sql).
+  try {
+    const reshaped = reshapePositions(positions);
+    const { risk } = await buildSnapshotRisk(supabase, reshaped, { todayIso: today, accountValue });
+    const betaAssumedCount = (risk.positions || []).filter(p => p.beta_assumed).length;
+    const { error: riskErr } = await supabase
+      .from("risk_snapshots")
+      .upsert({
+        snapshot_date:           today,
+        account_value:           accountValue,
+        vix:                     vix ?? null,
+        net_beta_weighted_delta: risk.units?.net_beta_weighted_delta_per_1pct_spx ?? null,
+        net_vega:                risk.units?.net_vega_per_iv_point ?? null,
+        net_theta:               risk.units?.net_theta_per_day ?? null,
+        covered_legs:            risk.coverage?.covered ?? null,
+        total_legs:              risk.coverage?.total ?? null,
+        beta_assumed_count:      betaAssumedCount,
+        risk,
+      }, { onConflict: "snapshot_date" });
+    if (riskErr) console.error("[api/snapshot] risk_snapshots write failed:", riskErr.message);
+  } catch (riskErr) {
+    console.error("[api/snapshot] risk snapshot unexpected error:", riskErr.message);
   }
 
   // 10. Fetch macro signals and write to macro_snapshots
