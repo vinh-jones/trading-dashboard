@@ -4,10 +4,13 @@
 // authority. A risk readout is a brake, never a green light — same discipline
 // as the cash floor not being a deployment platform.
 
+import { useState } from "react";
 import { theme } from "../lib/theme";
 import { TYPE_COLORS } from "../lib/constants";
-import { getVixBand } from "../lib/vixBand";
 import { useRiskUnits } from "../hooks/useRiskUnits";
+import {
+  deltaNarrative, vegaNarrative, thetaNarrative, bookSummary, familyDivergence,
+} from "../lib/riskNarrative";
 
 // engine kind → TYPE_COLORS key
 const FAMILY_LABEL = { CSP: "CSP", CC: "CC", LEAP: "LEAPS", SHARES: "Shares", SPREAD: "Spread" };
@@ -52,14 +55,18 @@ function Badge({ kind }) {
 }
 
 // ── denominator headline card ────────────────────────────────────────────────
-function Denominator({ label, value, unit, read, accent }) {
+function Denominator({ label, sublabel, value, unit, read, about, accent }) {
   return (
     <div style={{ ...card, flex: 1, minWidth: 200 }}>
-      <div style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: theme.space[1] }}>
+        <span style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</span>
+        {about && <span title={about} style={{ cursor: "help", color: theme.text.subtle, fontSize: theme.size.xs }}>ⓘ</span>}
+      </div>
       <div style={{ fontSize: theme.size.xxl, fontFamily: theme.font.mono, color: accent, margin: `${theme.space[1]}px 0` }}>
         {signedUsd(value)}
       </div>
       <div style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>{unit}</div>
+      {sublabel && <div style={{ fontSize: theme.size.xs, color: accent, marginTop: theme.space[1], fontWeight: 600 }}>{sublabel}</div>}
       <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginTop: theme.space[2] }}>{read}</div>
     </div>
   );
@@ -67,6 +74,7 @@ function Denominator({ label, value, unit, read, accent }) {
 
 export function RiskTab({ positions = null, account = null }) {
   const { risk, refreshedAt, loading, error } = useRiskUnits(positions);
+  const [howToRead, setHowToRead] = useState(false);
 
   if (loading) return <div style={{ padding: theme.space[5], color: theme.text.muted, fontSize: theme.size.sm, textAlign: "center" }}>Computing risk…</div>;
   if (error)   return <div style={{ ...card, color: theme.red }}>Failed to load risk inputs: {error}</div>;
@@ -74,7 +82,10 @@ export function RiskTab({ positions = null, account = null }) {
 
   const { aggregate: agg, grid } = risk;
   const acctValue = account?.account_value ?? null;
-  const band = getVixBand(account?.vix_current);
+
+  const dN = deltaNarrative(agg.netBetaWeightedDelta, acctValue);
+  const vN = vegaNarrative(agg.netVega, account?.vix_current);
+  const tN = thetaNarrative(agg.netTheta);
 
   const deltaSign = agg.netBetaWeightedDelta >= 0;
   const vegaShort = agg.netVega < 0;
@@ -101,22 +112,47 @@ export function RiskTab({ positions = null, account = null }) {
         Descriptive-only · observe-first. These measure risk — they carry no decision authority. A risk readout is a brake, not a green light.
       </div>
 
+      {/* book in one line + how-to-read */}
+      <div style={{ ...card, padding: `${theme.space[2]}px ${theme.space[3]}px` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: theme.space[2], flexWrap: "wrap" }}>
+          <div style={{ fontSize: theme.size.md, color: theme.text.primary }}>
+            <span style={{ color: theme.text.muted }}>Your book, in one line: </span>{bookSummary(agg)}
+          </div>
+          <button onClick={() => setHowToRead((v) => !v)} style={{
+            background: "none", border: `1px solid ${theme.border.default}`, color: theme.text.muted,
+            borderRadius: theme.radius.sm, padding: "2px 8px", fontSize: theme.size.xs, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            {howToRead ? "Hide" : "ⓘ How to read this"}
+          </button>
+        </div>
+        {howToRead && (
+          <div style={{ marginTop: theme.space[3], display: "flex", flexDirection: "column", gap: theme.space[2], fontSize: theme.size.sm, color: theme.text.secondary }}>
+            <div><b style={{ color: theme.text.primary }}>Beta-weighted delta</b> — {dN.about}</div>
+            <div><b style={{ color: theme.text.primary }}>Net vega</b> — {vN.about}</div>
+            <div><b style={{ color: theme.text.primary }}>Net theta</b> — {tN.about}</div>
+            <div><b style={{ color: theme.text.primary }}>Scenario grid</b> — total P&L if the S&P moves (rows) and implied vol moves (columns). The center cell is "nothing moved" = $0. Read down a column for pure price risk; read across a row for vol's effect.</div>
+            <div><b style={{ color: theme.text.primary }}>Risk vs capital</b> — amber is each family's share of directional risk, blue its share of capital. Where they diverge is the point: a long amber bar over a short blue one means that family punches above its capital weight in risk.</div>
+            <div style={{ color: theme.text.subtle }}>These describe what your current exposure means — not what to do with it.</div>
+          </div>
+        )}
+      </div>
+
       {/* two denominators + theta */}
       <div style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap" }}>
         <Denominator
-          label="Beta-weighted delta" value={agg.netBetaWeightedDelta} unit="$ P&L per +1% SPX move"
-          accent={deltaSign ? theme.green : theme.red}
-          read={`Direction: a +1% SPX move is worth ≈ ${signedUsd(agg.netBetaWeightedDelta)}${acctValue ? ` (${pct(agg.netBetaWeightedDelta / acctValue)} of account)` : ""}.`}
+          label="Beta-weighted delta" sublabel={dN.label} about={dN.about}
+          value={agg.netBetaWeightedDelta} unit="$ P&L per +1% SPX move"
+          accent={deltaSign ? theme.green : theme.red} read={dN.plain}
         />
         <Denominator
-          label="Net vega" value={agg.netVega} unit="$ P&L per +1 IV point"
-          accent={vegaShort ? theme.red : theme.green}
-          read={`Vol: net ${vegaShort ? "short" : "long"} vega — the book wants IV to ${vegaShort ? "fall" : "rise"}${band ? `. VIX regime: ${band.sentiment}` : ""}.`}
+          label="Net vega" sublabel={vN.label} about={vN.about}
+          value={agg.netVega} unit="$ P&L per +1 IV point"
+          accent={vegaShort ? theme.red : theme.green} read={vN.plain}
         />
         <Denominator
-          label="Net theta" value={agg.netTheta} unit="$ P&L per calendar day"
-          accent={agg.netTheta >= 0 ? theme.green : theme.red}
-          read={`Decay: the book ${agg.netTheta >= 0 ? "collects" : "pays"} ≈ ${usd(Math.abs(agg.netTheta))}/day from time.`}
+          label="Net theta" sublabel={tN.label} about={tN.about}
+          value={agg.netTheta} unit="$ P&L per calendar day"
+          accent={agg.netTheta >= 0 ? theme.green : theme.red} read={tN.plain}
         />
       </div>
 
@@ -185,6 +221,7 @@ export function RiskTab({ positions = null, account = null }) {
                 <div style={{ display: "flex", gap: theme.space[1], height: 6, marginTop: 2 }}>
                   <div style={{ width: `${capShare * 100}%`, background: theme.blueBold, borderRadius: theme.radius.sm }} title="capital share" />
                 </div>
+                <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginTop: 2 }}>{familyDivergence(riskShare, capShare)}</div>
               </div>
             );
           })}
@@ -202,9 +239,9 @@ export function RiskTab({ positions = null, account = null }) {
             <thead>
               <tr style={{ color: theme.text.muted, fontSize: theme.size.xs, textAlign: "right" }}>
                 <th style={{ textAlign: "left", padding: theme.space[2] }}>Position</th>
-                <th style={{ padding: theme.space[2] }}>βΔ ($/1% SPX)</th>
-                <th style={{ padding: theme.space[2] }}>Vega ($/IV pt)</th>
-                <th style={{ padding: theme.space[2] }}>Theta ($/day)</th>
+                <th style={{ padding: theme.space[2], cursor: "help" }} title="Beta-weighted delta — $ P&L for a 1% SPX move, beta-scaled. Positive = long the market.">βΔ ($/1% SPX)</th>
+                <th style={{ padding: theme.space[2], cursor: "help" }} title="Vega — $ P&L per +1 IV point. Long options (LEAPs) are +, short premium (CSP/CC) is −.">Vega ($/IV pt)</th>
+                <th style={{ padding: theme.space[2], cursor: "help" }} title="Theta — $ P&L per day from time decay. Short premium collects (+), long options pay (−).">Theta ($/day)</th>
                 <th style={{ padding: theme.space[2] }}>Capital</th>
               </tr>
             </thead>
