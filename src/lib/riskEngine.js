@@ -21,7 +21,7 @@ import { bsGreeks } from "./greeks.js";
 import { bsCallPrice, bsPutPrice, RISK_FREE_RATE } from "./blackScholes.js";
 import {
   getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads,
-  getAssignedShares, getTotalShareCount,
+  getAssignedShares, getTotalShareCount, leapCapital,
 } from "./positionSchema.js";
 import { buildOccSymbol } from "./trading.js";
 
@@ -183,15 +183,6 @@ function optionLeg(kind, ticker, right, sign, pos, capital, ctx) {
     capital: capital ?? 0,
     covered: uncoveredReason == null, uncoveredReason,
   };
-}
-
-// LEAP capital at risk = total premium paid. `capital_fronted` is the canonical
-// total; `entry_cost` is PER-SHARE, so it must be ×100×contracts to become a
-// dollar figure (using it raw understates LEAP capital ~100×).
-function leapCapital(l) {
-  if (l.capital_fronted != null) return l.capital_fronted;
-  if (l.entry_cost != null && l.contracts) return l.entry_cost * 100 * l.contracts;
-  return 0;
 }
 
 export function buildRiskLegs(positions, ctx) {

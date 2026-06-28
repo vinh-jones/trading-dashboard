@@ -1,4 +1,5 @@
 import { getVixBand } from "./vixBand.js";
+import { leapCapital } from "./positionSchema.js";
 import {
   EARNINGS_PATHS,
   EARNINGS_PATH_SCORING,
@@ -378,11 +379,11 @@ export function computeTickerConcentration(ticker, positions, accountValue) {
   for (const s of positions.assigned_shares || []) {
     if (s.ticker === ticker) {
       exposure += s.cost_basis_total || 0;
-      for (const l of s.open_leaps || []) exposure += l.entry_cost || 0;
+      for (const l of s.open_leaps || []) exposure += leapCapital(l);
     }
   }
   for (const l of positions.open_leaps || []) {
-    if (l.ticker === ticker) exposure += l.entry_cost || 0;
+    if (l.ticker === ticker) exposure += leapCapital(l);
   }
   return exposure / accountValue;
 }

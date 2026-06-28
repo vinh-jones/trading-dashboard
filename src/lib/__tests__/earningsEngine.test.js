@@ -383,11 +383,11 @@ describe("computeTickerConcentration", () => {
       { ticker: "MSFT", strike: 300, contracts: 1 },
     ],
     assigned_shares: [
-      { ticker: "AAPL", cost_basis_total: 10000, open_leaps: [{ entry_cost: 500 }] },
+      { ticker: "AAPL", cost_basis_total: 10000, open_leaps: [{ capital_fronted: 500 }] },
       { ticker: "NVDA", cost_basis_total: 5000, open_leaps: [] },
     ],
     open_leaps: [
-      { ticker: "AAPL", entry_cost: 1500 },
+      { ticker: "AAPL", capital_fronted: 1500 },
     ],
   };
 

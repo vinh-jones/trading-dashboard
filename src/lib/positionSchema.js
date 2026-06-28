@@ -103,6 +103,19 @@ export function getTotalFronted(shareRow) {
 }
 
 /**
+ * Total dollar capital at risk for a single LEAP row.
+ *
+ * `capital_fronted` is the canonical total (per-share premium × 100 × contracts).
+ * `entry_cost` alone is the PER-SHARE premium — using it raw understates LEAP
+ * capital ~100×, so only fall back to it scaled by ×100×contracts.
+ */
+export function leapCapital(leapRow) {
+  if (leapRow?.capital_fronted != null) return leapRow.capital_fronted;
+  if (leapRow?.entry_cost != null && leapRow?.contracts) return leapRow.entry_cost * 100 * leapRow.contracts;
+  return 0;
+}
+
+/**
  * Per-share cost basis for an assigned-share block. Null if no shares parsed.
  * Derives `totalFronted / totalShares` from the underlying lot descriptions,
  * which is the canonical way to reconcile cost-basis across split lots.
