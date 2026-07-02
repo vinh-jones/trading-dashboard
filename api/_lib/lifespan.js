@@ -12,7 +12,8 @@
  *          getRecentCcStrike, addCalendarDays, subtractCalendarDays,
  *          humanizeDuration, computeTrailingCcRate)
  *
- * Private (not exported): tradeSortPriority, isRedundantSharesSold,
+ * Private (not exported): tradeSortPriority, parseShareCountFromDesc,
+ *   resolveSoldShares, computePremiumOnlyCcIds, computeNetShares,
  *   computeBlendedBasis, computeVerdict, round2, round3, round4, round6,
  *   daysBetween, daysBetweenDates, clusterLifespanDecisions
  */
@@ -59,39 +60,71 @@ function tradeSortPriority(trade) {
   return 5;
 }
 
-// Returns true if a Shares Sold trade is a bookkeeping duplicate of a same-day
-// CC Assigned event (the user logs both for tracking; only the CC Assigned matters).
-function isRedundantSharesSold(trade, closedLifespans, currentLifespan) {
-  const sameDay = (cc) =>
-    cc.type === "CC" &&
-    cc.subtype === "Assigned" &&
-    cc.close_date === trade.close_date &&
-    (cc.contracts ?? 1) * 100 === (trade.contracts ?? 0);
-
-  // Partial disposal: CC Assigned didn't end the lifespan, current is still open
-  if (currentLifespan && currentLifespan.cc_history.some(sameDay)) return true;
-
-  // Full disposal: CC Assigned just ended the lifespan, check last closed
-  const last = closedLifespans[closedLifespans.length - 1];
-  if (last && last.ticker === trade.ticker && last.cc_history.some(sameDay)) return true;
-
-  return false;
+// Share count from a lot description when the structured `contracts` column is
+// blank. Mirror of parseShareCountFromDesc in lib/parseSheets.js — duplicated to
+// avoid a frontend/backend/serverless import crossing. Handles both formats:
+//   "Shares ($121, 300)"  → 300      "Shares (400, $80.21)" → 400
+// A count-less adjustment row like "Shares ($38)" yields 0 (a P&L-only row that
+// must NOT move share count — see the NULL-contracts rule below).
+function parseShareCountFromDesc(description) {
+  if (!description) return 0;
+  const withoutPrices = description.replace(/\$[\d,]+\.?\d*/g, "");
+  const m = withoutPrices.match(/\b(\d[\d,]*)\b/);
+  return m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
 }
 
-// Currently-held shares for a ticker, computed across the FULL trade history
-// (no cutoff). NULL contracts contribute 0 — common for ad-hoc P&L adjustment
-// rows in the source spreadsheet that don't actually move shares.
-function computeCurrentlyHeldShares(allTickerTrades) {
+// Resolve the shares a Shares Sold/Exit row disposes. Prefer the structured
+// `contracts` column; when it is NULL fall back to the count embedded in the
+// description. A row with neither (e.g. "Shares ($38)") resolves to 0 and is
+// treated as a pure P&L adjustment that leaves share count untouched.
+function resolveSoldShares(trade) {
+  if (trade.contracts != null) return parseInt(trade.contracts) || 0;
+  return parseShareCountFromDesc(trade.description);
+}
+
+// A CC Assigned is "premium-only" when the user also logged the disposal as a
+// same-day Shares Sold/Exit lot. In that bookkeeping convention the Shares Sold
+// row is authoritative for share removal + realized P&L (it captures price
+// appreciation vs. basis), while the CC Assigned row exists to record the CC
+// assignment premium. Such a CC keeps its premium in cc_history but must NOT
+// also decrement shares, or the disposal double-counts.
+function computePremiumOnlyCcIds(allTickerTrades) {
+  const soldDates = new Set();
+  for (const t of allTickerTrades) {
+    if (
+      t.type === "Shares" &&
+      (t.subtype === "Sold" || t.subtype === "Exit") &&
+      resolveSoldShares(t) > 0
+    ) {
+      soldDates.add(t.close_date);
+    }
+  }
+  const ids = new Set();
+  for (const t of allTickerTrades) {
+    if (t.type === "CC" && t.subtype === "Assigned" && soldDates.has(t.close_date)) {
+      ids.add(t.id);
+    }
+  }
+  return ids;
+}
+
+// Net shares for a ticker across trade history. NULL contracts contribute 0
+// (ad-hoc P&L-adjustment rows that don't move shares). CC Assigned removes
+// shares only when NOT premium-only (see computePremiumOnlyCcIds). Pass
+// `beforeDate` to count only trades that closed strictly before that date —
+// used to detect a position held across the data-quality cutoff.
+function computeNetShares(allTickerTrades, premiumOnlyCcIds, beforeDate = null) {
   let shares = 0;
   for (const t of allTickerTrades) {
+    if (beforeDate && !(t.close_date && t.close_date < beforeDate)) continue;
     if (t.type === "CSP" && t.subtype === "Assigned") {
       shares += (parseInt(t.contracts) || 0) * 100;
     } else if (t.type === "Shares" && t.subtype === "Assigned") {
       shares += parseInt(t.contracts) || 0;
     } else if (t.type === "CC" && t.subtype === "Assigned") {
-      shares -= (parseInt(t.contracts) || 0) * 100;
+      if (!premiumOnlyCcIds.has(t.id)) shares -= (parseInt(t.contracts) || 0) * 100;
     } else if (t.type === "Shares" && (t.subtype === "Sold" || t.subtype === "Exit")) {
-      shares -= parseInt(t.contracts) || 0;
+      shares -= resolveSoldShares(t);
     }
   }
   return shares;
@@ -107,16 +140,23 @@ export function detectLifespans(ticker, allTickerTrades) {
   // Trades themselves remain visible in the Trade Timeline / All-Time Stats —
   // this filter only governs lifespan detection.
   //
-  // Carry-over for currently-held positions: if the user still holds shares
-  // of this ticker today, we trust that the full history (including pre-cutoff
-  // assignments) is needed to model the lifespan correctly. A ticker with
-  // currently-held = 0 keeps the cutoff in place — we don't resurface
-  // known-suspect data for closed positions.
-  const currentlyHeld = computeCurrentlyHeldShares(allTickerTrades);
+  // Carry-over for positions that span the data-quality cutoff. Pre-cutoff
+  // bookkeeping is presumed suspect, EXCEPT when the shares are part of a
+  // lifespan that reaches into the trusted window:
+  //   - currentlyHeld > 0: shares still open today → model full history.
+  //   - heldAtCutoff  > 0: shares were held across 2026-01-01 and later
+  //     disposed in-window → the pre-cutoff acquisition must come along or the
+  //     in-window disposal orphans and the lifespan can never balance to zero.
+  // A ticker held entirely before the cutoff (both > 0 false) keeps the cutoff
+  // in place — we don't resurface known-suspect data for fully-closed positions.
+  const premiumOnlyCcIds = computePremiumOnlyCcIds(allTickerTrades);
+  const currentlyHeld    = computeNetShares(allTickerTrades, premiumOnlyCcIds);
+  const heldAtCutoff     = computeNetShares(allTickerTrades, premiumOnlyCcIds, DATA_QUALITY_THRESHOLD);
+  const carryPreCutoff   = currentlyHeld > 0 || heldAtCutoff > 0;
   const relevant = allTickerTrades.filter(
     (t) =>
       t.close_date &&
-      (t.close_date >= DATA_QUALITY_THRESHOLD || currentlyHeld > 0) &&
+      (t.close_date >= DATA_QUALITY_THRESHOLD || carryPreCutoff) &&
       ((t.type === "CSP" && t.subtype === "Assigned") ||
         (t.type === "Shares" && t.subtype === "Assigned") ||
         (t.type === "CC" &&
@@ -212,8 +252,12 @@ export function detectLifespans(ticker, allTickerTrades) {
       }
 
     } else if (trade.type === "CC" && trade.subtype === "Assigned") {
-      const sharesRemoved = (trade.contracts ?? 1) * 100;
-      if (current !== null) {
+      if (current !== null && premiumOnlyCcIds.has(trade.id)) {
+        // Paired with a same-day Shares Sold that is authoritative for the
+        // disposal. Keep the CC premium in history; do NOT remove shares here.
+        current.cc_history.push(trade);
+      } else if (current !== null) {
+        const sharesRemoved = (trade.contracts ?? 1) * 100;
         current.cc_history.push(trade);
         const basis = computeBlendedBasis(current.assignment_events);
         const disposalPnl = round2(
@@ -246,20 +290,30 @@ export function detectLifespans(ticker, allTickerTrades) {
       trade.type === "Shares" &&
       (trade.subtype === "Sold" || trade.subtype === "Exit")
     ) {
-      if (isRedundantSharesSold(trade, lifespans, current)) continue;
-
-      const sharesRemoved = trade.contracts ?? 0;
+      const sharesRemoved = resolveSoldShares(trade);
       const disposalPnl = round2(parseFloat(trade.premium_collected) || 0);
       if (current !== null) {
+        // A same-day premium-only CC Assigned means these shares were called
+        // away (the Shares Sold row books the disposal); prefer that framing
+        // and the CC strike as the exit price. Otherwise a same-day CC
+        // Close/Roll Loss marks a coordinated exit; else a plain manual sale.
+        const sameDayCcAssigned = current.cc_history.find(
+          (cc) => cc.close_date === trade.close_date && cc.subtype === "Assigned"
+        );
         const sameDayCc = current.cc_history.find(
           (cc) =>
             cc.close_date === trade.close_date &&
             (cc.subtype === "Close" || cc.subtype === "Roll Loss")
         );
-        const exitType = sameDayCc ? "coordinated_exit" : "manual_sale";
+        const exitType = sameDayCcAssigned
+          ? "called_away"
+          : sameDayCc
+            ? "coordinated_exit"
+            : "manual_sale";
         const basis = computeBlendedBasis(current.assignment_events);
-        const exitPrice =
-          sharesRemoved > 0
+        const exitPrice = sameDayCcAssigned
+          ? (parseFloat(sameDayCcAssigned.strike) || null)
+          : sharesRemoved > 0
             ? round2(basis + disposalPnl / sharesRemoved)
             : null;
         runningShares -= sharesRemoved;

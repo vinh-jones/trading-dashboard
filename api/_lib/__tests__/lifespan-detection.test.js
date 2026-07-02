@@ -122,3 +122,108 @@ describe("detectLifespans — carry-over for currently-held positions", () => {
     expect(DATA_QUALITY_THRESHOLD).toBe("2026-01-01");
   });
 });
+
+describe("detectLifespans — CC-Assigned paired with same-day Shares Sold", () => {
+  const sharesSoldLot = (date, openDate, contracts, premium, description) => ({
+    id: `ss-${date}-${openDate}`,
+    type: "Shares", subtype: "Sold",
+    open_date: openDate, close_date: date,
+    contracts, premium_collected: premium, description,
+  });
+  const ccAssigned = (date, contracts, strike, premium) => ({
+    id: `cca-${date}`, type: "CC", subtype: "Assigned",
+    open_date: "2026-06-10", close_date: date,
+    contracts, strike, premium_collected: premium,
+  });
+
+  it("keeps the CC premium but lets the Shares Sold row drive disposal + P&L", () => {
+    // The user logs BOTH a CC Assigned (records the assignment premium) and a
+    // per-lot Shares Sold (authoritative for shares + realized appreciation).
+    const trades = [
+      cspAssigned("2026-01-16", 4, 130, 2880),          // +400
+      ccAssigned("2026-07-02", 4, 135, 500),            // premium-only
+      sharesSoldLot("2026-07-02", "2026-01-16", 400, 2000, "Shares ($130, 400)"),
+    ];
+    const [l, ...rest] = detectLifespans("TEST", trades);
+    expect(rest).toHaveLength(0);
+    expect(l.exit_event).not.toBeNull();
+    expect(l.exit_event.exit_type).toBe("called_away");
+    expect(l.exit_event.exit_price).toBe(135);          // the CC strike
+    expect(l.exit_event.shares_disposed).toBe(400);
+    expect(l.exit_event.share_disposal_pnl).toBe(2000); // from Shares Sold, not (strike-basis)
+    // CC Assigned premium is retained in cc_history:
+    expect(l.cc_history.some((c) => c.id === "cca-2026-07-02")).toBe(true);
+  });
+
+  it("a standalone CC Assigned (no same-day Shares Sold) still removes shares and closes", () => {
+    const trades = [
+      cspAssigned("2026-02-20", 10, 52, 3460),          // +1000
+      ccAssigned("2026-05-08", 10, 52, 1200),           // no same-day Shares Sold
+    ];
+    const [l] = detectLifespans("TEST", trades);
+    expect(l.exit_event).not.toBeNull();
+    expect(l.exit_event.exit_type).toBe("called_away");
+    expect(l.exit_event.shares_disposed).toBe(1000);
+  });
+});
+
+describe("detectLifespans — cross-cutoff carry + description-count disposal", () => {
+  it("carries a pre-cutoff lot held ACROSS the cutoff and closes on in-window disposal", () => {
+    // HOOD-shaped: Nov 21 2025 lot held across 2026-01-01, disposed Jul 2 2026.
+    // currentlyHeld = 0 (fully closed), but heldAtCutoff = 300 → must carry.
+    const trades = [
+      cspAssigned("2025-11-21", 3, 121, 900),           // pre-cutoff +300
+      cspAssigned("2026-01-16", 4, 130, 2880),          // +400
+      {
+        id: "ss1", type: "Shares", subtype: "Sold",
+        open_date: "2025-11-21", close_date: "2026-07-02",
+        contracts: 300, premium_collected: -3300, description: "Shares ($121, 300)",
+      },
+      {
+        id: "ss2", type: "Shares", subtype: "Sold",
+        open_date: "2026-01-16", close_date: "2026-07-02",
+        contracts: 400, premium_collected: -8000, description: "Shares ($130, 400)",
+      },
+    ];
+    const [l, ...rest] = detectLifespans("HOOD", trades);
+    expect(rest).toHaveLength(0);
+    expect(l.assignment_events).toHaveLength(2);
+    expect(l.assignment_events[0].date).toBe("2025-11-21");
+    expect(l.assignment_events.reduce((s, e) => s + e.shares_added, 0)).toBe(700);
+    expect(l.exit_event).not.toBeNull();
+    expect(l.exit_event.date).toBe("2026-07-02");
+  });
+
+  it("resolves share count from the description when the contracts column is NULL", () => {
+    // IREN-shaped: pre-cutoff 500 held across the cutoff, sold in-window via a
+    // row whose count lives only in the description ("Shares (500, $52)").
+    const trades = [
+      cspAssigned("2025-11-21", 5, 52, 1370),           // +500 held across cutoff
+      {
+        id: "ss", type: "Shares", subtype: "Sold",
+        open_date: "2025-11-21", close_date: "2026-01-29",
+        contracts: null, premium_collected: 4548, description: "Shares (500, $52)",
+      },
+    ];
+    const [l] = detectLifespans("IREN", trades);
+    expect(l.exit_event).not.toBeNull();                // 500 in, 500 out → closes
+    expect(l.exit_event.shares_disposed).toBe(500);
+  });
+
+  it("a count-less adjustment row ('Shares ($38)') still moves zero shares", () => {
+    // Guards the NULL-contracts P&L-adjustment rule: no count in the
+    // description ⇒ 0 shares ⇒ position stays open.
+    const trades = [
+      cspAssigned("2025-11-21", 8, 38, 1064),           // +800 still held
+      {
+        id: "ss", type: "Shares", subtype: "Sold",
+        open_date: "2025-11-21", close_date: "2026-02-09",
+        contracts: null, premium_collected: -16928, description: "Shares ($38)",
+      },
+    ];
+    const [l] = detectLifespans("HIMS", trades);
+    expect(l.exit_event).toBeNull();
+    expect(l.partial_dispositions).toHaveLength(1);
+    expect(l.partial_dispositions[0].shares).toBe(0);
+  });
+});
