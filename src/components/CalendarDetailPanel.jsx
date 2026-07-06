@@ -89,35 +89,30 @@ export function CalendarDetailPanel({
         : { key, dir: "asc" }
     );
 
-  // When grouping, fold closed + expiring rows into per-ticker blocks
-  // (alphabetical), each block ordered by the active sort column.
-  const groups = (() => {
-    if (!groupByTicker) return null;
+  // When grouping, keep Closed and Open as separate sections, each folded into
+  // per-ticker blocks (alphabetical) ordered by the active sort column. They're
+  // kept apart so open premium (still at risk) is never summed into a realized
+  // subtotal — grouping them together read as if the profit were already booked.
+  const buildTickerGroups = (rows, premiumOf) => {
     const map = new Map();
-    const bucket = (ticker) => {
-      let g = map.get(ticker);
-      if (!g) { g = { ticker, closed: [], expiring: [], premium: 0 }; map.set(ticker, g); }
-      return g;
-    };
-    displayClosed.forEach((t) => {
-      const g = bucket(t.ticker);
-      g.closed.push(t);
-      g.premium += t.premium || 0;
-    });
-    displayExpiring.forEach((p) => {
-      const g = bucket(p.ticker);
-      g.expiring.push(p);
-      g.premium += p.premium_collected || 0;
+    rows.forEach((r) => {
+      let g = map.get(r.ticker);
+      if (!g) { g = { ticker: r.ticker, rows: [], premium: 0 }; map.set(r.ticker, g); }
+      g.rows.push(r);
+      g.premium += premiumOf(r) || 0;
     });
     return [...map.values()]
       .sort((a, b) => a.ticker.localeCompare(b.ticker))
-      .map((g) => ({
-        ...g,
-        closed: orderRows(g.closed),
-        expiring: orderRows(g.expiring),
-        count: g.closed.length + g.expiring.length,
-      }));
-  })();
+      .map((g) => ({ ...g, rows: orderRows(g.rows), count: g.rows.length }));
+  };
+  const grouped = groupByTicker
+    ? {
+        closed: buildTickerGroups(displayClosed, (r) => r.premium),
+        open: buildTickerGroups(displayExpiring, (r) => r.premium_collected),
+      }
+    : null;
+  // Label the two sections only when both are present (mirrors the ungrouped divider).
+  const showSectionHeaders = grouped && grouped.closed.length > 0 && grouped.open.length > 0;
 
   // ---- Desktop row renderers ----
   const closedRow = (t, key, grouped) => {
@@ -185,8 +180,16 @@ export function CalendarDetailPanel({
     );
   };
 
-  const groupHeaderRow = (g, isCollapsed) => (
-    <tr key={`grp-${g.ticker}`} onClick={() => toggleCollapse(g.ticker)} style={{ background: theme.bg.base, cursor: "pointer" }}>
+  const sectionHeaderRow = (label) => (
+    <tr key={`sec-${label}`}>
+      <td colSpan={12} style={{ padding: theme.space[2], textAlign: "center", fontSize: theme.size.sm, color: theme.text.subtle, borderTop: `1px solid ${theme.border.default}`, borderBottom: `1px solid ${theme.border.default}` }}>
+        ── {label} ──
+      </td>
+    </tr>
+  );
+
+  const groupHeaderRow = (g, collapseKey, isCollapsed) => (
+    <tr key={collapseKey} onClick={() => toggleCollapse(collapseKey)} style={{ background: theme.bg.base, cursor: "pointer" }}>
       <td colSpan={12} style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, borderTop: `1px solid ${theme.border.default}`, borderBottom: `1px solid ${theme.border.default}`, userSelect: "none" }}>
         <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, marginRight: theme.space[2] }}>{isCollapsed ? "▸" : "▾"}</span>
         <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.sm }}>{g.ticker}</span>
@@ -244,8 +247,12 @@ export function CalendarDetailPanel({
     );
   };
 
-  const groupHeaderCard = (g, isCollapsed) => (
-    <div key={`grp-${g.ticker}`} onClick={() => toggleCollapse(g.ticker)} style={{ display: "flex", alignItems: "center", gap: theme.space[2], padding: `${theme.space[1]}px ${theme.space[1]}px`, marginTop: theme.space[1], cursor: "pointer", userSelect: "none" }}>
+  const sectionHeaderCard = (label) => (
+    <div key={`sec-${label}`} style={{ textAlign: "center", fontSize: theme.size.sm, color: theme.text.subtle, padding: `${theme.space[1]}px 0` }}>── {label} ──</div>
+  );
+
+  const groupHeaderCard = (g, collapseKey, isCollapsed) => (
+    <div key={collapseKey} onClick={() => toggleCollapse(collapseKey)} style={{ display: "flex", alignItems: "center", gap: theme.space[2], padding: `${theme.space[1]}px ${theme.space[1]}px`, marginTop: theme.space[1], cursor: "pointer", userSelect: "none" }}>
       <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isCollapsed ? "▸" : "▾"}</span>
       <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.sm }}>{g.ticker}</span>
       <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{g.count} row{g.count !== 1 ? "s" : ""}</span>
@@ -301,17 +308,41 @@ export function CalendarDetailPanel({
 
       {isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: theme.space[2] }}>
-          {groups
-            ? groups.map((g) => {
-                const isCollapsed = collapsed.has(g.ticker);
-                return (
-                  <Fragment key={g.ticker}>
-                    {groupHeaderCard(g, isCollapsed)}
-                    {!isCollapsed && g.closed.map((t, i) => closedCard(t, `${g.ticker}-closed-${i}`, true))}
-                    {!isCollapsed && g.expiring.map((p, i) => expiringCard(p, `${g.ticker}-expiry-${i}`, true))}
-                  </Fragment>
-                );
-              })
+          {grouped
+            ? (
+              <>
+                {grouped.closed.length > 0 && (
+                  <>
+                    {showSectionHeaders && sectionHeaderCard("Closed")}
+                    {grouped.closed.map((g) => {
+                      const key = `closed:${g.ticker}`;
+                      const isCollapsed = collapsed.has(key);
+                      return (
+                        <Fragment key={key}>
+                          {groupHeaderCard(g, key, isCollapsed)}
+                          {!isCollapsed && g.rows.map((t, i) => closedCard(t, `${key}-${i}`, true))}
+                        </Fragment>
+                      );
+                    })}
+                  </>
+                )}
+                {grouped.open.length > 0 && (
+                  <>
+                    {showSectionHeaders && sectionHeaderCard("Open positions expiring")}
+                    {grouped.open.map((g) => {
+                      const key = `open:${g.ticker}`;
+                      const isCollapsed = collapsed.has(key);
+                      return (
+                        <Fragment key={key}>
+                          {groupHeaderCard(g, key, isCollapsed)}
+                          {!isCollapsed && g.rows.map((p, i) => expiringCard(p, `${key}-${i}`, true))}
+                        </Fragment>
+                      );
+                    })}
+                  </>
+                )}
+              </>
+            )
             : (
               <>
                 {orderRows(displayClosed).map((t, i) => closedCard(t, `closed-${i}`))}
@@ -353,17 +384,41 @@ export function CalendarDetailPanel({
               </tr>
             </thead>
             <tbody>
-              {groups
-                ? groups.map((g) => {
-                    const isCollapsed = collapsed.has(g.ticker);
-                    return (
-                      <Fragment key={g.ticker}>
-                        {groupHeaderRow(g, isCollapsed)}
-                        {!isCollapsed && g.closed.map((t, i) => closedRow(t, `${g.ticker}-closed-${i}`, true))}
-                        {!isCollapsed && g.expiring.map((p, i) => expiringRow(p, `${g.ticker}-expiry-${i}`, true))}
-                      </Fragment>
-                    );
-                  })
+              {grouped
+                ? (
+                  <>
+                    {grouped.closed.length > 0 && (
+                      <>
+                        {showSectionHeaders && sectionHeaderRow("Closed")}
+                        {grouped.closed.map((g) => {
+                          const key = `closed:${g.ticker}`;
+                          const isCollapsed = collapsed.has(key);
+                          return (
+                            <Fragment key={key}>
+                              {groupHeaderRow(g, key, isCollapsed)}
+                              {!isCollapsed && g.rows.map((t, i) => closedRow(t, `${key}-${i}`, true))}
+                            </Fragment>
+                          );
+                        })}
+                      </>
+                    )}
+                    {grouped.open.length > 0 && (
+                      <>
+                        {showSectionHeaders && sectionHeaderRow("Open positions expiring")}
+                        {grouped.open.map((g) => {
+                          const key = `open:${g.ticker}`;
+                          const isCollapsed = collapsed.has(key);
+                          return (
+                            <Fragment key={key}>
+                              {groupHeaderRow(g, key, isCollapsed)}
+                              {!isCollapsed && g.rows.map((p, i) => expiringRow(p, `${key}-${i}`, true))}
+                            </Fragment>
+                          );
+                        })}
+                      </>
+                    )}
+                  </>
+                )
                 : (
                   <>
                     {orderRows(displayClosed).map((t, i) => closedRow(t, `closed-${i}`))}
