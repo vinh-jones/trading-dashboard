@@ -68,8 +68,16 @@ export function CalendarDetailPanel({
   // Transient view tweaks — reset whenever the panel remounts (new day/week/month).
   const [sort, setSort] = useState(null);          // { key, dir } | null
   const [groupByTicker, setGroupByTicker] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => new Set()); // tickers hidden while grouped
 
   if (!hasDisplay) return null;
+
+  const toggleCollapse = (ticker) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(ticker) ? next.delete(ticker) : next.add(ticker);
+      return next;
+    });
 
   const comparator = sort ? makeComparator(sort) : null;
   const orderRows = (rows) => (comparator ? [...rows].sort(comparator) : rows);
@@ -112,12 +120,14 @@ export function CalendarDetailPanel({
   })();
 
   // ---- Desktop row renderers ----
-  const closedRow = (t, key) => {
+  const closedRow = (t, key, grouped) => {
     const tc = TYPE_COLORS[t.type] || {};
     const isLoss = t.premium < 0;
     return (
       <tr key={key} style={{ borderBottom: `1px solid ${theme.bg.surface}` }}>
-        <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{t.ticker}</td>
+        {grouped
+          ? <td style={{ paddingLeft: theme.space[5] }} />
+          : <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{t.ticker}</td>}
         <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}>
           <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
             {t.type}
@@ -149,11 +159,13 @@ export function CalendarDetailPanel({
     );
   };
 
-  const expiringRow = (p, key) => {
+  const expiringRow = (p, key, grouped) => {
     const tc = TYPE_COLORS[p.type] || {};
     return (
       <tr key={key} style={{ borderBottom: `1px solid ${theme.bg.surface}`, background: theme.bg.elevated }}>
-        <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{p.ticker}</td>
+        {grouped
+          ? <td style={{ paddingLeft: theme.space[5] }} />
+          : <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, fontWeight: 600, color: theme.text.primary }}>{p.ticker}</td>}
         <td style={{ padding: `${theme.space[2]}px ${theme.space[2]}px` }}>
           <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>
             {p.type}
@@ -173,9 +185,10 @@ export function CalendarDetailPanel({
     );
   };
 
-  const groupHeaderRow = (g) => (
-    <tr key={`grp-${g.ticker}`} style={{ background: theme.bg.base }}>
-      <td colSpan={12} style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, borderTop: `1px solid ${theme.border.default}`, borderBottom: `1px solid ${theme.border.default}` }}>
+  const groupHeaderRow = (g, isCollapsed) => (
+    <tr key={`grp-${g.ticker}`} onClick={() => toggleCollapse(g.ticker)} style={{ background: theme.bg.base, cursor: "pointer" }}>
+      <td colSpan={12} style={{ padding: `${theme.space[2]}px ${theme.space[2]}px`, borderTop: `1px solid ${theme.border.default}`, borderBottom: `1px solid ${theme.border.default}`, userSelect: "none" }}>
+        <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, marginRight: theme.space[2] }}>{isCollapsed ? "▸" : "▾"}</span>
         <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.sm }}>{g.ticker}</span>
         <span style={{ color: theme.text.subtle, fontSize: theme.size.xs, marginLeft: theme.space[2] }}>
           {g.count} row{g.count !== 1 ? "s" : ""}
@@ -188,14 +201,14 @@ export function CalendarDetailPanel({
   );
 
   // ---- Mobile card renderers ----
-  const closedCard = (t, key) => {
+  const closedCard = (t, key, grouped) => {
     const tc = TYPE_COLORS[t.type] || {};
     const isLoss = t.premium < 0;
     return (
-      <div key={key} style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: `${theme.space[2]}px ${theme.space[3]}px` }}>
+      <div key={key} style={{ background: theme.bg.base, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: `${theme.space[2]}px ${theme.space[3]}px`, marginLeft: grouped ? theme.space[3] : 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[1] }}>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
-            <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{t.ticker}</span>
+            {!grouped && <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{t.ticker}</span>}
             <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{t.type}</span>
             <span style={{ color: theme.text.muted, fontSize: theme.size.sm }}>{SUBTYPE_LABELS[t.subtype] || t.subtype || "Closed"}</span>
           </div>
@@ -211,13 +224,13 @@ export function CalendarDetailPanel({
     );
   };
 
-  const expiringCard = (p, key) => {
+  const expiringCard = (p, key, grouped) => {
     const tc = TYPE_COLORS[p.type] || {};
     return (
-      <div key={key} style={{ background: theme.bg.elevated, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: `${theme.space[2]}px ${theme.space[3]}px` }}>
+      <div key={key} style={{ background: theme.bg.elevated, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md, padding: `${theme.space[2]}px ${theme.space[3]}px`, marginLeft: grouped ? theme.space[3] : 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[1] }}>
           <div style={{ display: "flex", alignItems: "center", gap: theme.space[2] }}>
-            <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{p.ticker}</span>
+            {!grouped && <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.md }}>{p.ticker}</span>}
             <span style={{ background: tc.bg, color: tc.text, padding: `2px ${theme.space[2]}px`, borderRadius: theme.radius.sm, fontSize: theme.size.sm, fontWeight: 500 }}>{p.type}</span>
             <span style={{ color: theme.blue, fontSize: theme.size.sm }}>Expires {formatExpiry(p.expiry_date)}</span>
           </div>
@@ -231,8 +244,9 @@ export function CalendarDetailPanel({
     );
   };
 
-  const groupHeaderCard = (g) => (
-    <div key={`grp-${g.ticker}`} style={{ display: "flex", alignItems: "center", gap: theme.space[2], padding: `${theme.space[1]}px ${theme.space[1]}px`, marginTop: theme.space[1] }}>
+  const groupHeaderCard = (g, isCollapsed) => (
+    <div key={`grp-${g.ticker}`} onClick={() => toggleCollapse(g.ticker)} style={{ display: "flex", alignItems: "center", gap: theme.space[2], padding: `${theme.space[1]}px ${theme.space[1]}px`, marginTop: theme.space[1], cursor: "pointer", userSelect: "none" }}>
+      <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{isCollapsed ? "▸" : "▾"}</span>
       <span style={{ fontWeight: 700, color: theme.text.primary, fontSize: theme.size.sm }}>{g.ticker}</span>
       <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>{g.count} row{g.count !== 1 ? "s" : ""}</span>
       <span style={{ color: g.premium >= 0 ? theme.green : theme.red, fontSize: theme.size.xs, fontWeight: 600 }}>{formatDollarsFull(g.premium)}</span>
@@ -288,13 +302,16 @@ export function CalendarDetailPanel({
       {isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: theme.space[2] }}>
           {groups
-            ? groups.map((g) => (
-                <Fragment key={g.ticker}>
-                  {groupHeaderCard(g)}
-                  {g.closed.map((t, i) => closedCard(t, `${g.ticker}-closed-${i}`))}
-                  {g.expiring.map((p, i) => expiringCard(p, `${g.ticker}-expiry-${i}`))}
-                </Fragment>
-              ))
+            ? groups.map((g) => {
+                const isCollapsed = collapsed.has(g.ticker);
+                return (
+                  <Fragment key={g.ticker}>
+                    {groupHeaderCard(g, isCollapsed)}
+                    {!isCollapsed && g.closed.map((t, i) => closedCard(t, `${g.ticker}-closed-${i}`, true))}
+                    {!isCollapsed && g.expiring.map((p, i) => expiringCard(p, `${g.ticker}-expiry-${i}`, true))}
+                  </Fragment>
+                );
+              })
             : (
               <>
                 {orderRows(displayClosed).map((t, i) => closedCard(t, `closed-${i}`))}
@@ -337,13 +354,16 @@ export function CalendarDetailPanel({
             </thead>
             <tbody>
               {groups
-                ? groups.map((g) => (
-                    <Fragment key={g.ticker}>
-                      {groupHeaderRow(g)}
-                      {g.closed.map((t, i) => closedRow(t, `${g.ticker}-closed-${i}`))}
-                      {g.expiring.map((p, i) => expiringRow(p, `${g.ticker}-expiry-${i}`))}
-                    </Fragment>
-                  ))
+                ? groups.map((g) => {
+                    const isCollapsed = collapsed.has(g.ticker);
+                    return (
+                      <Fragment key={g.ticker}>
+                        {groupHeaderRow(g, isCollapsed)}
+                        {!isCollapsed && g.closed.map((t, i) => closedRow(t, `${g.ticker}-closed-${i}`, true))}
+                        {!isCollapsed && g.expiring.map((p, i) => expiringRow(p, `${g.ticker}-expiry-${i}`, true))}
+                      </Fragment>
+                    );
+                  })
                 : (
                   <>
                     {orderRows(displayClosed).map((t, i) => closedRow(t, `closed-${i}`))}
