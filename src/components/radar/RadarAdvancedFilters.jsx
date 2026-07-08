@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { theme } from "../../lib/theme";
-import { SECTOR_GROUPS } from "./radarConstants";
+import {
+  SECTOR_GROUPS,
+  TREND_FILTER_OPTIONS, RSI_FILTER_OPTIONS, SCORE_FILTER_OPTIONS,
+  GEX_FILTER_OPTIONS, IV_TREND_FILTER_OPTIONS,
+} from "./radarConstants";
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
@@ -141,6 +145,45 @@ const inputStyle = {
   outline:      "none",
 };
 
+// ── Generic allow-set pill + row (monochrome blue-active, like SectorBtn) ──────
+function BucketPill({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontSize:     theme.size.xs,
+        padding:      `2px ${theme.space[2]}px`,
+        borderRadius: theme.radius.pill,
+        border:       `1px solid ${active ? theme.blue : theme.border.default}`,
+        background:   active ? theme.blue : "transparent",
+        color:        active ? theme.text.primary : theme.text.muted,
+        cursor:       "pointer",
+        fontWeight:   active ? 600 : 400,
+        whiteSpace:   "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function BucketFilterRow({ label, field, options, filters, onToggle }) {
+  const selected = filters[field] ?? [];
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], flexWrap: "wrap", marginBottom: theme.space[2] }}>
+      <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0, minWidth: 64 }}>{label}:</span>
+      {options.map(([value, optLabel]) => (
+        <BucketPill
+          key={value}
+          label={optLabel}
+          active={selected.includes(value)}
+          onClick={() => onToggle(field, value)}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 // bare=true    — strips card chrome (background/border/padding); used when embedded in a modal
 // hideFooter=true — hides Clear All / Save as Preset buttons
@@ -162,6 +205,14 @@ export default function RadarAdvancedFilters({
       ? current.filter(g => g !== group)
       : [...current, group];
     onChange(row, next);
+  }
+
+  function toggleBucket(field, value) {
+    const current = filters[field] ?? [];
+    const next = current.includes(value)
+      ? current.filter(v => v !== value)
+      : [...current, value];
+    onChange(field, next);
   }
 
   const cardStyle = bare ? {} : {
@@ -243,6 +294,15 @@ export default function RadarAdvancedFilters({
         <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 4 }}>
           Include takes precedence over Exclude if both are set.
         </div>
+      </div>
+
+      {/* ── Chip-signal allow-sets ── */}
+      <div style={{ marginBottom: theme.space[3] }}>
+        <BucketFilterRow label="Trend"    field="trend_states"    options={TREND_FILTER_OPTIONS}    filters={filters} onToggle={toggleBucket} />
+        <BucketFilterRow label="RSI"      field="rsi_buckets"     options={RSI_FILTER_OPTIONS}      filters={filters} onToggle={toggleBucket} />
+        <BucketFilterRow label="Score"    field="score_buckets"   options={SCORE_FILTER_OPTIONS}    filters={filters} onToggle={toggleBucket} />
+        <BucketFilterRow label="GEX"      field="gex_envs"        options={GEX_FILTER_OPTIONS}      filters={filters} onToggle={toggleBucket} />
+        <BucketFilterRow label="IV Trend" field="iv_trend_states" options={IV_TREND_FILTER_OPTIONS} filters={filters} onToggle={toggleBucket} />
       </div>
 
       {/* ── Ownership + Earnings ── */}
