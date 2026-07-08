@@ -259,7 +259,7 @@ export function IncomeBreakdown({
 }) {
   const isName = mode === "name";
   const { rows, maxAbs } = isName
-    ? buildBreakdownRows(tickerSummary, { key: "ticker", countKey: "trades", cap: 10, otherNoun: "names" })
+    ? buildBreakdownRows(tickerSummary, { key: "ticker", countKey: "trades", cap: 10 })
     : buildBreakdownRows(typeSummary, { key: "type", countKey: "count" });
 
   const MODES = [
