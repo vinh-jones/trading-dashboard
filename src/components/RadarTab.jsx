@@ -1480,6 +1480,10 @@ export function RadarTab({ positions = null, account = null }) {
 
   const allPresets = useMemo(() => [...CURATED_PRESETS, ...presets], [presets]);
 
+  // Per-curated-preset match count for the pill badge. Computed over the full
+  // `rows` universe on purpose — NOT intersected with the active bbFilter quick
+  // pill — so a pill's (N) reflects that preset's own selectivity, not a moving
+  // number that shifts as you click the BB buckets.
   const curatedCounts = useMemo(() => {
     const counts = {};
     for (const p of CURATED_PRESETS) {
