@@ -7,6 +7,7 @@ import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./ra
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { rsiBucket, RSI_BUCKET_LABELS, RSI_BUCKET_DEFINITIONS, RSI_BUCKET_COLORS } from "../lib/rsi";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
+import { rowMatchesFilters } from "../lib/radarFilter";
 import { describeStrikeVsGex } from "../lib/gexLevels";
 import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
@@ -1485,41 +1486,16 @@ export function RadarTab({ positions = null, account = null }) {
       result = result.filter(r => bbBucket(r.bb_position) === bbFilter);
     }
 
-    // 2. Advanced filters
+    // 2. Advanced filters — delegated to the pure, tested helper.
     const f = advancedFilters;
-    const includeSectors = expandGroupsToSectors(f.sectors_include);
-    const excludeSectors = expandGroupsToSectors(f.sectors_exclude);
-
-    result = result.filter(row => {
-      if (f.bb_position_min  !== null && row.bb_position < f.bb_position_min)  return false;
-      if (f.bb_position_max  !== null && row.bb_position > f.bb_position_max)  return false;
-      if (f.raw_iv_min       !== null && row.iv          < f.raw_iv_min)        return false;
-      if (f.raw_iv_max       !== null && row.iv          > f.raw_iv_max)        return false;
-      const civ = compositeIv(row.iv, row.iv_rank);
-      if (f.composite_iv_min !== null && civ             < f.composite_iv_min)  return false;
-      if (f.composite_iv_max !== null && civ             > f.composite_iv_max)  return false;
-      if (f.iv_rank_min      !== null && row.iv_rank     < f.iv_rank_min)       return false;
-      if (f.iv_rank_max      !== null && row.iv_rank     > f.iv_rank_max)       return false;
-      // P/E — tickers with no P/E data pass the filter (unknown = no penalty)
-      if (f.pe_min !== null && row.pe_ttm != null && row.pe_ttm < f.pe_min)  return false;
-      if (f.pe_max !== null && row.pe_ttm != null && row.pe_ttm > f.pe_max)  return false;
-      // Sectors
-      if (includeSectors.length > 0) {
-        if (!includeSectors.includes(row.sector)) return false;
-      } else if (excludeSectors.length > 0) {
-        if (excludeSectors.includes(row.sector)) return false;
-      }
-      // Ownership
-      const isHeld = getPositionIndicators(row.ticker, positions).length > 0;
-      if (f.ownership === 'not_held' && isHeld)  return false;
-      if (f.ownership === 'held'     && !isHeld) return false;
-      // Earnings
-      if (f.earnings_days_min !== null) {
-        const days = getEarningsDaysAway(row.ticker, marketContext);
-        if (days !== null && days < f.earnings_days_min) return false;
-      }
-      return true;
-    });
+    const ctx = {
+      isHeld:           (ticker) => getPositionIndicators(ticker, positions).length > 0,
+      earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
+      ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
+      includeSectors:   expandGroupsToSectors(f.sectors_include),
+      excludeSectors:   expandGroupsToSectors(f.sectors_exclude),
+    };
+    result = result.filter(row => rowMatchesFilters(row, f, ctx));
 
     // 3. Sort — sortBy is { id, dir } where dir is "asc" | "desc"
     if (sortBy) {
