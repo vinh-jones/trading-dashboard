@@ -7,6 +7,7 @@ import { theme } from "../lib/theme";
 import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEngine";
 import { resolvePreset } from "../lib/resolvePreset";
 import { DateRangePicker } from "./DateRangePicker";
+import { IncomeBreakdown } from "./IncomeBreakdown";
 
 /** Formats a Date as "Jan 1" etc. for the summary line label. */
 function fmtDate(d) {
@@ -46,6 +47,10 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
   const [hoveredTicker, setHoveredTicker] = useState(null);
   const [hoveredDuration, setHoveredDuration] = useState(null);
   const [hoveredClear, setHoveredClear] = useState(false);
+
+  // Cards ↔ Breakdown view for the ticker region (default: cards, unchanged behavior)
+  const [breakdownView, setBreakdownView] = useState("cards"); // "cards" | "breakdown"
+  const [breakdownMode, setBreakdownMode] = useState("name");  // "name" | "type"
 
   const tickerSummary = useMemo(() => {
     const source = TRADES.filter((t) => {
@@ -170,7 +175,45 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
         ))}
       </div>
 
-      {/* Ticker bar chart — Q2: gap 8→space[2], marginBottom 20→space[5] */}
+      {/* Ticker region: Cards ↔ Breakdown toggle */}
+      <div style={{ display: "flex", gap: theme.space[2], marginBottom: theme.space[3] }}>
+        {[["cards", "Cards"], ["breakdown", "Breakdown"]].map(([v, label]) => {
+          const active = breakdownView === v;
+          return (
+            <button
+              key={v}
+              onClick={() => setBreakdownView(v)}
+              style={{
+                padding: `${theme.space[1]}px ${theme.space[3]}px`,
+                borderRadius: theme.radius.pill,
+                fontSize: theme.size.md,
+                fontFamily: "inherit",
+                cursor: "pointer",
+                border: `1px solid ${active ? theme.border.strong : "transparent"}`,
+                background: active ? theme.bg.elevated : "transparent",
+                color: active ? theme.text.primary : theme.text.muted,
+                transition: "background 0.15s",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {breakdownView === "breakdown" ? (
+        <IncomeBreakdown
+          mode={breakdownMode}
+          onModeChange={setBreakdownMode}
+          tickerSummary={tickerSummary}
+          typeSummary={typeSummary}
+          selectedTicker={selectedTicker}
+          selectedType={selectedType}
+          onSelectTicker={(t) => setSelectedTicker(selectedTicker === t ? null : t)}
+          onSelectType={(t) => setSelectedType(selectedType === t ? null : t)}
+        />
+      ) : (
+      /* Ticker bar chart — Q2: gap 8→space[2], marginBottom 20→space[5] */
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: theme.space[2], marginBottom: theme.space[5] }}>
         {tickerSummary.map((ts) => {
           const isSelected = selectedTicker === ts.ticker;
@@ -249,6 +292,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
           );
         })}
       </div>
+      )}
 
       {/* Ticker history panel — shown when a ticker card is selected */}
       {selectedTicker && familiarity && familiarity.lifetimeCsps > 0 && (
