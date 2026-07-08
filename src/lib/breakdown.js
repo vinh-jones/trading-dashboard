@@ -11,13 +11,12 @@
  * @param {string} opts.key              id property ("ticker" | "type")
  * @param {string} opts.countKey         count property ("trades" | "count")
  * @param {number} [opts.cap=Infinity]   max named rows before rolling into "Other"
- * @param {string} [opts.otherNoun="names"] noun used in the Other label suffix
  * @param {number} [opts.minTotalForShare=1] suppress share % when |total| below this
  * @returns {{ rows: Array<object>, total: number, maxAbs: number }}
  */
 export function buildBreakdownRows(
   list,
-  { key, countKey, cap = Infinity, otherNoun = "names", minTotalForShare = 1 } = {}
+  { key, countKey, cap = Infinity, minTotalForShare = 1 } = {}
 ) {
   const items = list.map((it) => ({
     id: it[key],
@@ -43,7 +42,6 @@ export function buildBreakdownRows(
       count: rest.reduce((s, r) => s + r.count, 0),
       isOther: true,
       groups: rest.length,
-      otherNoun,
     };
     shown = [...kept, other];
   } else {
