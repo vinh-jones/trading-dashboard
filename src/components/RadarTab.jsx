@@ -13,7 +13,7 @@ import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
-import { CURATED_PRESETS, CURATED_ICON } from "./radar/curatedPresets";
+import { CURATED_PRESETS } from "./radar/curatedPresets";
 import { getVixBand } from "../lib/vixBand";
 import { useRadarSamples } from "../hooks/useRadarSamples";
 import { useIvTrends } from "../hooks/useIvTrends";
