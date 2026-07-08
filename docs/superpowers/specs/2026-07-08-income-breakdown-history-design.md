@@ -77,8 +77,8 @@ HistoryTab passes everything in.
    ticker; typeSummary → key `type`, label type).
 2. In Name mode, if more than 10 groups: keep the top 10 **by absolute
    premium** (so a big loss stays visible), roll the remainder into a single
-   `{ label: "Other (N names)", premium: Σ, isOther: true }`. Then display all
-   shown rows sorted by premium **descending** (Other sorts by its own value).
+   `{ label: "Other (N names)", premium: Σ, isOther: true }`. Display the kept
+   rows sorted by premium **descending**, with the "Other" row pinned **last**.
    Type mode is never capped (≤ ~5 groups).
 3. Render the toggle header (`Name | Type`) + one bar row per group.
 
