@@ -10,6 +10,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { computeRSI } from "../src/lib/rsi.js";
 
 const STALE_MS = 15 * 60 * 1000; // 15 minutes — keeps `last`/`prev_close` fresh enough for intraday DAY% on the Radar / AI Thesis pages (BB's 20-day SMA itself only changes daily, but these columns drive live day-change).
 
@@ -81,9 +82,12 @@ async function fetchBB(ticker) {
   const ma50    = last50.length  >= 50  ? last50.reduce((a, b) => a + b, 0)  / 50  : null;
   const ma200   = last200.length >= 200 ? last200.reduce((a, b) => a + b, 0) / 200 : null;
 
+  // RSI(14) off the same close series — display-only Radar context, not scored.
+  const rsi14 = computeRSI(validCloses, 14);
+
   return {
     bb_position: bbPosition, bb_upper: upper, bb_lower: lower, bb_sma20: sma20,
-    last: price, prev_close: prevClose, ma50, ma200,
+    last: price, prev_close: prevClose, ma50, ma200, rsi14,
   };
 }
 
@@ -188,6 +192,7 @@ export default async function handler(req, res) {
         prev_close:      r.prev_close ?? null,
         ma_50:           r.ma50       ?? null,
         ma_200:          r.ma200      ?? null,
+        rsi_14:          r.rsi14      ?? null,
         refreshed_at:    now,
       }));
 

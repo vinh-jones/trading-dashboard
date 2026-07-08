@@ -5,6 +5,7 @@ import { useRadar } from "../hooks/useRadar";
 import { supabase } from "../lib/supabase";
 import { DEFAULT_FILTERS, countActiveFilters, expandGroupsToSectors } from "./radar/radarConstants";
 import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
+import { rsiBucket, RSI_BUCKET_LABELS, RSI_BUCKET_DEFINITIONS, RSI_BUCKET_COLORS } from "../lib/rsi";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
 import { describeStrikeVsGex } from "../lib/gexLevels";
 import { WhaleFlowPanel } from "./WhaleFlowPanel";
@@ -532,8 +533,9 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
 }
 
 function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, gamma_env, flow_tape_ema, gex_env } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, rsi_14, gamma_env, flow_tape_ema, gex_env } = row;
   const bucket   = bbBucket(bb_position);
+  const rsiBkt   = rsiBucket(rsi_14);
   // Entry-score flow nudge is a conviction consumer → keys off the SMOOTHED
   // full-tape reading (flow_tape_ema), null until sourced (flowMod is a no-op
   // until then). No streak gate here — the ±15% cap is the guardrail.
@@ -618,6 +620,16 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
             <span style={{ fontSize: theme.size.xs, color: theme.text.subtle, flexShrink: 0 }}>No BB data</span>
           )}
 
+          {/* RSI badge — context only (not scored); shown only at actionable extremes */}
+          {rsiBkt && rsiBkt !== "neutral" && RSI_BUCKET_COLORS[rsiBkt] && (
+            <ChipWithTooltip
+              label={`RSI ${RSI_BUCKET_LABELS[rsiBkt]}`}
+              tooltip={RSI_BUCKET_DEFINITIONS[rsiBkt]}
+              color={RSI_BUCKET_COLORS[rsiBkt].text}
+              background={RSI_BUCKET_COLORS[rsiBkt].bg}
+            />
+          )}
+
           {/* Trend badge — only shown when not uptrend */}
           {trend && trend.state !== "uptrend" && TREND_COLORS[trend.state] && (
             <ChipWithTooltip
@@ -669,6 +681,11 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
           {bb_position != null && (
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("bb") }}>
               BB: {bb_position.toFixed(2)}
+            </span>
+          )}
+          {rsi_14 != null && (
+            <span style={{ fontSize: theme.size.sm, color: rsiBkt && rsiBkt !== "neutral" ? RSI_BUCKET_COLORS[rsiBkt].text : theme.text.muted, flexShrink: 0, ...highlight("rsi") }}>
+              RSI: {Math.round(rsi_14)}
             </span>
           )}
           <span style={{ fontSize: theme.size.sm, color: theme.text.muted, flexShrink: 0, ...highlight("iv_raw") }}>
@@ -765,7 +782,8 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
 function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance, gex_air_pocket } = row;
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, rsi_14, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance, gex_air_pocket } = row;
+  const rsiBkt = rsiBucket(rsi_14);
   const trend = getTrendState(last, ma_50, ma_200);
 
   // Detailed position data for this ticker
@@ -868,6 +886,14 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
           <span style={{ ...monoStyle }}>
             <span style={{ color: theme.text.subtle }}>Bucket: </span>
             <span style={{ color: BB_BUCKET_COLORS[bucket]?.text }}>{BB_BUCKET_LABELS[bucket]}</span>
+          </span>
+        )}
+        {rsi_14 != null && (
+          <span style={{ ...monoStyle }} title={rsiBkt ? RSI_BUCKET_DEFINITIONS[rsiBkt] : undefined}>
+            <span style={{ color: theme.text.subtle }}>RSI(14): </span>
+            <span style={{ color: rsiBkt ? RSI_BUCKET_COLORS[rsiBkt].text : theme.text.primary }}>
+              {Math.round(rsi_14)}{rsiBkt && rsiBkt !== "neutral" ? ` · ${RSI_BUCKET_LABELS[rsiBkt]}` : ""}
+            </span>
           </span>
         )}
       </div>
@@ -1502,6 +1528,7 @@ export function RadarTab({ positions = null, account = null }) {
       const getVal = {
         score:        r => entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_tape_ema),
         bb:           r => r.bb_position,
+        rsi:          r => r.rsi_14,
         iv_rank:      r => r.iv_rank,
         iv_raw:       r => r.iv,
         iv_composite: r => compositeIv(r.iv, r.iv_rank),
@@ -1611,6 +1638,7 @@ export function RadarTab({ positions = null, account = null }) {
           <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Sort by:</span>
           <SortBtn id="score"        label="Scanner Score" sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="bb"           label="BB Position"   sortBy={sortBy} setSortBy={setSortBy} />
+          <SortBtn id="rsi"          label="RSI"           sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_rank"      label="IV Rank"       sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_raw"       label="Raw IV"        sortBy={sortBy} setSortBy={setSortBy} />
           <SortBtn id="iv_composite" label="Composite IV"  sortBy={sortBy} setSortBy={setSortBy} />
