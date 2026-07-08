@@ -36,6 +36,27 @@ Out of scope: changing the Scanner Score, adding new data sources, RSI-in-score
 
 ---
 
+## 0. Framing — confirmation screens, not deploy triggers
+
+This codebase has a documented, deliberate discipline hierarchy: **Ryan-first →
+hard rules → soft yield signals → confirmation**. The UW work encodes it in code
+rather than leaving it to willpower, and specifically relabels buy-signal
+language ("prime candidate" → "whale-confirmed setup", *"confirmation, not a buy
+signal — checklist + VIX target first"*). A one-click, always-green pill labeled
+with an action imperative ("Prime *Entry*") is the frictionless version of the
+exact pull-toward-risk vector that discipline exists to defang.
+
+Two cheap guardrails keep the radar subordinate to that hierarchy:
+
+1. **Setup-descriptive names, never action-imperative.** Presets describe *what
+   matched*, not *what to do* (§4). No name asserts safety or entry.
+2. **A persistent caption on the curated bar** (§5): *"Confirmation screens —
+   not deploy triggers. Checklist + Ryan-first before any entry."*
+
+These are consistency with an existing decision, not a new opinion.
+
+---
+
 ## 1. Filter model — five new allow-set filters
 
 In `src/components/radar/radarConstants.js`, extend `DEFAULT_FILTERS`:
@@ -102,31 +123,54 @@ New file `src/components/radar/curatedPresets.js`:
 
 ```js
 export const CURATED_PRESETS = [
-  { id: "builtin:prime-entry",     name: "Prime Entry",     builtin: true, filters: {...} },
+  { id: "builtin:prime-setup",     name: "Prime Setup",     builtin: true, filters: {...} },
   { id: "builtin:oversold-bounce", name: "Oversold Bounce", builtin: true, filters: {...} },
-  { id: "builtin:rich-premium",    name: "Rich Premium",    builtin: true, filters: {...} },
-  { id: "builtin:fresh-safe",      name: "Fresh & Safe",    builtin: true, filters: {...} },
+  { id: "builtin:juiced-premium",  name: "Juiced Premium",  builtin: true, filters: {...} },
+  { id: "builtin:fresh-calm",      name: "Fresh & Calm",    builtin: true, filters: {...} },
   { id: "builtin:pinned-paid",     name: "Pinned & Paid",   builtin: true, filters: {...} },
+  { id: "builtin:write-zone",      name: "Write Zone",      builtin: true, filters: {...} },
 ];
 export const CURATED_ICON = "✦";
 ```
 
 Each `filters` is a partial `DEFAULT_FILTERS` (merged over defaults on apply).
 
+**Naming discipline (see §0 rationale):** presets are named for *what matched the
+screen* (setup-descriptive), never for *what to do* (action-imperative). This is
+the same relabelling the UW work applied ("prime candidate" → "whale-confirmed
+setup"). No preset name asserts safety or tells the user to enter.
+
 | Preset | Encodes | filters |
 |---|---|---|
-| **✦ Prime Entry** | cheap, top-scoring, no knife, calm tape, no event, room to add | `score_buckets:["Strong"]`, `bb_position_max:0.20`, `trend_states:["uptrend","pullback","recovering"]`, `gex_envs:["stabilized","neutral"]`, `earnings_days_min:21`, `ownership:"not_held"` |
+| **✦ Prime Setup** | cheap, top-scoring, no knife, calm tape, no event, room to add | `score_buckets:["Strong"]`, `bb_position_max:0.20`, `trend_states:["uptrend","pullback","recovering"]`, `gex_envs:["stabilized","neutral"]`, `earnings_days_min:30`, `ownership:"not_held"` |
 | **✦ Oversold Bounce** | oversold and turning, not falling | `rsi_buckets:["oversold"]`, `bb_position_max:0.20`, `trend_states:["uptrend","pullback","recovering"]` |
-| **✦ Rich Premium** | fat premium in relative AND absolute terms | `iv_rank_min:50`, `raw_iv_min:0.50`, `rsi_buckets:["oversold","neutral"]`, `earnings_days_min:21` |
-| **✦ Fresh & Safe** | new, stable, un-owned candidates | `ownership:"not_held"`, `trend_states:["uptrend","pullback","recovering"]`, `gex_envs:["stabilized","neutral"]`, `earnings_days_min:21` |
-| **✦ Pinned & Paid** | sell premium where dealers dampen moves | `gex_envs:["stabilized"]`, `iv_rank_min:50`, `raw_iv_min:0.35`, `earnings_days_min:21` |
+| **✦ Juiced Premium** | high IV in relative AND absolute terms — **this is the high-vol assignment cluster, not a safety screen** | `iv_rank_min:50`, `raw_iv_min:0.50`, `rsi_buckets:["oversold","neutral"]`, `earnings_days_min:30` |
+| **✦ Fresh & Calm** | un-owned, stable, not extended, no event | `ownership:"not_held"`, `trend_states:["uptrend","pullback","recovering"]`, `gex_envs:["stabilized","neutral"]`, `bb_position_max:0.60`, `earnings_days_min:30` |
+| **✦ Pinned & Paid** | sell premium where dealers dampen moves | `gex_envs:["stabilized"]`, `iv_rank_min:50`, `raw_iv_min:0.35`, `earnings_days_min:30` |
+| **✦ Write Zone** | *held book:* which assigned names are in a call-writing window | `ownership:"held"`, `gex_envs:["stabilized"]`, `iv_rank_min:40`, `rsi_buckets:["neutral","overbought"]` |
 
 Notes:
+- **`earnings_days_min:30`**, not 21. Verified entry-DTE distribution (last 120d,
+  n=88): avg 24, p90 32, max 42. A 21-day gate lets earnings land *inside* the
+  contract on most entries; 30 covers the average book with buffer. One central
+  knob — nudge toward 35 if you want to clear the p90.
+- **Juiced Premium** deliberately does not claim safety. At `iv_rank≥50 &
+  raw_iv≥50%` it currently matches ~32/55 names, dominated by the 90–124%-IV
+  cluster (NBIS, IREN, MU, DRAM, WDC, COHR, STX, LRCX…) — the names re-inflating
+  the assigned book. Honest read: "well-paid, but you'll likely be assigned."
+- **Fresh & Calm** carries `bb_position_max:0.60` so extended top-of-band names
+  (FTNT 0.72, RTX 0.84, SHOP 0.65 today) don't pass. "Calm" = stable tape + not
+  downtrend + not extended; it does **not** assert "safe."
+- **Write Zone** is a *surfacer*, not a strike-picker. It answers "where should I
+  even be looking to write calls today," not "what strike" — the below-cost /
+  roll-to-assignment-price nuance lives in the `cc-gex-decision` skill, not a
+  screen. `rsi_buckets:["neutral","overbought"]` avoids writing a call right at a
+  bounce low (capping upside on a name that just turned up). No earnings gate:
+  earnings-before-expiry is context-dependent for CCs, not a blanket exclude.
 - `raw_iv_min` is a decimal (0.50 = 50%), matching existing `filterSummaryLines`.
-- `bb_position_max:0.20` = "below band or near lower" (BB Position < 0.20).
+- `bb_position_max:0.20` = "below band or near lower"; `0.60` = "not extended".
 - `rsi_buckets:["oversold","neutral"]` = "RSI ≠ Overbought".
-- Numbers (50 IVR, 0.50/0.35 IV, 21 DTE) are the agreed starting values, tunable
-  in one place.
+- All thresholds are the agreed starting values, tunable in this one file.
 
 ## 5. Preset-bar behavior
 
@@ -142,6 +186,16 @@ Notes:
   `preset.filters` over `DEFAULT_FILTERS` and sets `activePresetId`. Selecting an
   active preset again clears it (existing toggle behavior). Manual filter edits
   clear `activePresetId` (existing behavior).
+- **Live match-count on each curated pill** — e.g. `✦ Prime Setup (3)`. Several
+  presets stack many conditions (Prime Setup = 6) or intersect naturally-rare
+  states (Oversold Bounce asks oversold AND not-downtrend, a small set by
+  construction), so they'll often return 0. A visible count turns "empty" into
+  information (rare = high-conviction) instead of a dead click that trains the
+  user to loosen filters. Compute by running `rowMatchesFilters(row,
+  {...DEFAULT_FILTERS, ...preset.filters}, ctx)` over `rows` per curated preset —
+  cheap (6 presets × ~55 rows), memoized on `rows`. User presets get no count.
+- **Persistent caption** under the curated pills (small, muted): *"Confirmation
+  screens — not deploy triggers. Checklist + Ryan-first before any entry."* (§0).
 
 ## 6. Testing
 
@@ -149,21 +203,40 @@ Notes:
 - Each new dimension: a row that matches, one that doesn't, and a null-value row
   under an active filter (must be excluded).
 - Empty allow-set = pass-through (no filtering).
+- `ownership` symmetric: `"held"` and `"not_held"` each filter correctly (Write
+  Zone depends on the `held` branch).
 - Existing numeric/sector/ownership/earnings behavior preserved (regression).
 
 `src/components/radar/__tests__/curatedPresets.test.js`:
 - Every key in every curated preset's `filters` is a valid `DEFAULT_FILTERS`
   field (guards against a typo silently no-op'ing).
 - Every allow-set value is a member of that dimension's known-bucket list.
+- No preset name contains action-imperative words ("entry", "buy", "enter",
+  "safe") — lightweight lint keeping §0 naming discipline from eroding later.
+
+## 7. Known blind spot — household concentration (flag, don't build)
+
+Presets filter one ticker at a time; they cannot see portfolio-level
+concentration, which is one of the user's stated risk principles. A name
+surfacing in **Prime Setup** may be the same AI-infra / high-beta cluster as the
+heavy assigned book (CLS, NBIS, IREN, CRDO…) — in a drawdown it behaves as *more
+of the same bet*, and nothing here catches that. A clean 5-name Prime Setup list
+is not evidence of diversification.
+
+Out of scope to solve in a per-row screen. Action: a code comment at the top of
+`curatedPresets.js` naming the limitation, so future work doesn't misread a
+curated list as concentration-aware.
 
 ## Files touched
 
 - `src/components/radar/radarConstants.js` — DEFAULT_FILTERS, counts, summary, labels
 - `src/lib/radarFilter.js` — **new**, `rowMatchesFilters`
 - `src/components/radar/curatedPresets.js` — **new**, CURATED_PRESETS
-- `src/components/radar/RadarAdvancedFilters.jsx` — 5 pill-toggle rows
-- `src/components/radar/RadarPresetBar.jsx` — built-in rendering, edit/delete gating
-- `src/components/RadarTab.jsx` — call rowMatchesFilters, merge curated presets, applyPreset
+- `src/components/radar/RadarAdvancedFilters.jsx` — 5 pill-toggle rows (Trend, RSI, Score, GEX, IV-Trend)
+- `src/components/radar/RadarPresetBar.jsx` — built-in rendering, edit/delete gating, match-count on curated pills, persistent caption
+- `src/components/RadarTab.jsx` — call rowMatchesFilters, merge curated presets, applyPreset, compute per-preset match counts
 - tests as above
 
-No DB migration required (curated presets live in code; filters are client-side).
+`ownership: "held"` (needed by Write Zone) is **already** in the filter model and
+applied in `RadarTab.jsx` — no new dimension, just a preset that uses it.
+No DB migration (curated presets live in code; filters are client-side).
