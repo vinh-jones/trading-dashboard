@@ -87,10 +87,13 @@ describe("rowMatchesFilters — iv_trend_states", () => {
 });
 
 describe("rowMatchesFilters — score_buckets", () => {
-  it("passes when the row's real score label is allowed, excludes otherwise", () => {
-    const row = makeRow();
+  it("passes only when the row's real score label is in the allow-set", () => {
+    const row = makeRow(); // bb 0.10 + iv 0.60 + ivr 80 + uptrend → score ~0.77 → "Strong"
+    expect(rowMatchesFilters(row, { ...DEFAULT_FILTERS, score_buckets: ["Strong"] }, baseCtx)).toBe(true);
+    expect(rowMatchesFilters(row, { ...DEFAULT_FILTERS, score_buckets: ["Weak"] }, baseCtx)).toBe(false);
+  });
+  it("excludes a row whose score is null (null bb_position) under an active score filter", () => {
     const allBuckets = ["Strong", "Moderate", "Neutral", "Weak"];
-    expect(rowMatchesFilters(row, { ...DEFAULT_FILTERS, score_buckets: allBuckets }, baseCtx)).toBe(true);
     expect(rowMatchesFilters(makeRow({ bb_position: null }), { ...DEFAULT_FILTERS, score_buckets: allBuckets }, baseCtx)).toBe(false);
   });
 });
