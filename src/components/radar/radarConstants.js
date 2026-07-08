@@ -76,6 +76,12 @@ export const DEFAULT_FILTERS = {
   composite_iv_max: null,
   iv_rank_min:      null,
   iv_rank_max:      null,
+  // Chip-signal allow-sets — empty = not filtered; non-empty = row's bucket must be a member.
+  trend_states:     [],
+  rsi_buckets:      [],
+  score_buckets:    [],
+  gex_envs:         [],
+  iv_trend_states:  [],
   pe_min:           null,
   pe_max:           null,
   sectors_include:  [],
@@ -83,6 +89,36 @@ export const DEFAULT_FILTERS = {
   earnings_days_min: null,
   ownership:        'all',
 };
+
+// ── Chip-signal filter options ────────────────────────────────────────────────
+// value = the exact bucket string produced at runtime (getTrendState().state,
+// rsiBucket(), scoreLabel(), quotes.gex_env, ivTrend.state). Do not rename values.
+export const TREND_FILTER_OPTIONS = [
+  ["uptrend", "Uptrend"], ["pullback", "Pullback"],
+  ["recovering", "Recovering"], ["downtrend", "Downtrend"],
+];
+export const RSI_FILTER_OPTIONS = [
+  ["oversold", "Oversold"], ["neutral", "Neutral"], ["overbought", "Overbought"],
+];
+export const SCORE_FILTER_OPTIONS = [
+  ["Strong", "Strong"], ["Moderate", "Moderate"], ["Neutral", "Neutral"], ["Weak", "Weak"],
+];
+export const GEX_FILTER_OPTIONS = [
+  ["stabilized", "Stable"], ["choppy", "Choppy"], ["neutral", "Neutral"],
+];
+export const IV_TREND_FILTER_OPTIONS = [
+  ["rising", "Rising"], ["spiking", "Spiking"], ["falling", "Falling"],
+  ["collapsing", "Collapsing"], ["stable", "Stable"],
+];
+
+// Maps a filter field → its option list, for generic summary/labeling.
+const ALLOW_SET_FIELDS = [
+  ["trend_states",    "Trend", TREND_FILTER_OPTIONS],
+  ["rsi_buckets",     "RSI",   RSI_FILTER_OPTIONS],
+  ["score_buckets",   "Score", SCORE_FILTER_OPTIONS],
+  ["gex_envs",        "GEX",   GEX_FILTER_OPTIONS],
+  ["iv_trend_states", "IV Trend", IV_TREND_FILTER_OPTIONS],
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +137,9 @@ export function countActiveFilters(filters) {
   if (filters.sectors_include?.length > 0) count++;
   if (filters.sectors_exclude?.length > 0) count++;
   if (filters.ownership !== 'all') count++;
+  ALLOW_SET_FIELDS.forEach(([field]) => {
+    if (filters[field]?.length > 0) count++;
+  });
   return count;
 }
 
@@ -127,5 +166,12 @@ export function filterSummaryLines(filters) {
   if (filters.pe_max           !== null) lines.push(`P/E max: ${filters.pe_max}`);
   if (filters.earnings_days_min !== null) lines.push(`Earnings > ${filters.earnings_days_min} days away`);
   if (filters.ownership !== 'all') lines.push(`Ownership: ${filters.ownership === 'not_held' ? 'Not held' : 'Held'}`);
+  ALLOW_SET_FIELDS.forEach(([field, label, options]) => {
+    const vals = filters[field] ?? [];
+    if (vals.length > 0) {
+      const labelFor = v => (options.find(o => o[0] === v)?.[1]) ?? v;
+      lines.push(`${label}: ${vals.map(labelFor).join(", ")}`);
+    }
+  });
   return lines;
 }
