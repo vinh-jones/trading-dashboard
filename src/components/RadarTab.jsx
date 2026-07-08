@@ -13,6 +13,7 @@ import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
 import RadarAdvancedFilters from "./radar/RadarAdvancedFilters";
 import RadarPresetBar from "./radar/RadarPresetBar";
+import { CURATED_PRESETS, CURATED_ICON } from "./radar/curatedPresets";
 import { getVixBand } from "../lib/vixBand";
 import { useRadarSamples } from "../hooks/useRadarSamples";
 import { useIvTrends } from "../hooks/useIvTrends";
@@ -1477,6 +1478,24 @@ export function RadarTab({ positions = null, account = null }) {
     setAdvancedFilters({ ...DEFAULT_FILTERS, ...preset.filters });
   }
 
+  const allPresets = useMemo(() => [...CURATED_PRESETS, ...presets], [presets]);
+
+  const curatedCounts = useMemo(() => {
+    const counts = {};
+    for (const p of CURATED_PRESETS) {
+      const pf = { ...DEFAULT_FILTERS, ...p.filters };
+      const ctx = {
+        isHeld:           (ticker) => getPositionIndicators(ticker, positions).length > 0,
+        earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
+        ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
+        includeSectors:   expandGroupsToSectors(pf.sectors_include),
+        excludeSectors:   expandGroupsToSectors(pf.sectors_exclude),
+      };
+      counts[p.id] = rows.filter(row => rowMatchesFilters(row, pf, ctx)).length;
+    }
+    return counts;
+  }, [rows, positions, marketContext, ivTrendsByTicker]);
+
   // Filter + sort
   const processedRows = useMemo(() => {
     let result = [...rows];
@@ -1593,7 +1612,8 @@ export function RadarTab({ positions = null, account = null }) {
         {/* Presets row */}
         <div style={{ marginBottom: theme.space[2] }}>
           <RadarPresetBar
-            presets={presets}
+            presets={allPresets}
+            curatedCounts={curatedCounts}
             activePresetId={activePresetId}
             filtersExpanded={filtersExpanded}
             activeFilterCount={countActiveFilters(advancedFilters)}

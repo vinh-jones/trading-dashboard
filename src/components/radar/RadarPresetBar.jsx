@@ -2,6 +2,7 @@ import { useState } from "react";
 import { theme } from "../../lib/theme";
 import { DEFAULT_FILTERS } from "./radarConstants";
 import RadarAdvancedFilters from "./RadarAdvancedFilters";
+import { CURATED_ICON } from "./curatedPresets";
 
 const PRESET_BUTTON_THRESHOLD = 5;
 
@@ -206,8 +207,12 @@ function EditPresetModal({ preset, onSave, onDelete, onClose }) {
 
 // ── Preset button ─────────────────────────────────────────────────────────────
 
-function PresetBtn({ preset, active, onSelect, onEdit }) {
+function PresetBtn({ preset, active, count, onSelect, onEdit }) {
   const [hovered, setHovered] = useState(false);
+  const isBuiltin = preset.builtin === true;
+  const label = isBuiltin
+    ? `${CURATED_ICON} ${preset.name}${count != null ? ` (${count})` : ""}`
+    : preset.name;
 
   return (
     <div
@@ -229,11 +234,11 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
           whiteSpace:   "nowrap",
         }}
       >
-        {preset.name}
+        {label}
       </button>
 
       {/* Edit icon — separate circle button, appears on hover */}
-      {hovered && (
+      {!isBuiltin && hovered && (
         <button
           onClick={e => { e.stopPropagation(); onEdit(); }}
           title={`Edit "${preset.name}"`}
@@ -264,6 +269,7 @@ function PresetBtn({ preset, active, onSelect, onEdit }) {
 
 export default function RadarPresetBar({
   presets,
+  curatedCounts = {},
   activePresetId,
   filtersExpanded,
   activeFilterCount,
@@ -295,25 +301,27 @@ export default function RadarPresetBar({
     toggleLabel = `${filtersExpanded ? '▲' : '▼'} Advanced Filters`;
   }
 
+  const curated = presets.filter(p => p.builtin);
+  const userPresets = presets.filter(p => !p.builtin);
+  const useDropdown = userPresets.length > PRESET_BUTTON_THRESHOLD;
+
   function handleSaved(newPreset) {
-    onPresetsChange([...presets, newPreset], newPreset.id);
+    onPresetsChange([...userPresets, newPreset], newPreset.id);
     closeSaveModal();
   }
 
   function handleEdited(updated) {
-    onPresetsChange(presets.map(p => p.id === updated.id ? updated : p), activePresetId);
+    onPresetsChange(userPresets.map(p => p.id === updated.id ? updated : p), activePresetId);
     setEditPreset(null);
   }
 
   function handleDeleted(deletedId) {
     onPresetsChange(
-      presets.filter(p => p.id !== deletedId),
+      userPresets.filter(p => p.id !== deletedId),
       activePresetId === deletedId ? null : activePresetId,
     );
     setEditPreset(null);
   }
-
-  const useDropdown = presets.length > PRESET_BUTTON_THRESHOLD;
 
   return (
     <>
@@ -321,12 +329,22 @@ export default function RadarPresetBar({
 
         <span style={{ fontSize: theme.size.sm, color: theme.text.subtle, flexShrink: 0 }}>Presets:</span>
 
+        {curated.map(p => (
+          <PresetBtn
+            key={p.id}
+            preset={p}
+            active={activePresetId === p.id}
+            count={curatedCounts[p.id]}
+            onSelect={() => onSelect(activePresetId === p.id ? null : p)}
+          />
+        ))}
+
         {useDropdown ? (
           <>
             <select
-              value={activePresetId || ''}
+              value={userPresets.some(p => p.id === activePresetId) ? activePresetId : ''}
               onChange={e => {
-                const p = presets.find(x => x.id === e.target.value);
+                const p = userPresets.find(x => x.id === e.target.value);
                 onSelect(p ?? null);
               }}
               onMouseEnter={() => setSelectHovered(true)}
@@ -343,17 +361,17 @@ export default function RadarPresetBar({
               }}
             >
               <option value="">Select preset…</option>
-              {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {userPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
             <button
-              onClick={() => setEditPreset(presets.find(p => p.id === activePresetId) ?? presets[0])}
+              onClick={() => setEditPreset(userPresets.find(p => p.id === activePresetId) ?? userPresets[0])}
               style={ghostBtnStyle}
             >
               Edit presets
             </button>
           </>
         ) : (
-          presets.map(p => (
+          userPresets.map(p => (
             <PresetBtn
               key={p.id}
               preset={p}
@@ -378,6 +396,10 @@ export default function RadarPresetBar({
         >
           {toggleLabel}
         </button>
+      </div>
+
+      <div style={{ fontSize: theme.size.xs, color: theme.text.faint, marginTop: 4 }}>
+        {CURATED_ICON} Confirmation screens — not deploy triggers. Checklist + Ryan-first before any entry.
       </div>
 
       {saveModal && (
