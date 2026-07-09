@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts, flowTapeFromTape } from "../uwNormalize";
+import { gammaEnvFromGreek, flowSentimentFromAlerts, whalePutSellsFromAlerts, flowTapeFromTape, ivQuoteFromScreenerRow } from "../uwNormalize";
 
 // Real get_greek_exposure_by_ticker shape (NVDA, trimmed to 2 days).
 const greekRows = [
@@ -79,6 +79,35 @@ describe("flowTapeFromTape", () => {
     expect(flowTapeFromTape([
       { call_premium_ask_side: "0", call_premium_bid_side: "0", put_premium_ask_side: "0", put_premium_bid_side: "0" },
     ])).toBeNull();
+  });
+});
+
+describe("ivQuoteFromScreenerRow", () => {
+  // Real /screener/stocks row shape (PLTR, trimmed): string values.
+  const row = {
+    ticker: "PLTR", iv30d: "0.645000", iv_rank: "69.5891",
+    volatility: "0.645000", close: "132.22", prev_close: "134.37",
+  };
+  it("maps iv30d/iv_rank/close/prev_close to numbers", () => {
+    expect(ivQuoteFromScreenerRow(row)).toEqual({
+      iv: 0.645, iv_rank: 69.5891, last: 132.22, prev_close: 134.37,
+    });
+  });
+  it("falls back to volatility when iv30d is missing", () => {
+    const { iv30d, ...noIv30d } = row;
+    expect(ivQuoteFromScreenerRow(noIv30d).iv).toBeCloseTo(0.645, 5);
+  });
+  it("keeps a genuine zero iv (not treated as missing)", () => {
+    expect(ivQuoteFromScreenerRow({ ...row, iv30d: "0" }).iv).toBe(0);
+  });
+  it("nulls individual unparseable fields but keeps the rest", () => {
+    const r = ivQuoteFromScreenerRow({ ticker: "X", iv30d: "0.5", iv_rank: null, close: "10", prev_close: undefined });
+    expect(r).toEqual({ iv: 0.5, iv_rank: null, last: 10, prev_close: null });
+  });
+  it("returns null when the row carries no usable values", () => {
+    expect(ivQuoteFromScreenerRow(null)).toBeNull();
+    expect(ivQuoteFromScreenerRow({ ticker: "X" })).toBeNull();
+    expect(ivQuoteFromScreenerRow({ ticker: "X", iv30d: "n/a", close: "" })).toBeNull();
   });
 });
 

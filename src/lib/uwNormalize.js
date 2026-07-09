@@ -60,6 +60,29 @@ export function flowTapeFromTape(rows) {
   return (bullish - bearish) / total;
 }
 
+// Radar IV + intraday price from a stock-screener (/screener/stocks) row, the
+// columns the Tastytrade-via-OpenClaw /api/ingest-iv push used to write. UW
+// answers Vercel directly, so one screener call refreshes the whole universe
+// without the residential-IP detour. Screener values are strings. `iv` uses the
+// 30-day IV (iv30d), matching the ~30d ATM IV the old pipeline sent, and falls
+// back to `volatility` when iv30d is absent; `last` is the screener's `close`
+// (latest price on the trading date). Returns null when the row carries no
+// usable IV or price so a bad row never clobbers a good value.
+export function ivQuoteFromScreenerRow(row) {
+  if (!row) return null;
+  const num = (v) => {
+    if (v === null || v === undefined || v === "") return null; // Number("") === 0 would clobber
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const iv         = num(row.iv30d) ?? num(row.volatility);
+  const iv_rank    = num(row.iv_rank);
+  const last       = num(row.close);
+  const prev_close = num(row.prev_close);
+  if (iv == null && iv_rank == null && last == null && prev_close == null) return null;
+  return { iv, iv_rank, last, prev_close };
+}
+
 // The Consumer-5 "whale CSP flow" list: institutions selling puts (Ryan's
 // screen). Filters the same flow-alert pull to bid-side puts ≥ minPremium,
 // keeps the fields the UI needs, sorted by premium desc.
