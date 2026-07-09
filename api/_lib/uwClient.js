@@ -103,3 +103,15 @@ export function fetchShortInterest(ticker) {
 export function fetchEarnings(ticker) {
   return uwGet(`/earnings/${encodeURIComponent(ticker)}`);
 }
+
+// Stock screener — one row per ticker carrying iv30d, iv_rank, volatility,
+// close, prev_close, next_earnings_date, etc. Pass a ticker list (comma-joined)
+// to scope the screen to specific names; the endpoint returns only those rows.
+// Drives the Radar IV/price refresh (api/uw-iv.js), replacing the
+// Tastytrade-via-OpenClaw /api/ingest-iv push. uwGet unwraps `{ result: [...] }`
+// (screener) or `{ data: [...] }` to the rows array.
+export function fetchStockScreener(tickers) {
+  const list = Array.isArray(tickers) ? tickers.filter(Boolean) : [];
+  const qs = list.length ? `?ticker=${encodeURIComponent(list.join(","))}` : "";
+  return uwGet(`/screener/stocks${qs}`);
+}
