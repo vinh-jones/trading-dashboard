@@ -1137,15 +1137,22 @@ function PositionsTable({ rows, positionType, quoteMap, uwSignals, cspEntryYield
                       >
                         {pos.ticker}
                       </button>
-                      {pos.cushion_state === "assignment_risk" && (dte == null || dte <= 21) && (
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: theme.red, display: "inline-block", flexShrink: 0 }} />
+                      {/* Inline signal chips are hidden on mobile — they wrap and crowd
+                          the narrow ticker column. The colored left border still flags
+                          risk rows, and the full detail shows on expand. */}
+                      {!isMobile && (
+                        <>
+                          {pos.cushion_state === "assignment_risk" && (dte == null || dte <= 21) && (
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: theme.red, display: "inline-block", flexShrink: 0 }} />
+                          )}
+                          {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
+                            <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
+                          )}
+                          <HoldYieldIndicator hy={holdYield} />
+                          <RedeployIndicator rd={redeploy} ov={redeployOverlay} profitTargetHit={profitTargetHit} />
+                          <AssignmentRiskIndicator risk={assignmentRisk} />
+                        </>
                       )}
-                      {pos.cushion_state === "approaching" && (dte == null || dte <= 14) && (
-                        <span style={{ fontSize: theme.size.sm, color: theme.amber, lineHeight: 1 }}>⚠</span>
-                      )}
-                      <HoldYieldIndicator hy={holdYield} />
-                      <RedeployIndicator rd={redeploy} ov={redeployOverlay} profitTargetHit={profitTargetHit} />
-                      <AssignmentRiskIndicator risk={assignmentRisk} />
                       {hasTagRow && !isExpanded && !isMobile && (
                         <span
                           onClick={canExpand ? (e) => { e.stopPropagation(); setExpandedRowKey(rowKey); } : undefined}
