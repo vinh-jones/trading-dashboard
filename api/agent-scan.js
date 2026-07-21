@@ -19,15 +19,25 @@
  *                           signals and a held/not-held flag but no position
  *                           sizes, so a leaked response is not a book.
  *   ?limit=N                cap the candidate list (default: no cap).
- *   ?refresh=false          skip the forced ingest refresh and read whatever
- *                           the crons last wrote. Refresh is ON by default.
+ *   ?refresh=true           re-run the full ingest chain before reading.
+ *                           OFF BY DEFAULT — see the warning below.
  *
- * FRESHNESS: every hit re-runs the full ingest chain (quotes → bb → uw-iv, and
- * uw-snapshot → uw-gex) before reading, so a polling agent never sees stale
- * cron output. This is deliberate and costly — the UW feeds are metered, and
- * a hit is measured in tens of seconds, not milliseconds. Poll accordingly, or
- * use ?refresh=false for cheap reads. The `freshness` block reports actual data
- * age regardless, which is how you catch a refresh that 200s without writing.
+ * FRESHNESS: this route is a READ. It serves whatever the ingest crons last
+ * wrote and reports the age in `freshness` (bbAgeMinutes / marketOpen / stale),
+ * so a consumer can tell fresh data from stale rather than assuming.
+ *
+ * ?refresh=true is a deliberate escape hatch, NOT a default, because the ingest
+ * routes it calls are batch jobs: bb / uw-snapshot / uw-gex each loop
+ * sequentially over the ~50-ticker universe issuing per-ticker external API
+ * calls (300+ round trips, plus a rate-limit sleep). They carry maxDuration
+ * 60–120 and run as twice-daily crons for that reason. Chaining them inline
+ * makes a request take MINUTES, which shipped as the default in v1.171.0 and
+ * broke every client with a sane HTTP timeout. If you pass it, use a client
+ * timeout of 5+ minutes and expect metered UW calls.
+ *
+ * For a scheduled consumer: don't. During the session /api/quotes runs every
+ * 15 minutes, so a plain read is already current; use `freshness.stale` to
+ * detect a dead ingest instead of pre-emptively forcing one.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` (or APP_SECRET / app_auth
  * cookie) — same helper the uw-*.js endpoints use.
@@ -83,6 +93,19 @@ function authorized(req) {
   const m = cookie.match(/(?:^|;\s*)app_auth=([^;]+)/);
   const cookieTok = m ? decodeURIComponent(m[1]) : null;
   return !!(app && cookieTok === app);
+}
+
+/**
+ * Refresh is opt-in: ONLY the exact string "true" turns it on.
+ *
+ * v1.171.0 had this inverted (on unless ?refresh=false) which made every plain
+ * call chain five batch ingest jobs and take minutes — any client with a normal
+ * timeout saw a hang. Default-deny is the safe polarity here: a missing,
+ * malformed, or unexpected value must land on the cheap read, never the
+ * multi-minute one.
+ */
+export function wantsRefresh(query) {
+  return String(query?.refresh ?? "") === "true";
 }
 
 /** Accepts "prime-setup" or "builtin:prime-setup". */
@@ -286,8 +309,7 @@ export default async function handler(req, res) {
   const presetParam  = req.query?.preset ?? null;
   const wantExposure = String(req.query?.exposure ?? "") === "true";
   const limit        = req.query?.limit ? parseInt(req.query.limit, 10) : null;
-  // Refresh is ON by default; only an explicit ?refresh=false skips it.
-  const wantRefresh  = String(req.query?.refresh ?? "") !== "false";
+  const wantRefresh  = wantsRefresh(req.query);
 
   const preset = resolveCuratedPreset(presetParam);
   if (presetParam && !preset) {
@@ -302,10 +324,10 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    // Forced refresh of every ingest feeding a Radar row, BEFORE the read.
-    // Default-on: an agent polling this endpoint should never be handed data
-    // left over from the last cron. `?refresh=false` opts out for cheap polls.
-    // Fails soft — a broken feed degrades freshness, never availability.
+    // Opt-in only (?refresh=true). Chaining the ingest batch jobs inline costs
+    // minutes, so the default path is a plain read plus honest `freshness`
+    // reporting. Fails soft either way — a broken feed degrades freshness,
+    // never availability.
     const refresh = wantRefresh
       ? await runRefreshChain({ secret: process.env.CRON_SECRET })
       : { ran: false, ms: 0, allOk: true, steps: [] };

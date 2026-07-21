@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildScanPayload, resolveCuratedPreset } from "../agent-scan.js";
+import { buildScanPayload, resolveCuratedPreset, wantsRefresh } from "../agent-scan.js";
 import { entryScore } from "../../src/lib/entryScore.js";
 import { CURATED_PRESETS } from "../../src/components/radar/curatedPresets.js";
 
@@ -41,6 +41,27 @@ describe("resolveCuratedPreset", () => {
   it("resolves every curated preset the UI exposes", () => {
     for (const p of CURATED_PRESETS) {
       expect(resolveCuratedPreset(p.id.replace(/^builtin:/, ""))).toBeTruthy();
+    }
+  });
+});
+
+describe("wantsRefresh — default must be OFF", () => {
+  // Regression guard for v1.171.0, which had this inverted. Forced refresh
+  // chains five sequential batch ingest jobs (300+ per-ticker external calls)
+  // into the request path, so a plain GET took minutes and every client with a
+  // normal HTTP timeout saw it as a hang.
+  it("is off when the param is absent", () => {
+    expect(wantsRefresh({})).toBe(false);
+    expect(wantsRefresh(undefined)).toBe(false);
+  });
+
+  it("is on only for the exact string \"true\"", () => {
+    expect(wantsRefresh({ refresh: "true" })).toBe(true);
+  });
+
+  it("stays off for anything unexpected — default-deny, not default-allow", () => {
+    for (const v of ["false", "1", "yes", "TRUE", "", "0", null]) {
+      expect(wantsRefresh({ refresh: v })).toBe(false);
     }
   });
 });
