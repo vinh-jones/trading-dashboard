@@ -198,6 +198,40 @@ describe("buildScanPayload — baskets", () => {
   });
 });
 
+describe("buildScanPayload — freshness reporting", () => {
+  const minutesAgo = (m) => new Date(Date.now() - m * 60_000).toISOString();
+
+  it("reports BB data age in minutes", () => {
+    const payload = buildScanPayload({ rows: [strongRow()], bbRefreshedAt: minutesAgo(7) });
+    expect(payload.freshness.bbAgeMinutes).toBe(7);
+  });
+
+  it("flags stale only when the market is open", () => {
+    // 45 minutes old during the session means an ingest is not landing.
+    const open = buildScanPayload({ rows: [], bbRefreshedAt: minutesAgo(45), marketOpen: true });
+    expect(open.freshness.stale).toBe(true);
+
+    // Same age overnight is just last close — correct, not stale.
+    const closed = buildScanPayload({ rows: [], bbRefreshedAt: minutesAgo(45), marketOpen: false });
+    expect(closed.freshness.stale).toBe(false);
+  });
+
+  it("treats unknown age as stale rather than fresh", () => {
+    const payload = buildScanPayload({ rows: [], bbRefreshedAt: null, marketOpen: true });
+    expect(payload.freshness.bbAgeMinutes).toBeNull();
+    expect(payload.freshness.stale).toBe(true);
+  });
+
+  it("surfaces refresh step results so a silent no-op is visible", () => {
+    // A refresh can 200 without writing anything; freshness is the check on it.
+    const refresh = { ran: true, ms: 1200, allOk: false, steps: [{ step: "/api/uw-gex", ok: false, status: 503 }] };
+    const payload = buildScanPayload({ rows: [], refresh, bbRefreshedAt: minutesAgo(90), marketOpen: true });
+    expect(payload.refresh.allOk).toBe(false);
+    expect(payload.refresh.steps[0].step).toBe("/api/uw-gex");
+    expect(payload.freshness.stale).toBe(true);
+  });
+});
+
 describe("buildScanPayload — self-describing payload", () => {
   it("ships a field legend and the caveats an agent needs to read it correctly", () => {
     const payload = buildScanPayload({ rows: [strongRow()] });

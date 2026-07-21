@@ -19,6 +19,15 @@
  *                           signals and a held/not-held flag but no position
  *                           sizes, so a leaked response is not a book.
  *   ?limit=N                cap the candidate list (default: no cap).
+ *   ?refresh=false          skip the forced ingest refresh and read whatever
+ *                           the crons last wrote. Refresh is ON by default.
+ *
+ * FRESHNESS: every hit re-runs the full ingest chain (quotes → bb → uw-iv, and
+ * uw-snapshot → uw-gex) before reading, so a polling agent never sees stale
+ * cron output. This is deliberate and costly — the UW feeds are metered, and
+ * a hit is measured in tens of seconds, not milliseconds. Poll accordingly, or
+ * use ?refresh=false for cheap reads. The `freshness` block reports actual data
+ * age regardless, which is how you catch a refresh that 200s without writing.
  *
  * Auth: `Authorization: Bearer ${CRON_SECRET}` (or APP_SECRET / app_auth
  * cookie) — same helper the uw-*.js endpoints use.
@@ -44,6 +53,8 @@ import { AI_BASKETS } from "../src/config/aiBaskets.js";
 import { isTickerHeld, getAssignedShares, getOpenCSPs, getOpenLEAPs } from "../src/lib/positionSchema.js";
 import { tickerExposure } from "../src/lib/exposure.js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
+import { runRefreshChain } from "./_lib/refreshChain.js";
+import { isMarketOpen } from "./_marketHours.js";
 
 // Bump when the payload shape or a signal definition changes, so a polling
 // agent can detect that its cached understanding is stale.
@@ -121,6 +132,8 @@ export function buildScanPayload({
   wantExposure = false,
   limit = null,
   bbRefreshedAt = null,
+  refresh = null,
+  marketOpen = null,
 }) {
   const filters = preset ? { ...DEFAULT_FILTERS, ...preset.filters } : { ...DEFAULT_FILTERS };
   // Identical ctx construction to RadarTab's.
@@ -216,12 +229,26 @@ export function buildScanPayload({
     return out;
   });
 
+  // Freshness is reported even when a refresh ran — it is how you tell a
+  // successful refresh from one that returned 200 without writing anything.
+  const bbAgeMinutes = bbRefreshedAt
+    ? Math.round((Date.now() - new Date(bbRefreshedAt).getTime()) / 60000)
+    : null;
+
   return {
     ok: true,
     asOf: {
       bbRefreshedAt,
       marketContextAsOf: marketContext?.asOf ?? null,
     },
+    freshness: {
+      bbAgeMinutes,
+      marketOpen,
+      // Cron cadence is 15m during the session, so anything older than ~20m
+      // while the market is open means an ingest is not landing.
+      stale: bbAgeMinutes == null ? true : (marketOpen === true && bbAgeMinutes > 20),
+    },
+    refresh,
     methodology: {
       version:   METHODOLOGY_VERSION,
       explainer: "docs/radar-explainer-for-ai.md",
@@ -259,6 +286,8 @@ export default async function handler(req, res) {
   const presetParam  = req.query?.preset ?? null;
   const wantExposure = String(req.query?.exposure ?? "") === "true";
   const limit        = req.query?.limit ? parseInt(req.query.limit, 10) : null;
+  // Refresh is ON by default; only an explicit ?refresh=false skips it.
+  const wantRefresh  = String(req.query?.refresh ?? "") !== "false";
 
   const preset = resolveCuratedPreset(presetParam);
   if (presetParam && !preset) {
@@ -272,6 +301,14 @@ export default async function handler(req, res) {
 
   try {
     const supabase = getSupabase();
+
+    // Forced refresh of every ingest feeding a Radar row, BEFORE the read.
+    // Default-on: an agent polling this endpoint should never be handed data
+    // left over from the last cron. `?refresh=false` opts out for cheap polls.
+    // Fails soft — a broken feed degrades freshness, never availability.
+    const refresh = wantRefresh
+      ? await runRefreshChain({ secret: process.env.CRON_SECRET })
+      : { ran: false, ms: 0, allOk: true, steps: [] };
 
     const { rows, bbRefreshedAt } = await fetchRadarRows(supabase);
     const tickers = rows.map(r => r.ticker);
@@ -301,6 +338,7 @@ export default async function handler(req, res) {
     const payload = buildScanPayload({
       rows, ivTrendsByTicker, positions, marketContext,
       preset, wantExposure, limit, bbRefreshedAt,
+      refresh, marketOpen: isMarketOpen(),
     });
     payload.asOf.generatedAt = new Date().toISOString();
 
