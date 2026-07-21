@@ -31,6 +31,27 @@ export function getOpenCSPs(positions) {
   return positions?.open_csps ?? [];
 }
 
+/**
+ * Does the book carry any open exposure to `ticker`? This is the single
+ * definition behind the Radar `ownership: held | not_held` filter — shared by
+ * RadarTab and api/agent-scan.js so the server can reproduce a preset's
+ * candidate list exactly.
+ *
+ * NOTE: deliberately checks *top-level* open_leaps only, not the covered LEAPs
+ * nested under assigned_shares (which getOpenLEAPs does include). That mirrors
+ * the pre-existing Radar behaviour — a nested LEAP always sits under an
+ * assigned-share block, which already marks the ticker held, so the two agree
+ * in practice. Widening it here would silently change live preset counts.
+ */
+export function isTickerHeld(positions, ticker) {
+  if (!positions || Array.isArray(positions)) return false;
+  return (
+    getAssignedShares(positions).some(s => s.ticker === ticker) ||
+    getOpenCSPs(positions).some(p => p.ticker === ticker) ||
+    (positions.open_leaps ?? []).some(l => l.ticker === ticker)
+  );
+}
+
 /** Top-level open vertical spreads. Returns [] if absent. */
 export function getOpenSpreads(positions) {
   return positions?.open_spreads ?? [];

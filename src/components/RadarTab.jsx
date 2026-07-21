@@ -8,6 +8,8 @@ import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { rsiBucket, RSI_BUCKET_LABELS, RSI_BUCKET_DEFINITIONS, RSI_BUCKET_COLORS } from "../lib/rsi";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
 import { rowMatchesFilters } from "../lib/radarFilter";
+import { getEarningsDaysAway } from "../lib/radarData";
+import { isTickerHeld } from "../lib/positionSchema";
 import { describeStrikeVsGex } from "../lib/gexLevels";
 import { WhaleFlowPanel } from "./WhaleFlowPanel";
 import { tickerExposure } from "../lib/exposure";
@@ -96,12 +98,7 @@ function getEarningsWarning(ticker, marketContext) {
   return null;
 }
 
-function getEarningsDaysAway(ticker, marketContext) {
-  if (!marketContext?.positions) return null;
-  const ctx = marketContext.positions.find(p => p.ticker === ticker);
-  if (!ctx?.nextEarnings?.date) return null;
-  return Math.ceil((new Date(ctx.nextEarnings.date) - new Date()) / (1000 * 60 * 60 * 24));
-}
+// getEarningsDaysAway now lives in src/lib/radarData.js — shared with api/agent-scan.js.
 
 // ── Plain-English explanations ────────────────────────────────────────────────
 
@@ -1489,7 +1486,7 @@ export function RadarTab({ positions = null, account = null }) {
     for (const p of CURATED_PRESETS) {
       const pf = { ...DEFAULT_FILTERS, ...p.filters };
       const ctx = {
-        isHeld:           (ticker) => getPositionIndicators(ticker, positions).length > 0,
+        isHeld:           (ticker) => isTickerHeld(positions, ticker),
         earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
         ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
         includeSectors:   expandGroupsToSectors(pf.sectors_include),
@@ -1512,7 +1509,7 @@ export function RadarTab({ positions = null, account = null }) {
     // 2. Advanced filters — delegated to the pure, tested helper.
     const f = advancedFilters;
     const ctx = {
-      isHeld:           (ticker) => getPositionIndicators(ticker, positions).length > 0,
+      isHeld:           (ticker) => isTickerHeld(positions, ticker),
       earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
       ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
       includeSectors:   expandGroupsToSectors(f.sectors_include),

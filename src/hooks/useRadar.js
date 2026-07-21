@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { fetchRadarRows } from "../lib/radarData";
 
+// Queries + row merge live in src/lib/radarData.js so api/agent-scan.js builds
+// identical rows server-side. This hook is the React lifecycle wrapper.
 export function useRadar() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,108 +13,10 @@ export function useRadar() {
     // Fire-and-forget BB refresh — idempotent, returns cached rows inside stale window.
     fetch("/api/bb").catch(err => console.warn("[useRadar] BB refresh failed:", err));
 
-    async function fetchData() {
-      try {
-        // 1. Fetch approved wheel universe
-        const { data: universe, error: universeErr } = await supabase
-          .from("wheel_universe")
-          .select("ticker, company, sector, price_category")
-          .eq("list_type", "approved")
-          .order("ticker");
-
-        if (universeErr) throw universeErr;
-
-        const approvedTickers = universe.map((u) => u.ticker);
-
-        // 2. Fetch quotes + fundamentals + UW signals in parallel
-        const [
-          { data: quotes,       error: quotesErr },
-          { data: fundamentals, error: fundErr   },
-          { data: uwSignals,    error: uwErr     },
-        ] = await Promise.all([
-          supabase
-            .from("quotes")
-            .select("symbol, last, prev_close, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, earnings_date, earnings_meta, earnings_refreshed_at, ma_50, ma_200, rsi_14")
-            .in("symbol", approvedTickers),
-          supabase
-            .from("fundamentals")
-            .select("ticker, pe_ttm, pe_annual, eps_ttm, beta")
-            .in("ticker", approvedTickers),
-          supabase
-            .from("uw_signals")
-            .select("ticker, gamma_env, flow_sentiment, flow_ema, flow_streak, flow_tape_ema, gex_env, gex_support, gex_resistance, gex_air_pocket")
-            .in("ticker", approvedTickers),
-        ]);
-
-        if (quotesErr) throw quotesErr;
-        if (fundErr) console.warn("[useRadar] fundamentals fetch failed:", fundErr.message);
-        // UW signals are optional — null/empty just means the score modifiers stay no-ops.
-        if (uwErr) console.warn("[useRadar] uw_signals fetch failed:", uwErr.message);
-
-        // 3. Build lookup maps
-        const quotesMap = {};
-        for (const q of quotes) {
-          quotesMap[q.symbol] = q;
-        }
-        const fundMap = {};
-        for (const f of (fundamentals || [])) {
-          fundMap[f.ticker] = f;
-        }
-        const uwMap = {};
-        for (const u of (uwSignals || [])) {
-          uwMap[u.ticker] = u;
-        }
-
-        // 4. Merge universe + quotes + fundamentals
-        const merged = universe.map((u) => {
-          const q  = quotesMap[u.ticker] || {};
-          const f  = fundMap[u.ticker]   || {};
-          const uw = uwMap[u.ticker]     || {};
-          return {
-            ticker:                u.ticker,
-            company:               u.company,
-            sector:                u.sector,
-            price_category:        u.price_category,
-            last:                  q.last            ?? null,
-            prev_close:            q.prev_close      ?? null,
-            iv:                    q.iv              ?? null,
-            iv_rank:               q.iv_rank         ?? null,
-            bb_position:           q.bb_position     ?? null,
-            bb_upper:              q.bb_upper        ?? null,
-            bb_lower:              q.bb_lower        ?? null,
-            bb_sma20:              q.bb_sma20        ?? null,
-            bb_refreshed_at:       q.bb_refreshed_at ?? null,
-            earnings_date:         q.earnings_date   ?? null,
-            earnings_meta:         q.earnings_meta   ?? null,
-            earnings_refreshed_at: q.earnings_refreshed_at ?? null,
-            ma_50:                 q.ma_50           ?? null,
-            ma_200:                q.ma_200          ?? null,
-            rsi_14:                q.rsi_14          ?? null,
-            pe_ttm:                f.pe_ttm           ?? null,
-            pe_annual:             f.pe_annual        ?? null,
-            eps_ttm:               f.eps_ttm          ?? null,
-            beta:                  f.beta             ?? null,
-            gamma_env:             uw.gamma_env       ?? null,
-            flow_sentiment:        uw.flow_sentiment  ?? null,
-            flow_ema:              uw.flow_ema        ?? null,
-            flow_streak:           uw.flow_streak     ?? null,
-            flow_tape_ema:         uw.flow_tape_ema   ?? null,
-            gex_env:               uw.gex_env         ?? null,
-            gex_support:           uw.gex_support     ?? null,
-            gex_resistance:        uw.gex_resistance  ?? null,
-            gex_air_pocket:        uw.gex_air_pocket  ?? null,
-          };
-        });
-
-        setRows(merged);
-      } catch (err) {
-        setError(err?.message ?? String(err));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
+    fetchRadarRows(supabase)
+      .then(({ rows: merged }) => setRows(merged))
+      .catch(err => setError(err?.message ?? String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
   return { rows, loading, error };
