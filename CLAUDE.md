@@ -28,6 +28,19 @@ Never consider a change "done" or report it to the user until the push has compl
 
 After creating a PR, merge it immediately (no need to ask).
 
+## Data model: how CCs/CSPs are stored
+
+The `positions` table stores **both CSPs and covered calls under `position_type = 'open_csp'`**, distinguished only by the `type` column (`'CSP'` vs `'CC'`). There is **no `open_cc` value**. Consequences:
+
+- **Filter on `type`, never `position_type` alone, for the CC/CSP split.** Filtering `position_type` for CCs returns empty; filtering it for CSPs silently includes CCs. Every consumer already uses the compound filter `position_type === 'open_csp' && type === 'CC'` (see `reshapePositions.js`, `snapshot.js`, `computeForecastV2.js`, `computeAssignedShareIncome.js`). This is deliberate, not a bug.
+- **Do NOT "fix" the sync to emit `open_cc`.** That storage scheme is load-bearing — changing it would break all of the consumers above (they'd stop seeing any CCs). If ad-hoc SQL needs a clean split, add a read-only view, don't touch the write path.
+
+**The two position tables use different vocabularies** — don't assume they match:
+- `positions` → `position_type ∈ {open_csp, open_leaps, open_spread, assigned_shares}` **plus** a `type` column (`CSP`/`CC`/`LEAPS`/`Spread`/`Shares`).
+- `position_daily_state` → `position_type ∈ {csp, cc, ...}` (lowercase, no `open_` prefix) and **no `type` column**.
+
+`position_daily_state.premium_at_open` is a faithful per-row copy of `positions.premium_collected`. On a **roll day** the same underlying position can be briefly double-listed (old bought-back leg + new leg), so two rows may share one premium for that one snapshot. Known and low-impact; not a field-reliability problem.
+
 ## Timezones
 
 The user is on **Pacific Time (west coast)**.
