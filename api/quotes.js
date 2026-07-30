@@ -4,10 +4,11 @@
  * GET /api/quotes
  *
  * Returns cached quotes for all open positions (equities + options).
- * If the cache is stale (>30min) AND market is currently open, triggers
- * a refresh from Public.com before returning.
+ * If the live option marks are stale (>15min) AND market is currently open,
+ * triggers a refresh from Public.com before returning.
  *
- * No cron needed — lazy refresh on page load.
+ * Refreshed by the every-15-min market-hours cron (vercel.json) and lazily on
+ * page load. Freshness is measured from OPTION rows only — see latestOptionQuoteAge.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -323,6 +324,33 @@ async function refreshQuotes(supabase) {
   return upsertRows;
 }
 
+// ── Freshness gate ────────────────────────────────────────────────────────────
+
+/**
+ * Age of the freshest LIVE option mark this endpoint owns.
+ *
+ * `quotes.refreshed_at` is a shared column — api/bb.js (every 15 min) and
+ * api/uw-iv.js (every 30 min) stamp it on EQUITY rows all session long. Reading
+ * the whole-table max would therefore keep the gate perpetually "fresh" and
+ * refreshQuotes() would never run intraday (options froze at the 9:30 open).
+ * Only api/quotes.js writes OPTION rows, so their max refreshed_at is the true
+ * freshness of the live Public.com marks. (bb.js gates on its own
+ * bb_refreshed_at column for the same reason.)
+ */
+export async function latestOptionQuoteAge(supabase, nowMs = Date.now()) {
+  const { data: latest } = await supabase
+    .from("quotes")
+    .select("refreshed_at")
+    .eq("instrument_type", "OPTION")
+    .order("refreshed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const lastRefresh = latest?.refreshed_at ? new Date(latest.refreshed_at) : null;
+  const ageMs       = lastRefresh ? nowMs - lastRefresh.getTime() : Infinity;
+  return { lastRefresh, ageMs };
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -333,16 +361,8 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    // Check cache freshness
-    const { data: latest } = await supabase
-      .from("quotes")
-      .select("refreshed_at")
-      .order("refreshed_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    const lastRefresh  = latest?.refreshed_at ? new Date(latest.refreshed_at) : null;
-    const ageMs        = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
+    // Freshness gate measured from OPTION rows only — see latestOptionQuoteAge.
+    const { lastRefresh, ageMs } = await latestOptionQuoteAge(supabase);
 
     // ?force=1 bypasses market hours + staleness checks (requires X-Ingest-Secret)
     const forceRequested = req.query.force === "1";
