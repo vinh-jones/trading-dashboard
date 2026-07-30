@@ -20,7 +20,12 @@ import { isMarketOpenExtended as isMarketOpen } from "./_marketHours.js";
 
 const PUBLIC_COM_BASE  = "https://api.public.com";
 const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
-const STALE_MS         = 15 * 60 * 1000; // 15 minutes — matches the intraday cron cadence
+// 13 min, not 15: refreshQuotes() stamps quotes_refreshed_at a few seconds-to-a-
+// minute after each */15 cron boundary (fetch latency), so at the next boundary
+// the age is a hair under 15 min. A 15-min threshold would skip every other
+// cycle and stretch the effective cadence to ~30 min. 13 min leaves headroom so
+// each cron cycle actually refreshes.
+export const STALE_MS  = 13 * 60 * 1000;
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
@@ -353,6 +358,11 @@ export async function latestQuoteRefreshAge(supabase, nowMs = Date.now()) {
   return { lastRefresh, ageMs };
 }
 
+/** Gate decision: refresh when forced, or when the marks are stale and the market is open. */
+export function shouldRefresh(ageMs, { marketOpen, forced = false }) {
+  return forced || (ageMs > STALE_MS && marketOpen);
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -372,7 +382,7 @@ export default async function handler(req, res) {
     const forceAuthed    = forceSecret && req.headers["x-ingest-secret"] === forceSecret;
     const forced         = forceRequested && forceAuthed;
 
-    const needsRefresh = forced || (ageMs > STALE_MS && isMarketOpen());
+    const needsRefresh = shouldRefresh(ageMs, { marketOpen: isMarketOpen(), forced });
 
     if (needsRefresh) {
       await refreshQuotes(supabase);
