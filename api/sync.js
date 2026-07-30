@@ -30,6 +30,18 @@ function getSupabase() {
 
 const JOURNAL_CUTOFF = "2026-03-01";
 
+/**
+ * A synthetic share ACQUISITION (direct buy, or the assigned-shares placeholder)
+ * is written to the trades table with close_date = open_date so it shows up in
+ * the lifespan UI — but it is not a close. The assigned_shares lots loop journals
+ * these as "Shares — Opened", so the trades→journal loop must skip them to avoid
+ * emitting a misleading duplicate "Shares $X — Closed MM/DD" card. Genuine share
+ * SALES (subtype 'Sold') are real closes and keep their card.
+ */
+export function isSyntheticShareAcquisition(trade) {
+  return trade.type === "Shares" && trade.subtype === "Assigned";
+}
+
 function buildTitle(trade) {
   const strikeStr = trade.strike ? ` $${trade.strike}` : "";
   const keptStr   = trade.kept_pct != null ? ` (${Math.round(trade.kept_pct * 100)}%)` : "";
@@ -49,7 +61,7 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
     const TODAY = new Date().toISOString().slice(0, 10);
-    const { tradesCount, positionsCount } = await syncFromSheets(supabase);
+    const { tradesCount, positionsCount, tradesMerged } = await syncFromSheets(supabase);
 
     // Patch account_snapshots with live VIX — syncFromSheets doesn't have it
     // (sheets don't carry VIX). Non-blocking: a fetch failure here never fails the sync.
@@ -93,6 +105,10 @@ export default async function handler(req, res) {
     const toUpdate = []; // entries whose entry_date/title drifted (e.g. early exit filled in later)
 
     for (const t of trades || []) {
+      // Share acquisitions carry close_date = open_date but aren't closes; the
+      // assigned_shares lots loop already journals them as "Shares — Opened".
+      if (isSyntheticShareAcquisition(t)) continue;
+
       const entryDate = t.close_date || t.open_date;
       const title = buildTitle(t);
 
@@ -263,6 +279,7 @@ export default async function handler(req, res) {
       ok: true,
       tradesCount,
       positionsCount,
+      tradesMerged,
       journalCreated: toInsert.length,
       journalUpdated: toUpdate.length,
       forecastRefresh,
