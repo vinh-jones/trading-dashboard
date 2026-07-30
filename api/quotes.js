@@ -8,7 +8,8 @@
  * triggers a refresh from Public.com before returning.
  *
  * Refreshed by the every-15-min market-hours cron (vercel.json) and lazily on
- * page load. Freshness is measured from OPTION rows only — see latestOptionQuoteAge.
+ * page load. Freshness is measured from the dedicated quotes_refreshed_at
+ * column (stamped only here) — see latestQuoteRefreshAge.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -276,7 +277,8 @@ async function refreshQuotes(supabase) {
         ask,
         mid,
         delta:           null,
-        refreshed_at:    now,
+        refreshed_at:       now,
+        quotes_refreshed_at: now,
       };
     });
 
@@ -307,7 +309,8 @@ async function refreshQuotes(supabase) {
           instrument_type: "OPTION",
           iv:              parseFloat(g.greeks.impliedVolatility),
           delta:           g.greeks.delta != null ? parseFloat(g.greeks.delta) : null,
-          refreshed_at:    now,
+          refreshed_at:       now,
+          quotes_refreshed_at: now,
         }));
 
       if (greeksUpdates.length) {
@@ -327,26 +330,25 @@ async function refreshQuotes(supabase) {
 // ── Freshness gate ────────────────────────────────────────────────────────────
 
 /**
- * Age of the freshest LIVE option mark this endpoint owns.
+ * Age of the freshest LIVE Public.com mark this endpoint has written.
  *
  * `quotes.refreshed_at` is a shared column — api/bb.js (every 15 min) and
  * api/uw-iv.js (every 30 min) stamp it on EQUITY rows all session long. Reading
- * the whole-table max would therefore keep the gate perpetually "fresh" and
- * refreshQuotes() would never run intraday (options froze at the 9:30 open).
- * Only api/quotes.js writes OPTION rows, so their max refreshed_at is the true
- * freshness of the live Public.com marks. (bb.js gates on its own
- * bb_refreshed_at column for the same reason.)
+ * it here would keep the gate perpetually "fresh" and refreshQuotes() would
+ * never run intraday (marks froze at the 9:30 open). So api/quotes.js owns a
+ * dedicated `quotes_refreshed_at` column — stamped only by refreshQuotes() — and
+ * gates on that, exactly as bb.js gates on its own bb_refreshed_at column.
  */
-export async function latestOptionQuoteAge(supabase, nowMs = Date.now()) {
+export async function latestQuoteRefreshAge(supabase, nowMs = Date.now()) {
   const { data: latest } = await supabase
     .from("quotes")
-    .select("refreshed_at")
-    .eq("instrument_type", "OPTION")
-    .order("refreshed_at", { ascending: false })
+    .select("quotes_refreshed_at")
+    .not("quotes_refreshed_at", "is", null)
+    .order("quotes_refreshed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const lastRefresh = latest?.refreshed_at ? new Date(latest.refreshed_at) : null;
+  const lastRefresh = latest?.quotes_refreshed_at ? new Date(latest.quotes_refreshed_at) : null;
   const ageMs       = lastRefresh ? nowMs - lastRefresh.getTime() : Infinity;
   return { lastRefresh, ageMs };
 }
@@ -361,8 +363,8 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    // Freshness gate measured from OPTION rows only — see latestOptionQuoteAge.
-    const { lastRefresh, ageMs } = await latestOptionQuoteAge(supabase);
+    // Freshness gate measured from quotes_refreshed_at only — see latestQuoteRefreshAge.
+    const { lastRefresh, ageMs } = await latestQuoteRefreshAge(supabase);
 
     // ?force=1 bypasses market hours + staleness checks (requires X-Ingest-Secret)
     const forceRequested = req.query.force === "1";

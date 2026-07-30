@@ -1,57 +1,62 @@
 import { describe, it, expect } from "vitest";
-import { latestOptionQuoteAge } from "../quotes.js";
+import { latestQuoteRefreshAge } from "../quotes.js";
 
 // Regression guard for the "option marks freeze at the open" bug.
 //
 // `quotes.refreshed_at` is a SHARED column: api/bb.js (every 15 min) and
-// api/uw-iv.js (every 30 min) stamp it on EQUITY rows all session long. The
-// /api/quotes refresh gate must therefore measure freshness from OPTION rows
-// only — the rows this endpoint alone writes — or the whole-table max stays
-// perpetually fresh and refreshQuotes() never runs intraday.
+// api/uw-iv.js (every 30 min) stamp it on EQUITY rows all session long, so it
+// can't tell whether the live Public.com fetch actually ran. api/quotes.js owns
+// a dedicated `quotes_refreshed_at` column (mirroring bb.js's bb_refreshed_at)
+// and the refresh gate must measure freshness from THAT column only.
 
-// Minimal fake of the supabase-js query builder: records .eq() filters and
-// returns the freshest row that matches them (mirrors .order().limit(1)).
+// Minimal fake of the supabase-js query builder: honors .eq()/.not() filters,
+// sorts by the .order() column, and returns the freshest matching row.
 function fakeSupabaseWith(rows) {
-  const filters = [];
+  const eqs = [];
+  const notNulls = [];
+  let orderCol = null;
   const builder = {
     from() { return builder; },
     select() { return builder; },
-    eq(col, val) { filters.push([col, val]); return builder; },
-    order() { return builder; },
+    eq(col, val) { eqs.push([col, val]); return builder; },
+    not(col, op, val) { if (op === "is" && val === null) notNulls.push(col); return builder; },
+    order(col) { orderCol = col; return builder; },
     limit() { return builder; },
     async maybeSingle() {
       const matched = rows
-        .filter(r => filters.every(([c, v]) => r[c] === v))
-        .sort((a, b) => new Date(b.refreshed_at) - new Date(a.refreshed_at));
+        .filter(r => eqs.every(([c, v]) => r[c] === v))
+        .filter(r => notNulls.every(c => r[c] != null))
+        .sort((a, b) => new Date(b[orderCol]) - new Date(a[orderCol]));
       return { data: matched[0] ?? null, error: null };
     },
   };
   return builder;
 }
 
-describe("latestOptionQuoteAge — gate reads OPTION-row freshness, not the shared max", () => {
-  it("reports the stale OPTION age even when an EQUITY row was just refreshed", async () => {
+describe("latestQuoteRefreshAge — gate reads the dedicated quotes_refreshed_at column", () => {
+  it("reports the stale live-marks age even when bb.js just stamped refreshed_at", async () => {
     const now = new Date("2026-07-30T14:15:00Z").getTime();
     const supabase = fakeSupabaseWith([
-      // bb.js stamped refreshed_at on this equity row 1 min ago…
-      { instrument_type: "EQUITY", refreshed_at: "2026-07-30T14:14:00Z" },
-      // …but the live option mark is 45 min stale (frozen since the 9:30 open).
-      { instrument_type: "OPTION", refreshed_at: "2026-07-30T13:30:00Z" },
+      // bb.js stamped the shared refreshed_at fresh 1 min ago, but never touches
+      // quotes_refreshed_at (leaves it null on equity rows).
+      { instrument_type: "EQUITY", refreshed_at: "2026-07-30T14:14:00Z", quotes_refreshed_at: null },
+      // quotes.js last wrote the live option mark 45 min ago (the 9:30 open).
+      { instrument_type: "OPTION", refreshed_at: "2026-07-30T13:30:00Z", quotes_refreshed_at: "2026-07-30T13:30:00Z" },
     ]);
 
-    const { ageMs } = await latestOptionQuoteAge(supabase, now);
+    const { ageMs } = await latestQuoteRefreshAge(supabase, now);
 
-    // Must reflect the 45-min-stale OPTION row, NOT the 1-min-fresh EQUITY row.
+    // Must reflect the 45-min-stale quotes_refreshed_at, NOT the fresh refreshed_at.
     expect(ageMs).toBe(45 * 60 * 1000);
   });
 
-  it("returns Infinity age when the portfolio holds no options", async () => {
+  it("returns Infinity age when no row has been stamped by quotes.js yet", async () => {
     const now = Date.now();
     const supabase = fakeSupabaseWith([
-      { instrument_type: "EQUITY", refreshed_at: new Date(now).toISOString() },
+      { instrument_type: "EQUITY", refreshed_at: new Date(now).toISOString(), quotes_refreshed_at: null },
     ]);
 
-    const { ageMs, lastRefresh } = await latestOptionQuoteAge(supabase, now);
+    const { ageMs, lastRefresh } = await latestQuoteRefreshAge(supabase, now);
 
     expect(ageMs).toBe(Infinity);
     expect(lastRefresh).toBeNull();
