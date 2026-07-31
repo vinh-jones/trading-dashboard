@@ -140,10 +140,20 @@ This is a mechanical move with no behavior change, covered by
 
 ### Supporting change: `normalizeTrade`
 
-`src/lib/trading.js:42` drops the ISO `close_date`, keeping only `closeDate` (a Date
-object) and `close` (an `MM/DD` display string). `detectLifespans` sorts and compares
-on the ISO string. Add `close_date: t.close_date ?? null` to the returned object —
-purely additive, no consumer affected.
+`src/lib/trading.js:42` is the browser's trade shape. It drops two fields
+`detectLifespans` needs:
+
+- **`close_date`** — it keeps only `closeDate` (a Date object) and `close` (an `MM/DD`
+  display string), but chain detection sorts and compares on the ISO string.
+- **`premium_collected`** — it is renamed to `premium`, but chain detection and the
+  ledger both read `premium_collected`.
+
+Both are added back as `close_date: t.close_date ?? null` and
+`premium_collected: t.premium_collected ?? 0`. Purely additive. The `?? 0` matches
+what `premium` already does, which matters because `src/lib/cohorts.js:47` and
+`src/lib/strategyBasket.js:75` both read `trade.premium_collected ?? trade.premium ?? 0`
+and accept either shape — identical values on both keys leaves them unchanged. A
+regression test pins this.
 
 ### New module: `src/lib/incomeRecognition.js`
 
@@ -191,6 +201,36 @@ This is a running-average release. Properties that make it the right choice:
   (`api/_lib/lifespan.js:234`), so they dilute the pool correctly with no
   special-casing.
 - It matches the blended-basis framing the lifespan model already uses.
+
+**Only chain-participating assignments are deferred.** `detectLifespans` applies
+`DATA_QUALITY_THRESHOLD` (2026-01-01) and drops pre-cutoff trades for tickers that
+were fully closed before the cutoff (`api/_lib/lifespan.js:137`). A `CSP/Assigned`
+row excluded on that basis never enters a chain, so it has no disposal event to
+release against. Deferring it would strand its premium in neither basis and silently
+break the invariant.
+
+So the deferral set is built from the chains, not from the trade filter: only
+`CSP/Assigned` rows whose `id` appears as an `assignment_events[].triggering_csp_id`
+in a detected chain are deferred. Everything else recognizes on `close_date` in both
+bases, exactly as today.
+
+**Pool values come from the trade rows.** The pool adds `premium_collected` looked up
+from the source trade row rather than the chain's `csp_premium_collected` copy, so the
+amount removed from distributable and the amount added to the pool are the same number
+from the same place, and the invariant holds by construction rather than by the two
+values happening to agree. Direct `Shares/Assigned` purchases contribute shares only,
+never premium — that is what keeps share-sale P&L out of the pool.
+
+**A negative CSP-assignment premium is deferred like any other**, with no special
+casing. A CSP rolled at a loss and then assigned carries that loss into the share
+basis, which is the correct treatment.
+
+**Same-date ordering.** `detectLifespans` exposes assignments, partial dispositions,
+and the exit as three separate arrays rather than one ordered stream, so the ledger
+re-sorts events by date and puts assignments before disposals on a tie. This differs
+from `tradeSortPriority`, which orders CC-assignment ahead of CSP-assignment, but it
+cannot change any monthly figure — both events fall in the same month — and it keeps
+the pool from going negative on a same-day acquire-and-dispose.
 
 **Rounding.** Release amounts round to cents. The final disposal that closes a chain
 takes the residual, so a chain's releases always sum exactly to its deferred total and
