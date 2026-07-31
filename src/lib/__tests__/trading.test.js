@@ -7,6 +7,7 @@ import {
   calcDTE,
   allocColor,
   computeEodMetadata,
+  normalizeTrade,
 } from "../trading";
 import { theme } from "../theme";
 
@@ -201,5 +202,49 @@ describe("computeEodMetadata", () => {
     });
     expect(m.activity).toEqual({ closed: [], opened: [] });
     expect(m.csp_snapshot).toEqual([]);
+  });
+});
+
+const rawTrade = {
+  id: "t1",
+  ticker: "HOOD",
+  type: "CSP",
+  subtype: "Assigned",
+  strike: 85,
+  contracts: 2,
+  open_date: "2026-06-02",
+  close_date: "2026-06-20",
+  expiry_date: "2026-06-20",
+  days_held: 18,
+  premium_collected: 640,
+  kept_pct: null,
+  capital_fronted: 17000,
+  description: null,
+};
+
+describe("normalizeTrade — raw passthrough fields", () => {
+  it("keeps the ISO close_date alongside the Date object and display string", () => {
+    const t = normalizeTrade(rawTrade);
+    expect(t.close_date).toBe("2026-06-20");
+    expect(t.close).toBe("06/20");
+    expect(t.closeDate).toBeInstanceOf(Date);
+  });
+
+  it("keeps premium_collected identical to premium", () => {
+    const t = normalizeTrade(rawTrade);
+    expect(t.premium_collected).toBe(640);
+    expect(t.premium_collected).toBe(t.premium);
+  });
+
+  it("defaults both premium keys to 0 when the column is null", () => {
+    const t = normalizeTrade({ ...rawTrade, premium_collected: null });
+    expect(t.premium).toBe(0);
+    expect(t.premium_collected).toBe(0);
+  });
+
+  it("nulls close_date when the column is null", () => {
+    const t = normalizeTrade({ ...rawTrade, close_date: null });
+    expect(t.close_date).toBeNull();
+    expect(t.closeDate).toBeNull();
   });
 });

@@ -55,8 +55,10 @@ export function normalizeTrade(t) {
     close: fmtDate(t.close_date),
     expiry: fmtDate(t.expiry_date),  // option expiration date (separate from close)
     closeDate,               // Date object — used by calendar
+    close_date: t.close_date ?? null,   // ISO string — chain detection sorts on this
     days: t.days_held ?? null,
     premium: t.premium_collected ?? 0,
+    premium_collected: t.premium_collected ?? 0,  // raw-shape alias; must stay === premium
     kept: keptStr,
     kept_pct: t.kept_pct ?? null,   // numeric fraction (kept is the display string); cohort/basket resolution needs this
     fronted: t.capital_fronted ?? null,
