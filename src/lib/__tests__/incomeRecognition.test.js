@@ -66,3 +66,69 @@ describe("buildRecognitionLedger — booked basis", () => {
     expect(ledger.openChains).toEqual([]);
   });
 });
+
+// A CSP assigned on `date` for `contracts` contracts, collecting `premium`.
+const assign = (over) =>
+  trade({ type: "CSP", subtype: "Assigned", ...over });
+
+// A share disposal of `contracts` SHARES on `date`, realizing `premium` P&L.
+const sell = (over) =>
+  trade({ type: "Shares", subtype: "Sold", ...over });
+
+describe("buildRecognitionLedger — deferral and release", () => {
+  it("defers premium while the shares are still held", () => {
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-06-19", contracts: 1, strike: 100, premium_collected: 400 }),
+    ]);
+    expect(monthRow(ledger, "2026-06").booked).toBe(400);
+    expect(monthRow(ledger, "2026-06").distributable).toBe(0);
+    expect(monthRow(ledger, "2026-06").deferredAdded).toBe(400);
+    expect(ledger.outstandingDeferred).toBe(400);
+  });
+
+  it("nets to zero change when assignment and disposal share a month", () => {
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-06-05", contracts: 1, strike: 100, premium_collected: 400 }),
+      sell({ id: "s1", close_date: "2026-06-26", contracts: 100, premium_collected: 250 }),
+    ]);
+    const june = monthRow(ledger, "2026-06");
+    expect(june.booked).toBe(650);
+    expect(june.distributable).toBe(650);
+    expect(june.delta).toBe(0);
+    expect(ledger.outstandingDeferred).toBe(0);
+  });
+
+  it("moves premium from the assignment month to the disposal month", () => {
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-05-15", contracts: 1, strike: 100, premium_collected: 400 }),
+      sell({ id: "s1", close_date: "2026-07-10", contracts: 100, premium_collected: 250 }),
+    ]);
+    expect(monthRow(ledger, "2026-05").booked).toBe(400);
+    expect(monthRow(ledger, "2026-05").distributable).toBe(0);
+    expect(monthRow(ledger, "2026-07").booked).toBe(250);
+    expect(monthRow(ledger, "2026-07").distributable).toBe(650);
+    expect(monthRow(ledger, "2026-07").deferredReleased).toBe(400);
+    expect(ledger.outstandingDeferred).toBe(0);
+  });
+
+  it("carries outstandingAtMonthEnd across the gap months", () => {
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-05-15", contracts: 1, strike: 100, premium_collected: 400 }),
+      trade({ id: "x", close_date: "2026-06-10", premium_collected: 100 }),
+      sell({ id: "s1", close_date: "2026-07-10", contracts: 100, premium_collected: 250 }),
+    ]);
+    expect(monthRow(ledger, "2026-05").outstandingAtMonthEnd).toBe(400);
+    expect(monthRow(ledger, "2026-06").outstandingAtMonthEnd).toBe(400);
+    expect(monthRow(ledger, "2026-07").outstandingAtMonthEnd).toBe(0);
+  });
+
+  it("keeps chains on different tickers independent", () => {
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", ticker: "AAA", close_date: "2026-05-15", contracts: 1, strike: 100, premium_collected: 400 }),
+      assign({ id: "a2", ticker: "BBB", close_date: "2026-05-16", contracts: 1, strike: 50, premium_collected: 200 }),
+      sell({ id: "s1", ticker: "AAA", close_date: "2026-06-10", contracts: 100, premium_collected: 90 }),
+    ]);
+    expect(monthRow(ledger, "2026-06").deferredReleased).toBe(400);
+    expect(ledger.outstandingDeferred).toBe(200);
+  });
+});

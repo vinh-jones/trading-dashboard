@@ -42,6 +42,94 @@ function emptyMonth(month) {
 }
 
 /**
+ * Walk every ticker's lifespan chains, carrying a running premium pool and
+ * share count. Returns the set of CSP-assignment trade ids that entered a
+ * chain (and are therefore deferred), the dated release amounts, and the
+ * still-open chains holding the outstanding balance.
+ *
+ * Only chain-participating assignments are deferred. detectLifespans drops
+ * pre-DATA_QUALITY_THRESHOLD trades for tickers fully closed before the
+ * cutoff; such a CSP has no disposal to release against, so deferring it
+ * would strand its premium in neither basis and break the invariant.
+ */
+function walkChains(rows) {
+  const deferredIds = new Set();
+  const releases = [];
+  const openChains = [];
+
+  const tradeById = new Map();
+  for (const t of rows) if (t.id != null) tradeById.set(t.id, t);
+
+  const byTicker = new Map();
+  for (const t of rows) {
+    if (!t.ticker) continue;
+    if (!byTicker.has(t.ticker)) byTicker.set(t.ticker, []);
+    byTicker.get(t.ticker).push(t);
+  }
+
+  for (const [ticker, tickerTrades] of byTicker) {
+    for (const chain of detectLifespans(ticker, tickerTrades)) {
+      // detectLifespans exposes acquisitions and disposals as separate arrays
+      // rather than one ordered stream, so rebuild the stream. On a same-date
+      // tie acquisitions go first: you cannot dispose shares you have not
+      // acquired, and both events land in the same month either way, so the
+      // monthly ledger is unaffected by the choice.
+      const events = [];
+      for (const a of chain.assignment_events) {
+        events.push({ date: a.date, kind: "assign", shares: a.shares_added, id: a.triggering_csp_id });
+      }
+      for (const d of chain.partial_dispositions) {
+        events.push({ date: d.date, kind: "dispose", shares: d.shares });
+      }
+      if (chain.exit_event) {
+        events.push({ date: chain.exit_event.date, kind: "dispose", shares: chain.exit_event.shares_disposed });
+      }
+      events.sort((a, b) => {
+        const d = (a.date ?? "").localeCompare(b.date ?? "");
+        if (d !== 0) return d;
+        return (a.kind === "assign" ? 0 : 1) - (b.kind === "assign" ? 0 : 1);
+      });
+
+      let pool = 0;
+      let sharesHeld = 0;
+      let firstAssignmentDate = null;
+
+      for (const ev of events) {
+        if (ev.kind === "assign") {
+          if (!firstAssignmentDate) firstAssignmentDate = ev.date;
+          const src = ev.id != null ? tradeById.get(ev.id) : null;
+          // Only a CSP assignment contributes premium. A direct Shares/Assigned
+          // purchase adds shares only — its premium_collected is share P&L, not
+          // option premium, and must never enter the pool.
+          if (src && src.type === "CSP" && src.subtype === "Assigned") {
+            pool = round2(pool + (Number(src.premium_collected) || 0));
+            deferredIds.add(src.id);
+          }
+          sharesHeld += ev.shares || 0;
+        } else {
+          if (sharesHeld <= 0) continue;
+          const disposed = Math.min(ev.shares || 0, sharesHeld);
+          if (disposed <= 0) continue;
+          // The disposal that empties the chain takes the whole remaining pool,
+          // so releases always sum exactly to the deferred total and no penny
+          // drift leaks into the invariant.
+          const amount = disposed >= sharesHeld ? pool : round2(pool * (disposed / sharesHeld));
+          if (amount !== 0) releases.push({ date: ev.date, amount });
+          pool = round2(pool - amount);
+          sharesHeld -= disposed;
+        }
+      }
+
+      if (pool !== 0 || sharesHeld > 0) {
+        openChains.push({ ticker, firstAssignmentDate, sharesHeld, deferredRemaining: pool });
+      }
+    }
+  }
+
+  return { deferredIds, releases, openChains };
+}
+
+/**
  * @param {Array<object>} trades closed-trade rows. Accepts raw DB rows or
  *        normalizeTrade output — both carry close_date and premium_collected.
  * @returns {{
@@ -55,11 +143,7 @@ function emptyMonth(month) {
 export function buildRecognitionLedger(trades) {
   const rows = Array.isArray(trades) ? trades : [];
 
-  // Deferral is added in Task 4. For now every trade recognizes on close_date
-  // in both bases.
-  const deferredIds = new Set();
-  const releases = [];
-  const openChains = [];
+  const { deferredIds, releases, openChains } = walkChains(rows);
 
   const byMonth = new Map();
   const monthRow = (m) => {
