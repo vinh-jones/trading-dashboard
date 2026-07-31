@@ -13,7 +13,7 @@
  *          getRecentCcStrike, addCalendarDays, subtractCalendarDays,
  *          humanizeDuration, computeTrailingCcRate)
  *
- * Private (not exported): computeVerdict, round3, round4, round6,
+ * Private (not exported): computeVerdict, round2, round3, round4, round6,
  *   daysBetween, daysBetweenDates, clusterLifespanDecisions
  */
 
@@ -22,7 +22,6 @@ import {
   DATA_QUALITY_THRESHOLD,
   detectLifespans,
   computeBlendedBasis,
-  round2,
 } from "../../src/lib/lifespanChains.js";
 
 export { DATA_QUALITY_THRESHOLD, detectLifespans };
@@ -484,6 +483,7 @@ function daysBetweenDates(d1, d2) {
   );
 }
 
+function round2(n) { return +n.toFixed(2); }
 function round3(n) { return +n.toFixed(3); }
 function round4(n) { return +n.toFixed(4); }
 function round6(n) { return +n.toFixed(6); }

@@ -10,10 +10,12 @@
  * detectLifespans and DATA_QUALITY_THRESHOLD, so server consumers
  * (position-lifespan, ticker-detail, eod-snapshot) are unaffected.
  *
- * Keep this module dependency-free. Anything imported here ends up in the
- * client bundle.
+ * Keep this module dependency-free. It is already in the client bundle by
+ * design — the constraint is about what else would ride along: any import
+ * here drags its transitive weight into every consumer, and re-coupling this
+ * leaf back into the app graph defeats the point of extracting it.
  *
- * Exports: DATA_QUALITY_THRESHOLD, detectLifespans, computeBlendedBasis, round2
+ * Exports: DATA_QUALITY_THRESHOLD, detectLifespans, computeBlendedBasis
  */
 
 export const DATA_QUALITY_THRESHOLD = "2026-01-01";
@@ -34,8 +36,10 @@ function tradeSortPriority(trade) {
 }
 
 // Share count from a lot description when the structured `contracts` column is
-// blank. Mirror of parseShareCountFromDesc in lib/parseSheets.js — duplicated to
-// avoid a frontend/backend/serverless import crossing. Handles both formats:
+// blank. Near-identical to parseShareCount in src/lib/trading.js — duplicated
+// rather than imported so this module stays a dependency-free graph leaf;
+// importing from trading.js would transitively pull in theme.js, vixBand.js,
+// and positionSchema.js. Handles both formats:
 //   "Shares ($121, 300)"  → 300      "Shares (400, $80.21)" → 400
 // A count-less adjustment row like "Shares ($38)" yields 0 (a P&L-only row that
 // must NOT move share count — see the NULL-contracts rule below).
@@ -333,4 +337,4 @@ export function computeBlendedBasis(assignmentEvents) {
   return totalShares > 0 ? totalCapital / totalShares : 0;
 }
 
-export function round2(n) { return +n.toFixed(2); }
+function round2(n) { return +n.toFixed(2); }
