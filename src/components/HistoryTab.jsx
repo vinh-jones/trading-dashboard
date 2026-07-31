@@ -8,6 +8,8 @@ import { computePortfolioBaseline, computeFamiliarity } from "../lib/earningsEng
 import { resolvePreset } from "../lib/resolvePreset";
 import { DateRangePicker } from "./DateRangePicker";
 import { IncomeBreakdown } from "./IncomeBreakdown";
+import { RecognitionLedger } from "./RecognitionLedger";
+import { buildRecognitionLedger } from "../lib/incomeRecognition";
 
 /** Formats a Date as "Jan 1" etc. for the summary line label. */
 function fmtDate(d) {
@@ -49,8 +51,16 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
   const [hoveredClear, setHoveredClear] = useState(false);
 
   // Cards ↔ Breakdown view for the ticker region (default: cards, unchanged behavior)
-  const [breakdownView, setBreakdownView] = useState("cards"); // "cards" | "breakdown"
+  const [breakdownView, setBreakdownView] = useState("cards"); // "cards" | "breakdown" | "recognition"
   const [breakdownMode, setBreakdownMode] = useState("name");  // "name" | "type"
+
+  // Recognition ledger runs over ALL trades, not the date-filtered TRADES —
+  // the point is cumulative drift across the whole book, which a windowed
+  // view would hide.
+  const recognitionLedger = useMemo(
+    () => buildRecognitionLedger(TRADES_ALL),
+    [TRADES_ALL]
+  );
 
   const tickerSummary = useMemo(() => {
     const source = TRADES.filter((t) => {
@@ -177,7 +187,7 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
 
       {/* Ticker region: Cards ↔ Breakdown toggle */}
       <div style={{ display: "flex", gap: theme.space[2], marginBottom: theme.space[3] }}>
-        {[["cards", "Cards"], ["breakdown", "Breakdown"]].map(([v, label]) => {
+        {[["cards", "Cards"], ["breakdown", "Breakdown"], ["recognition", "Recognition"]].map(([v, label]) => {
           const active = breakdownView === v;
           return (
             <button
@@ -201,7 +211,9 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
         })}
       </div>
 
-      {breakdownView === "breakdown" ? (
+      {breakdownView === "recognition" ? (
+        <RecognitionLedger ledger={recognitionLedger} />
+      ) : breakdownView === "breakdown" ? (
         <IncomeBreakdown
           mode={breakdownMode}
           onModeChange={setBreakdownMode}
