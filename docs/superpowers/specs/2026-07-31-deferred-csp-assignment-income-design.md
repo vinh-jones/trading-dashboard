@@ -225,16 +225,61 @@ never premium — that is what keeps share-sale P&L out of the pool.
 casing. A CSP rolled at a loss and then assigned carries that loss into the share
 basis, which is the correct treatment.
 
-**Same-date ordering.** `detectLifespans` exposes assignments, partial dispositions,
-and the exit as three separate arrays rather than one ordered stream, so the ledger
-re-sorts events by date and puts assignments before disposals on a tie. This differs
-from `tradeSortPriority`, which orders CC-assignment ahead of CSP-assignment, but it
-cannot change any monthly figure — both events fall in the same month — and it keeps
-the pool from going negative on a same-day acquire-and-dispose.
+**Same-date ordering — `detectLifespans` emits the order, the ledger never invents
+one.** `detectLifespans` processes a ticker's trades in a single ordered pass, sorting
+same-day events by `tradeSortPriority` (CC Close/Roll Loss = 1, CC Assigned = 2, CSP
+Assigned = 3, Shares = 4). But it *exposes* results as three separate arrays
+(`assignment_events`, `partial_dispositions`, `exit_event`), which loses that order.
 
-**Rounding.** Release amounts round to cents. The final disposal that closes a chain
-takes the residual, so a chain's releases always sum exactly to its deferred total and
-no penny drift accumulates into the invariant.
+An earlier draft of this spec had the ledger reconstruct a stream from those arrays,
+re-sorting with acquisitions first on a same-date tie, and claimed the choice was
+harmless because both events fall in the same month. **That was wrong.** Both events
+do fall in the same month, but the release *amount* does not survive reordering: the
+disposal divides by whatever `sharesHeld` is at that moment, so putting an acquisition
+first inflates the denominator and changes the dollars released into that month.
+
+Worked example — 200 shares held against a $1,000 pool; on one date a CC is assigned
+on 100 shares while a CSP assignment adds 100 shares and $600:
+
+| Order | Released that month | Pool carried forward |
+|-------|--------------------|----------------------|
+| acquire first (wrong) | $533.33 | $1,066.67 |
+| dispose first (`tradeSortPriority`) | $500.00 | $1,100.00 |
+
+Same-expiry CC-assigned plus CSP-assigned on one ticker is a routine third-Friday
+outcome on a name being actively wheeled, not an exotic case.
+
+So `detectLifespans` emits `ordered_events` — a flat log of every share-count mutation
+(`{ date, kind: "acquire" | "dispose", shares, trade_id }`) appended at each of the
+four sites where `runningShares` changes, in its own processing order. The ledger
+consumes that directly. Reconstructing an order is what created the bug; the fix is to
+stop reconstructing it. The premium-only `CC/Assigned` case logs no event, because it
+deliberately does not move shares.
+
+`ordered_events` is purely additive to the chain shape, so the three server consumers
+of `detectLifespans` are unaffected.
+
+**Rounding.** The pool is rounded to cents on every write. That per-write
+normalization — not the closing-disposal branch — is what governs rounding behavior.
+Sum-exactness is structural and comes for free: the final disposal releases the pool
+verbatim at ratio 1.0, so a chain's releases telescope to its initial pool regardless
+of intermediate rounding. What per-write normalization actually buys is **which month
+receives the odd penny**, which is the thing that matters for a per-month withdrawal
+figure. A 10.2M-fixture sweep across contract and disposal counts found normalized and
+unnormalized variants never differ on sum-exactness or final outstanding, but differ on
+per-month placement in 29% of cases.
+
+The blended-average pool is also, deliberately, **not lot-level or FIFO**. A brokerage
+tracks basis per tax lot; this model carries none, because the lifespan model computes
+disposal P&L against a blended basis. Totals agree at chain close either way; only the
+month-to-month split differs. This is the one place the feature knowingly diverges from
+brokerage fidelity, and it is documented in the module header for that reason.
+
+**Historical months are provisional before `DATA_QUALITY_THRESHOLD`.** Whether a
+pre-2026 CSP assignment is deferred depends on `carryPreCutoff`, which flips when a
+ticker becomes currently-held. Opening a new position on a ticker can therefore restate
+that ticker's closed pre-cutoff months. Cumulative totals and the invariant are
+unaffected, but the behavior is surprising enough to warrant the header note.
 
 **Booked** is the trivial basis: every closed trade's `premium_collected` on its
 `close_date`. **Distributable** is identical except that `CSP/Assigned` rows
