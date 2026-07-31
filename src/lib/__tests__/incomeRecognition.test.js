@@ -3,10 +3,15 @@ import { buildRecognitionLedger } from "../incomeRecognition.js";
 
 const round2 = (n) => +n.toFixed(2);
 
+// Deterministic default ids. `id` feeds tradeById, deferredIds, and
+// detectLifespans' premiumOnlyCcIds, so a random default would make any future
+// identity-dependent failure nondeterministic.
+let seq = 0;
+
 // Minimal closed-trade factory. Dates are ISO; premium is net realized dollars.
 export function trade(over = {}) {
   return {
-    id: over.id ?? Math.random().toString(36).slice(2),
+    id: over.id ?? `t${++seq}`,
     ticker: "TEST",
     type: "CSP",
     subtype: "Expired",
@@ -76,6 +81,12 @@ const assign = (over) =>
 // A share disposal of `contracts` SHARES on `date`, realizing `premium` P&L.
 const sell = (over) =>
   trade({ type: "Shares", subtype: "Sold", ...over });
+
+// A covered call assigned — shares called away. NOTE `contracts` here is a
+// CONTRACT count (shares removed = contracts × 100), unlike `sell` above where
+// it is a raw share count. That asymmetry is detectLifespans' convention.
+const calledAway = (over) =>
+  trade({ type: "CC", subtype: "Assigned", ...over });
 
 describe("buildRecognitionLedger — deferral and release", () => {
   it("defers premium while the shares are still held", () => {
@@ -163,16 +174,38 @@ describe("buildRecognitionLedger — partial disposals and edge cases", () => {
     expect(ledger.outstandingDeferred).toBe(0);
   });
 
-  it("gives the closing disposal the rounding residual so releases sum exactly", () => {
-    // $100 across 300 shares does not divide evenly into thirds.
+  it("keeps the running pool on clean cents so releases sum exactly", () => {
+    // $500.02 pooled over 700 shares, disposed 100 at a time. Hand-derived,
+    // each step releasing round2(pool × 100/held) and leaving round2(pool − that):
+    //
+    //   1. 500.02 × 100/700 = 71.4314… → 71.43   pool 428.59
+    //   2. 428.59 × 100/600 = 71.4317… → 71.43   pool 357.16
+    //   3. 357.16 × 100/500 = 71.432   → 71.43   pool 285.73
+    //   4. 285.73 × 100/400 = 71.4325  → 71.43   pool 214.30
+    //   5. 214.30 × 100/300 = 71.4333… → 71.43   pool 142.87
+    //   6. 142.87 × 100/200 = 71.435   → 71.44   pool  71.43   ← the odd penny
+    //   7. 100 of 100 held  → ratio 1.0, takes the remaining 71.43, pool 0
+    //
+    // The penny landing on step 6 rather than step 7 is the discriminating
+    // detail: it is there only because the pool is re-rounded to whole cents on
+    // every write. Drop that normalization and float residue accumulates, step
+    // 6 computes 71.43 instead, and the odd penny slides to step 7 — a real
+    // month-to-month difference in reported income.
     const ledger = buildRecognitionLedger([
-      assign({ id: "a1", close_date: "2026-03-06", contracts: 3, strike: 10, premium_collected: 100 }),
-      sell({ id: "s1", close_date: "2026-04-06", contracts: 100, premium_collected: 5 }),
-      sell({ id: "s2", close_date: "2026-05-06", contracts: 100, premium_collected: 5 }),
-      sell({ id: "s3", close_date: "2026-06-06", contracts: 100, premium_collected: 5 }),
+      assign({ id: "a1", close_date: "2026-01-06", contracts: 7, strike: 10, premium_collected: 500.02 }),
+      ...[1, 2, 3, 4, 5, 6, 7].map((n) =>
+        sell({
+          id: `s${n}`,
+          close_date: `2026-0${n + 1}-06`,
+          contracts: 100,
+          premium_collected: 5,
+        })
+      ),
     ]);
+    expect(ledger.months.map((m) => m.deferredReleased))
+      .toEqual([0, 71.43, 71.43, 71.43, 71.43, 71.43, 71.44, 71.43]);
     const released = ledger.months.reduce((s, m) => s + m.deferredReleased, 0);
-    expect(round2(released)).toBe(100);
+    expect(round2(released)).toBe(500.02);
     expect(ledger.outstandingDeferred).toBe(0);
   });
 
@@ -196,6 +229,56 @@ describe("buildRecognitionLedger — partial disposals and edge cases", () => {
     expect(monthRow(ledger, "2026-03").distributable).toBe(0);
     expect(monthRow(ledger, "2026-05").distributable).toBe(-60);
     expect(ledger.outstandingDeferred).toBe(0);
+  });
+
+  it("releases the pool when a covered call calls the shares away", () => {
+    // The dominant wheel exit: CSP assigned → shares held → CC assigned takes
+    // them. 1 contract of CC = 100 shares, which empties the 100-share chain.
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-05-15", contracts: 1, strike: 100, premium_collected: 400 }),
+      calledAway({ id: "cc1", close_date: "2026-07-10", contracts: 1, strike: 110, premium_collected: 60 }),
+    ]);
+    // Deferred at assignment, not booked as distributable income that month.
+    expect(monthRow(ledger, "2026-05").booked).toBe(400);
+    expect(monthRow(ledger, "2026-05").distributable).toBe(0);
+    expect(monthRow(ledger, "2026-05").deferredAdded).toBe(400);
+    // Released in the called-away month, on top of the CC's own $60.
+    expect(monthRow(ledger, "2026-07").booked).toBe(60);
+    expect(monthRow(ledger, "2026-07").deferredReleased).toBe(400);
+    expect(monthRow(ledger, "2026-07").distributable).toBe(460);
+    expect(ledger.outstandingDeferred).toBe(0);
+  });
+
+  it("uses detectLifespans' same-day order when a call-away and an assignment share a date", () => {
+    // Same-expiry wheel outcome: shares called away on 6/19 while a new CSP is
+    // assigned the same day. detectLifespans' tradeSortPriority runs CC
+    // Assigned (2) BEFORE CSP Assigned (3), so the disposal sees the OLD
+    // denominator:
+    //
+    //   pre-6/19: 200 sh, pool 400 + 600 = 1000
+    //   6/19 dispose 100 of 200 → release 1000 × (100/200) = 500.00
+    //                             → pool 500, 100 sh
+    //   6/19 acquire 100 / +600  → pool 1100, 200 sh
+    //
+    // Acquiring first instead would pool 1600 over 300 shares and release
+    // 1600 × (100/300) = 533.33 — $33.33 of June income that is not real.
+    const ledger = buildRecognitionLedger([
+      assign({ id: "a1", close_date: "2026-04-10", contracts: 1, strike: 100, premium_collected: 400 }),
+      assign({ id: "a2", close_date: "2026-05-15", contracts: 1, strike: 100, premium_collected: 600 }),
+      calledAway({ id: "cc1", close_date: "2026-06-19", contracts: 1, strike: 110, premium_collected: 75 }),
+      assign({ id: "a3", close_date: "2026-06-19", contracts: 1, strike: 95, premium_collected: 600 }),
+    ]);
+    const june = monthRow(ledger, "2026-06");
+    expect(june.deferredReleased).toBe(500);
+    expect(june.deferredAdded).toBe(600);
+    // June booked = CC premium 75 + new CSP premium 600.
+    expect(june.booked).toBe(675);
+    // June distributable = CC premium 75 + released 500.
+    expect(june.distributable).toBe(575);
+    // 1600 deferred in total, 500 released, 100 shares still held.
+    expect(ledger.outstandingDeferred).toBe(1100);
+    expect(round2(ledger.cumulativeBooked - ledger.cumulativeDistributable))
+      .toBe(ledger.outstandingDeferred);
   });
 
   it("holds the invariant across a mixed book", () => {

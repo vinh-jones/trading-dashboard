@@ -16,6 +16,29 @@
  *
  *   cumulative booked − cumulative distributable ≡ outstanding deferred
  *
+ * POOLING MODEL — blended average, not lot-level, not FIFO. Deferred premium
+ * is pooled across the whole share-holding chain and released in proportion to
+ * the shares disposed, so a disposal releases a slice of every assignment's
+ * premium rather than the specific lot's. A brokerage tracks basis per tax lot,
+ * so month-to-month releases here will not match any specific lot's disposal —
+ * only the total is guaranteed, and it always drains fully by chain close. This
+ * is a deliberate modeling choice: the lifespan model computes disposal P&L
+ * against a blended basis (computeBlendedBasis) and carries no lot identity at
+ * all, so matching a brokerage's FIFO exactly would mean teaching the lifespan
+ * model per-lot identity first. Since this module's whole purpose is brokerage
+ * fidelity, the one place it deliberately diverges is called out here.
+ *
+ * PRE-CUTOFF RESTATEMENT — historical months can move when you open an
+ * unrelated new position, and that is expected. Whether a pre-2026 CSP
+ * assignment is deferred at all depends on `carryPreCutoff` in
+ * lifespanChains.js, which flips on once a ticker becomes currently-held. A
+ * 2025 cycle on AAA that is fully closed reports 2025-08 distributable = 400 on
+ * its own; open a new 2026 AAA position and those same historical rows restate
+ * to 2025-08 distributable = 0 with 2025-11 distributable = 700, because the
+ * pre-cutoff acquisition is now carried into the chain and its premium defers
+ * to the disposal. Cumulative totals and the invariant are unaffected — only
+ * the month-by-month split moves. Surprising, but not a bug.
+ *
  * See docs/superpowers/specs/2026-07-31-deferred-csp-assignment-income-design.md
  */
 
@@ -69,35 +92,22 @@ function walkChains(rows) {
 
   for (const [ticker, tickerTrades] of byTicker) {
     for (const chain of detectLifespans(ticker, tickerTrades)) {
-      // detectLifespans exposes acquisitions and disposals as separate arrays
-      // rather than one ordered stream, so rebuild the stream. On a same-date
-      // tie acquisitions go first: you cannot dispose shares you have not
-      // acquired, and both events land in the same month either way, so the
-      // monthly ledger is unaffected by the choice.
-      const events = [];
-      for (const a of chain.assignment_events) {
-        events.push({ date: a.date, kind: "assign", shares: a.shares_added, id: a.triggering_csp_id });
-      }
-      for (const d of chain.partial_dispositions) {
-        events.push({ date: d.date, kind: "dispose", shares: d.shares });
-      }
-      if (chain.exit_event) {
-        events.push({ date: chain.exit_event.date, kind: "dispose", shares: chain.exit_event.shares_disposed });
-      }
-      events.sort((a, b) => {
-        const d = (a.date ?? "").localeCompare(b.date ?? "");
-        if (d !== 0) return d;
-        return (a.kind === "assign" ? 0 : 1) - (b.kind === "assign" ? 0 : 1);
-      });
+      // detectLifespans emits ordered_events in its own processing order,
+      // including tradeSortPriority's same-day sequencing. Consume it directly
+      // — reconstructing an order from the separate assignment/disposition
+      // arrays loses same-day sequencing, and an acquisition and a disposal
+      // sharing a date change the denominator and therefore the dollars
+      // released that month.
+      const events = chain.ordered_events ?? [];
 
       let pool = 0;
       let sharesHeld = 0;
       let firstAssignmentDate = null;
 
       for (const ev of events) {
-        if (ev.kind === "assign") {
+        if (ev.kind === "acquire") {
           if (!firstAssignmentDate) firstAssignmentDate = ev.date;
-          const src = ev.id != null ? tradeById.get(ev.id) : null;
+          const src = ev.trade_id != null ? tradeById.get(ev.trade_id) : null;
           // Only a CSP assignment contributes premium. A direct Shares/Assigned
           // purchase adds shares only — its premium_collected is share P&L, not
           // option premium, and must never enter the pool.
@@ -110,9 +120,23 @@ function walkChains(rows) {
           if (sharesHeld <= 0) continue;
           const disposed = Math.min(ev.shares || 0, sharesHeld);
           if (disposed <= 0) continue;
-          // The disposal that empties the chain takes the whole remaining pool,
-          // so releases always sum exactly to the deferred total and no penny
-          // drift leaks into the invariant.
+          // Pro-rata against the shares held RIGHT NOW, not against the shares
+          // ever acquired. Acquire 100 shares for $400, then sell 50: release
+          // $200 (50/100 of the pool as it stands). A later assignment re-blends
+          // the pool, so the denominator has to be read at disposal time. A
+          // fixed denominator (disposed ÷ total ever acquired) would under-
+          // release that early exit, because assignments that had not happened
+          // yet would retroactively inflate its divisor.
+          //
+          // The `disposed >= sharesHeld` arm signals intent — the disposal that
+          // empties the chain hands over the whole remaining pool — but it is
+          // not what makes releases sum exactly. That comes from `pool` being
+          // round2-normalized on every write: each release is round2'd and
+          // subtracted from an already-round2'd pool, so the balance stays a
+          // clean 2-decimal figure and the final ratio-1.0 release drains it to
+          // zero with no penny drift. (`disposed` is clamped to `sharesHeld`,
+          // so this arm fires only at ratio exactly 1.0, where round2(pool * 1)
+          // === pool anyway. It is explicitness, not arithmetic.)
           const amount = disposed >= sharesHeld ? pool : round2(pool * (disposed / sharesHeld));
           if (amount !== 0) releases.push({ date: ev.date, amount });
           pool = round2(pool - amount);

@@ -15,6 +15,24 @@
  * here drags its transitive weight into every consumer, and re-coupling this
  * leaf back into the app graph defeats the point of extracting it.
  *
+ * Emitted chain shape (partial): alongside the topical arrays
+ * `assignment_events` / `partial_dispositions` / `exit_event`, every chain
+ * carries `ordered_events` — a flat log of every share-count mutation in the
+ * exact order this module processed it:
+ *
+ *   { date, kind: "acquire" | "dispose", shares, trade_id }
+ *
+ * It exists because the topical arrays lose sequencing. Splitting one ordered
+ * pass into three arrays discards `tradeSortPriority`'s same-day ordering
+ * (CC Assigned before CSP Assigned), and a consumer that re-merges them has to
+ * invent a tie-break. For anything that carries running state across events —
+ * e.g. incomeRecognition.js's premium pool, where an acquisition and a
+ * disposal sharing a date change the denominator and therefore the dollars
+ * released — that invented order is wrong. Consume `ordered_events` instead of
+ * reconstructing one. Only mutations that actually move the share count are
+ * logged: the premium-only CC Assigned case (a same-day Shares Sold row is
+ * authoritative) records no event.
+ *
  * Exports: DATA_QUALITY_THRESHOLD, detectLifespans, computeBlendedBasis
  */
 
@@ -164,6 +182,7 @@ export function detectLifespans(ticker, allTickerTrades) {
         current = {
           ticker,
           assignment_events: [],
+          ordered_events: [],
           _cspTrades: [],
           cc_history: [],
           partial_dispositions: [],
@@ -185,6 +204,7 @@ export function detectLifespans(ticker, allTickerTrades) {
             ? parseFloat(trade.spot_at_assignment)
             : null,
       });
+      current.ordered_events.push({ date: trade.close_date, kind: "acquire", shares: sharesAdded, trade_id: trade.id });
       runningShares += sharesAdded;
 
     } else if (trade.type === "Shares" && trade.subtype === "Assigned") {
@@ -195,6 +215,7 @@ export function detectLifespans(ticker, allTickerTrades) {
         current = {
           ticker,
           assignment_events: [],
+          ordered_events: [],
           _cspTrades: [],
           cc_history: [],
           partial_dispositions: [],
@@ -214,6 +235,7 @@ export function detectLifespans(ticker, allTickerTrades) {
         spot_at_assignment: null,
         is_direct_purchase: true,
       });
+      current.ordered_events.push({ date: trade.close_date, kind: "acquire", shares: sharesAdded, trade_id: trade.id });
       runningShares += sharesAdded;
 
     } else if (
@@ -240,6 +262,7 @@ export function detectLifespans(ticker, allTickerTrades) {
         const disposalPnl = round2(
           (parseFloat(trade.strike) - basis) * sharesRemoved
         );
+        current.ordered_events.push({ date: trade.close_date, kind: "dispose", shares: sharesRemoved, trade_id: trade.id });
         runningShares -= sharesRemoved;
         if (runningShares === 0) {
           current.exit_event = {
@@ -293,6 +316,7 @@ export function detectLifespans(ticker, allTickerTrades) {
           : sharesRemoved > 0
             ? round2(basis + disposalPnl / sharesRemoved)
             : null;
+        current.ordered_events.push({ date: trade.close_date, kind: "dispose", shares: sharesRemoved, trade_id: trade.id });
         runningShares -= sharesRemoved;
         if (runningShares === 0) {
           current.exit_event = {
