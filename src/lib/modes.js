@@ -2,7 +2,7 @@
 // Focus = command center (home); Explore = drill-downs; Review = reporting & reflection.
 export const MODES = ["focus", "explore", "review"];
 
-export const EXPLORE_SUBVIEWS = ["positions", "risk", "tickers", "radar", "ai-thesis", "earnings", "macro", "baskets"];
+export const EXPLORE_SUBVIEWS = ["positions", "risk", "tickers", "radar", "ai-thesis", "earnings", "macro", "baskets", "orb"];
 export const REVIEW_SUBVIEWS  = ["journal", "monthly", "history"];
 
 // Hidden subviews — valid state but not shown in chip nav (drill-down views)
@@ -17,6 +17,7 @@ export const SUBVIEW_LABELS = {
   earnings:  "Earnings",
   macro:     "Macro",
   baskets:   "Baskets",
+  orb:       "Opening Range",
   monthly:   "Monthly",
   history:   "History",
   journal:   "Journal",
