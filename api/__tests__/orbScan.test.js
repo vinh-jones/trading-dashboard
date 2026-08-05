@@ -107,6 +107,33 @@ function beBar(hh, mm) {
 const BE_BOX = { box_high: 110, box_low: 100, box_range: 10 };
 const BE_ATR = 10;
 
+// Real, non-weak bullish-engulfing pair (verified against isBullishEngulfing's
+// tolerance math): prev red with a solid body (1.2, well above both the doji
+// and tolerance floors -> prevWeak: false), bar green whose open/close sit
+// inside prev's close/open +/- tol. Close 99.1 < box_low(100) -> outside for
+// a bullish setup. Used for the title test — weakBar above is prevWeak and
+// never pushes, so it can't be used to assert on a real Pushover title.
+function buPrev(hh, mm) {
+  return bar(hh, mm, { o: 99, h: 99.3, l: 97.5, c: 97.8 });
+}
+function buBar(hh, mm) {
+  return bar(hh, mm, { o: 97.75, h: 99.4, l: 97.5, c: 99.1 });
+}
+const BU_BOX = { box_high: 110, box_low: 100, box_range: 10 };
+const BU_ATR = 10;
+
+// Real inverted hammer (verified against isInvertedHammer's zone/wick-ratio
+// math): body 1.0 in the bottom third, upperWick 3.7 >= 2x body, lowerWick
+// 0.3 <= 0.5x body. Close 111.8 > box_high(110) -> outside for a bearish
+// setup (side "short"). Entry (bar.l = 110.5) sits past t1 (box.high = 110)
+// in the normal direction, so t1Ahead is true here — this is a "clean"
+// signal, not the degenerate t1Ahead-false case covered separately above.
+function ihBar(hh, mm) {
+  return bar(hh, mm, { o: 110.8, h: 115.5, l: 110.5, c: 111.8 });
+}
+const IH_BOX = { box_high: 110, box_low: 100, box_range: 10 };
+const IH_ATR = 10;
+
 // Real bullish-engulfing pair whose PRIOR bar is doji-shaped (body 0.1 <
 // 0.10 * range 2.0) -> detectPattern reports prevWeak: true. buildSignal
 // still returns a coherent, non-null signal (entry 103/stop 101.6, both
@@ -295,6 +322,59 @@ describe("api/orb-scan — real matches", () => {
     expect(push.message).toMatch(/already passed at entry/);
     expect(push.message).not.toMatch(/T1[^\n]*0\.00R/);
     expect(push.message).toMatch(/T2 .*R\)/);
+  });
+});
+
+// The engulfing pattern names already encode their side ("bullish_engulfing",
+// "bearish_engulfing"), so the title template must strip that before
+// prefixing dirWord — otherwise it stutters ("Bullish bullish engulfing").
+// Each case below pins the EXACT title string (not a loose regex) so a
+// future edit to the template can't reintroduce the stutter or silently
+// drop the direction for hammer/inverted_hammer, which carry no side word
+// of their own.
+describe("api/orb-scan — alert title text (no side-word stutter)", () => {
+  it("hammer -> 'QQQ ORB — Bullish hammer'", async () => {
+    getSession.mockResolvedValue(baseRow({ ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish" }));
+    fetchIntradayOhlc.mockResolvedValue([flat(9, 45), hammer(9, 50)]);
+    await handler(makeReq(), makeRes());
+    expect(sendPushover.mock.calls[0][0].title).toBe("QQQ ORB — Bullish hammer");
+  });
+
+  it("inverted_hammer -> 'QQQ ORB — Bearish inverted hammer'", async () => {
+    getSession.mockResolvedValue(baseRow({ ...IH_BOX, atr14: IH_ATR, direction: "bearish" }));
+    fetchIntradayOhlc.mockResolvedValue([flat(9, 45), ihBar(9, 50)]);
+    await handler(makeReq(), makeRes());
+    expect(sendPushover.mock.calls[0][0].title).toBe("QQQ ORB — Bearish inverted hammer");
+  });
+
+  it("bullish_engulfing -> 'QQQ ORB — Bullish engulfing' (no duplicated side word)", async () => {
+    getSession.mockResolvedValue(baseRow({ ...BU_BOX, atr14: BU_ATR, direction: "bullish" }));
+    fetchIntradayOhlc.mockResolvedValue([buPrev(9, 45), buBar(9, 50)]);
+    await handler(makeReq(), makeRes());
+    expect(sendPushover.mock.calls[0][0].title).toBe("QQQ ORB — Bullish engulfing");
+  });
+
+  it("bearish_engulfing -> 'QQQ ORB — Bearish engulfing' (no duplicated side word)", async () => {
+    getSession.mockResolvedValue(baseRow({ ...BE_BOX, atr14: BE_ATR, direction: "bearish" }));
+    fetchIntradayOhlc.mockResolvedValue([bePrev(9, 45), beBar(9, 50)]);
+    await handler(makeReq(), makeRes());
+    expect(sendPushover.mock.calls[0][0].title).toBe("QQQ ORB — Bearish engulfing");
+  });
+
+  it("pins the full message body end to end for a normal (non-degenerate) signal", async () => {
+    getSession.mockResolvedValue(baseRow({ ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish" }));
+    fetchIntradayOhlc.mockResolvedValue([flat(9, 45), hammer(9, 50)]);
+    await handler(makeReq(), makeRes());
+
+    const push = sendPushover.mock.calls[0][0];
+    expect(push.title).toBe("QQQ ORB — Bullish hammer");
+    expect(push.message).toBe(
+      "Entry 99.50  Stop 95.00  Risk 4.50\n" +
+      "T1 100.00 (0.11R)\n" +
+      "T2 110.00 (2.33R)\n" +
+      "Box 100.00–110.00\n" +
+      "20 min into session"
+    );
   });
 });
 

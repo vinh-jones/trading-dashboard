@@ -56,6 +56,15 @@ function patternLabel(pattern) {
   return pattern.replace(/_/g, " ");
 }
 
+// The engulfing patterns already encode their side in the name
+// ("bullish_engulfing"/"bearish_engulfing"), so prefixing dirWord in front
+// would stutter: "Bullish bullish engulfing". Strip that redundant leading
+// side word before labelling — hammer/inverted_hammer carry no side word of
+// their own, so they pass through unchanged and still get dirWord in front.
+function titlePattern(pattern) {
+  return pattern.replace(/^(bullish|bearish)_/, "");
+}
+
 // Pushover title + body. entry/stop/targets/risk/box range/minutes elapsed,
 // per spec. t1Ahead === false means T1 already sits behind the entry — a bare
 // "0.00R" there reads as a data glitch, so we call it out in words instead
@@ -72,7 +81,7 @@ function buildAlertMessage(row, m) {
     `${m.minutes_elapsed} min into session`,
   ];
   if (row.grey_band) lines.push("Grey band — liquidity marginal");
-  return { title: `QQQ ORB — ${dirWord} ${patternLabel(m.pattern)}`, message: lines.join("\n") };
+  return { title: `QQQ ORB — ${dirWord} ${patternLabel(titlePattern(m.pattern))}`, message: lines.join("\n") };
 }
 
 export default async function handler(req, res) {
