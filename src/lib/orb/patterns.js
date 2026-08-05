@@ -8,6 +8,17 @@
 // sat $0.005 under the prior close — a strict comparison finds nothing, a
 // one-cent tolerance finds a bearish engulfing. On an index ETF with tight
 // 5-minute bars, strict and tolerant are different strategies.
+//
+// `prevWeak` is advisory, not a filter. `passesGuards` only validates the
+// signal bar's anatomy — `prev` is never checked — so an engulfing can match
+// against a prior bar that is doji-shaped, or whose body is smaller than
+// engulfTolerance (in which case the tolerance band dominates the comparison
+// rather than the body being engulfed). Semantically, engulfing a doji
+// overwhelms nothing. A hard filter was considered and rejected: it would
+// erase these matches from the log forever, and the flag/gate split already
+// exists for the liquidity gate (detect always, gate the alert). Detection
+// stays unchanged; it is the caller's job to decide whether prevWeak should
+// suppress the alert.
 
 export function anatomy(bar) {
   const range   = bar.h - bar.l;
@@ -64,11 +75,26 @@ function isBearishEngulfing(bar, prev, params) {
 }
 
 /**
+ * Whether the prior bar is too weak to be meaningfully engulfed: doji-shaped
+ * (body under minBodyPctOfRange of its own range), or so small in absolute
+ * terms that the engulf tolerance's slack band exceeds the body being
+ * compared. Reuses existing params — no new magic numbers.
+ */
+function prevIsWeak(prev, params) {
+  if (!prev) return false;
+  const p = anatomy(prev);
+  if (!(p.range > 0)) return true;
+  if (p.body < params.minBodyPctOfRange * p.range) return true;  // doji-shaped
+  if (p.body < params.engulfTolerance) return true;              // slack exceeds the body
+  return false;
+}
+
+/**
  * @param {number} atr - required; a non-finite or non-positive value rejects
  *   the bar outright rather than skipping the noise guard. The only path
  *   that reaches this function with a bad ATR is a caller bug, and firing an
  *   alert on a weaker set of guards is worse than firing nothing.
- * @returns {{pattern:string, side:"long"|"short"}|null}
+ * @returns {{pattern:string, side:"long"|"short", prevWeak:boolean}|null}
  */
 export function detectPattern(bar, prev, atr, params) {
   const a = anatomy(bar);
@@ -76,10 +102,10 @@ export function detectPattern(bar, prev, atr, params) {
 
   // Engulfing is checked first: it is the stronger two-bar signal, and a bar
   // can satisfy both definitions.
-  if (isBearishEngulfing(bar, prev, params)) return { pattern: "bearish_engulfing", side: "short" };
-  if (isBullishEngulfing(bar, prev, params)) return { pattern: "bullish_engulfing", side: "long"  };
-  if (isInvertedHammer(a, bar, params))      return { pattern: "inverted_hammer",   side: "short" };
-  if (isHammer(a, bar, params))              return { pattern: "hammer",            side: "long"  };
+  if (isBearishEngulfing(bar, prev, params)) return { pattern: "bearish_engulfing", side: "short", prevWeak: prevIsWeak(prev, params) };
+  if (isBullishEngulfing(bar, prev, params)) return { pattern: "bullish_engulfing", side: "long",  prevWeak: prevIsWeak(prev, params) };
+  if (isInvertedHammer(a, bar, params))      return { pattern: "inverted_hammer",   side: "short", prevWeak: false };
+  if (isHammer(a, bar, params))              return { pattern: "hammer",            side: "long",  prevWeak: false };
   return null;
 }
 

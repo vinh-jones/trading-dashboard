@@ -96,7 +96,7 @@ describe("buildSignal", () => {
     const bar  = { o: 100.008, h: 100.03,  l: 100.007, c: 100.02  }; // green
 
     const match = detectPattern(bar, prev, 0.2, ORB_PARAMS);
-    expect(match).toEqual({ pattern: "bullish_engulfing", side: "long" });
+    expect(match).toEqual({ pattern: "bullish_engulfing", side: "long", prevWeak: true });
 
     // entry = prev.h = 100.005, stop = bar.l = 100.007 — stop sits ABOVE
     // entry, incoherent for a long.
@@ -112,7 +112,7 @@ describe("buildSignal", () => {
     const bar  = { o: 99.997,  h: 99.998,  l: 99.975,  c: 99.985  }; // red
 
     const match = detectPattern(bar, prev, 0.2, ORB_PARAMS);
-    expect(match).toEqual({ pattern: "bearish_engulfing", side: "short" });
+    expect(match).toEqual({ pattern: "bearish_engulfing", side: "short", prevWeak: true });
 
     // entry = prev.l = 100.000, stop = bar.h = 99.998 — stop sits BELOW
     // entry, incoherent for a short.

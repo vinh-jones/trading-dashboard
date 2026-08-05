@@ -65,6 +65,47 @@ describe("detectPattern — engulfing tolerance", () => {
   });
 });
 
+describe("detectPattern — prevWeak (advisory flag, not a filter)", () => {
+  it("flags a real bullish engulfing whose prior bar's body is smaller than engulfTolerance", () => {
+    // prev body 0.005 < engulfTolerance 0.01 — the tolerance band dominates
+    // the comparison rather than the body being engulfed. Same fixture used
+    // in orbSignal.test.js's near-doji rejection tests.
+    const prev = { start: "x", o: 100.005, h: 100.005, l: 99.99,  c: 100.000 };
+    const bar  = { start: "x", o: 100.008, h: 100.03,  l: 100.007, c: 100.02 };
+    const hit = detectPattern(bar, prev, 0.2, ORB_PARAMS);
+    expect(hit.pattern).toBe("bullish_engulfing");
+    expect(hit.prevWeak).toBe(true);
+  });
+
+  it("does NOT flag the real 2026-08-04 QQQ bearish engulfing (control)", () => {
+    // BAR_0950 as prev has body 0.97 on range 1.12 (86% — nowhere near doji)
+    // and is far larger than engulfTolerance. Proves the flag does not fire
+    // on a legitimate signal.
+    const hit = detectPattern(BAR_0955, BAR_0950, ATR, ORB_PARAMS);
+    expect(hit.pattern).toBe("bearish_engulfing");
+    expect(hit.prevWeak).toBe(false);
+  });
+
+  it("never flags a hammer, which does not read prev", () => {
+    const hammer = { start: "x", o: 100.3, h: 101.0, l: 98.0, c: 100.8 };
+    const hit = detectPattern(hammer, null, 10, ORB_PARAMS);
+    expect(hit.pattern).toBe("hammer");
+    expect(hit.prevWeak).toBe(false);
+  });
+
+  it("flags a prior bar that is doji-shaped by range even though its body is large in dollar terms", () => {
+    // prev: range 100, body 5 -> 5% of range (doji-shaped, under the 10%
+    // floor) but $5 is nowhere near engulfTolerance ($0.01). Proves the
+    // doji-shaped check and the tolerance-slack check are both live
+    // independently, not one masking the other.
+    const prev = { start: "x", o: 105, h: 150, l: 50, c: 100 };  // red, body 5
+    const bar  = { start: "x", o: 100, h: 106, l: 99,  c: 105 }; // green, engulfs
+    const hit = detectPattern(bar, prev, 50, ORB_PARAMS);
+    expect(hit.pattern).toBe("bullish_engulfing");
+    expect(hit.prevWeak).toBe(true);
+  });
+});
+
 describe("detectPattern — hammers", () => {
   // range 3.0, body 0.5 (17% — clears the doji guard), body in the top third
   // (floor 100.0), lower wick 2.3 (>= 2x body), upper wick 0.2 (<= 0.5x body).
