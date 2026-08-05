@@ -50,7 +50,6 @@ describe("wilderAtr", () => {
     const bars = [{ start: "2026-07-13", o: 717.72, h: 718.74, l: 710.08, c: 711.74 }, ...DAILY];
     const atr = wilderAtr(bars, 14);
     expect(atr).not.toBeCloseTo(15.0731, 3);
-    expect(atr).toBeGreaterThan(13);
-    expect(atr).toBeLessThan(17);
+    expect(atr).toBeCloseTo(14.7767, 3);
   });
 });

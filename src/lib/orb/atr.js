@@ -10,6 +10,10 @@
 // the caller's job (Task 8) to strip today's partial daily bar before calling
 // wilderAtr — this module has no way to detect that on its own.
 
+/**
+ * @param {{h:number,l:number}} bar only h/l are used, not a full OHLC bar
+ * @param {number|null} prevClose may be null (falls back to high-low)
+ */
 export function trueRange(bar, prevClose) {
   const hl = bar.h - bar.l;
   if (prevClose == null || !Number.isFinite(prevClose)) return hl;
@@ -22,6 +26,7 @@ export function trueRange(bar, prevClose) {
  * @returns {number|null} ATR, or null if there is not enough history
  */
 export function wilderAtr(bars, period) {
+  if (!Number.isInteger(period) || period <= 0) return null;
   if (!Array.isArray(bars) || bars.length < period + 1) return null;
 
   const trs = [];
