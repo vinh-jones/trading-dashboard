@@ -26,8 +26,8 @@ export function anatomy(bar) {
 function passesGuards(a, atr, params) {
   if (!(a.range > 0)) return false;
   if (a.body < params.minBodyPctOfRange * a.range) return false;          // doji
-  if (Number.isFinite(atr) && atr > 0 &&
-      a.range < params.minRangePctOfAtr * atr) return false;              // noise
+  if (!Number.isFinite(atr) || atr <= 0) return false;                    // ATR required
+  if (a.range < params.minRangePctOfAtr * atr) return false;              // noise
   return true;
 }
 
@@ -64,6 +64,10 @@ function isBearishEngulfing(bar, prev, params) {
 }
 
 /**
+ * @param {number} atr - required; a non-finite or non-positive value rejects
+ *   the bar outright rather than skipping the noise guard. The only path
+ *   that reaches this function with a bad ATR is a caller bug, and firing an
+ *   alert on a weaker set of guards is worse than firing nothing.
  * @returns {{pattern:string, side:"long"|"short"}|null}
  */
 export function detectPattern(bar, prev, atr, params) {
@@ -91,7 +95,7 @@ export function isOutsideBox(bar, box, direction, params) {
   }
   if (direction === "bearish") return bar.c > box.high ? "close_above" : null;
   if (direction === "bullish") return bar.c < box.low  ? "close_below" : null;
-  return null;
+  throw new Error(`unsupported direction: ${direction}`);
 }
 
 /** A bearish setup only accepts short patterns, and vice versa. */

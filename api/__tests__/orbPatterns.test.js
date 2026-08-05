@@ -65,6 +65,16 @@ describe("detectPattern — hammers", () => {
     const tiny = { start: "x", o: 100.0, h: 100.05, l: 100.0, c: 100.04 };
     expect(detectPattern(tiny, null, 15, ORB_PARAMS)).toBeNull();
   });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["NaN", NaN],
+    ["zero", 0],
+    ["negative", -5],
+  ])("rejects an otherwise-matching bar when atr is %s", (_label, atr) => {
+    expect(detectPattern(hammer, null, atr, ORB_PARAMS)).toBeNull();
+  });
 });
 
 describe("isOutsideBox", () => {
@@ -85,6 +95,11 @@ describe("isOutsideBox", () => {
   it("throws on an unsupported outside rule rather than guessing", () => {
     expect(() => isOutsideBox(BAR_0955, BOX, "bearish", { ...ORB_PARAMS, outsideRule: "body" }))
       .toThrow(/outsideRule/);
+  });
+
+  it("throws on an unrecognized direction rather than reading as inside", () => {
+    expect(() => isOutsideBox(BAR_0955, BOX, "sideways", ORB_PARAMS))
+      .toThrow(/direction/);
   });
 });
 
