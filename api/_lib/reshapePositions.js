@@ -10,6 +10,8 @@
  * so both read the same canonical shape.
  */
 
+import { debitMaxGain } from "../../lib/spreadMath.js";
+
 export function reshapePositions(rows) {
   const assignedRows = rows.filter(r => r.position_type === "assigned_shares");
   const ccRows       = rows.filter(r => r.position_type === "open_csp" && r.type === "CC");
@@ -101,6 +103,9 @@ export function reshapePositions(rows) {
   // chart, and forecast reducer read identical fields whether the data came
   // from src/data/positions.json (parseSheets) or from Supabase (syncSheets).
   // max_loss == capital_fronted; for credit spreads max_gain == premium_collected.
+  // Debit spreads have no premium_collected to carry max gain, so re-derive it
+  // from the stored width and debit — otherwise the Spreads tab's Max Gain and
+  // Captured columns stay dark on every debit spread.
   const open_spreads = spreadRows.map(r => {
     const lots = r.lots || {};
     return {
@@ -118,7 +123,9 @@ export function reshapePositions(rows) {
       open_date:         r.open_date,
       expiry_date:       r.expiry_date,
       days_to_expiry:    r.days_to_expiry ?? null,
-      max_gain:          lots.is_credit ? (r.premium_collected ?? null) : null,
+      max_gain:          lots.is_credit
+                           ? (r.premium_collected ?? null)
+                           : debitMaxGain({ width: lots.width, debit: r.entry_cost, contracts: r.contracts }),
       max_loss:          r.capital_fronted ?? null,
       breakeven:         lots.breakeven ?? null,
       capital_fronted:   r.capital_fronted ?? null,

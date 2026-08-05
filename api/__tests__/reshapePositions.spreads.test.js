@@ -57,6 +57,40 @@ describe("reshapePositions — open vertical spreads", () => {
     expect(out.assigned_shares).toHaveLength(0);
   });
 
+  // Debit spreads carry no premium_collected, so max gain has to be re-derived
+  // from the stored width and debit or the Max Gain / Captured columns go dark.
+  const spyDebitRow = {
+    position_type:     "open_spread",
+    ticker:            "SPY",
+    type:              "Spread",
+    subtype:           "Bear Put",
+    strike:            750,                // short leg — the lower put on a bear put
+    contracts:         5,
+    open_date:         "2026-08-05",
+    expiry_date:       "2026-11-20",
+    premium_collected: null,
+    capital_fronted:   3075,
+    entry_cost:        6.15,
+    lots: { long_strike: 770, right: "put", is_credit: false, width: 20, breakeven: 763.85, settlement: "physical", assignable: true },
+    source: "Self",
+    notes:  "",
+  };
+
+  it("re-derives max_gain for a debit spread from width and debit", () => {
+    const [s] = reshapePositions([spyDebitRow]).open_spreads;
+    expect(s.max_gain).toBe(6925);          // (20 - 6.15) x 100 x 5
+    expect(s.max_loss).toBe(3075);          // the debit paid
+    expect(s.premium_collected).toBeNull(); // directional, not premium
+    expect(s.is_credit).toBe(false);
+  });
+
+  it("leaves debit max_gain null when width or debit is missing", () => {
+    const [s] = reshapePositions([
+      { ...spyDebitRow, lots: { ...spyDebitRow.lots, width: null } },
+    ]).open_spreads;
+    expect(s.max_gain).toBeNull();
+  });
+
   it("returns [] open_spreads when no spread rows are present", () => {
     const out = reshapePositions([
       { position_type: "open_csp", type: "CSP", ticker: "SOFI", strike: 24 },

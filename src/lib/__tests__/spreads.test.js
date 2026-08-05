@@ -29,10 +29,18 @@ describe("cushionToBreakeven", () => {
 
 describe("spreadMark", () => {
   it("credit spread mark = short_mid - long_mid (cost to close)", () => {
+    expect(spreadMark({ shortMid: 0.40, longMid: 0.10, is_credit: true })).toBeCloseTo(0.30, 5);
+  });
+  it("debit spread mark = long_mid - short_mid (what the position is worth)", () => {
+    // The long leg is the expensive one on a debit spread, so the credit
+    // formula would return a negative mark and flip the sign of G/L.
+    expect(spreadMark({ shortMid: 15.97, longMid: 22.28, is_credit: false })).toBeCloseTo(6.31, 5);
+  });
+  it("defaults to credit geometry when is_credit is unknown", () => {
     expect(spreadMark({ shortMid: 0.40, longMid: 0.10 })).toBeCloseTo(0.30, 5);
   });
   it("null if either leg missing", () => {
-    expect(spreadMark({ shortMid: null, longMid: 0.10 })).toBeNull();
+    expect(spreadMark({ shortMid: null, longMid: 0.10, is_credit: true })).toBeNull();
   });
 });
 
@@ -52,5 +60,44 @@ describe("spreadUnrealized — credit spread", () => {
     const n = spreadUnrealized({ credit: 0.66, shortMid: null, longMid: 0.10, contracts: 16, is_credit: true, max_gain: 1056 });
     expect(n.gl_dollars).toBeNull();
     expect(n.close_50).toBe(false);
+  });
+});
+
+describe("spreadUnrealized — debit spread (the SPY 750/770 bear put)", () => {
+  // Bought the 770 put / sold the 750 put for a 6.15 debit, 5 contracts.
+  // Width 20 → max gain (20 - 6.15) x 100 x 5 = 6925. Legs now 15.97 / 22.28.
+  const r = spreadUnrealized({
+    credit: 6.15, shortMid: 15.97, longMid: 22.28,
+    contracts: 5, is_credit: false, max_gain: 6925,
+  });
+  it("gl_dollars = (mark - debit) x 100 x contracts", () => {
+    expect(r.gl_dollars).toBe(80); // (6.31 - 6.15) x 100 x 5
+  });
+  it("pct_captured works for debit spreads too — share of max gain", () => {
+    expect(r.pct_captured).toBeCloseTo(80 / 6925, 6);
+  });
+  it("is not flagged for the 50% close at 1% captured", () => {
+    expect(r.close_50).toBe(false);
+  });
+  it("goes negative when the spread loses value", () => {
+    const loss = spreadUnrealized({
+      credit: 6.15, shortMid: 16.50, longMid: 20.00,
+      contracts: 5, is_credit: false, max_gain: 6925,
+    });
+    expect(loss.gl_dollars).toBe(-1325); // (3.50 - 6.15) x 100 x 5
+  });
+  it("flags the 50% close once half of max gain is captured", () => {
+    const win = spreadUnrealized({
+      credit: 6.15, shortMid: 10.00, longMid: 24.00,
+      contracts: 5, is_credit: false, max_gain: 6925,
+    });
+    expect(win.gl_dollars).toBe(3925); // (14.00 - 6.15) x 100 x 5
+    expect(win.pct_captured).toBeCloseTo(3925 / 6925, 6);
+    expect(win.close_50).toBe(true);
+  });
+  it("pct_captured is null without a max_gain", () => {
+    const n = spreadUnrealized({ credit: 6.15, shortMid: 15.97, longMid: 22.28, contracts: 5, is_credit: false, max_gain: null });
+    expect(n.gl_dollars).toBe(80);
+    expect(n.pct_captured).toBeNull();
   });
 });

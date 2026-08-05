@@ -26,13 +26,20 @@ export function cushionToBreakeven({ spot, breakeven, subtype }) {
   return { distance_pct: raw, state };
 }
 
-export function spreadMark({ shortMid, longMid }) {
+// The spread's mark is always quoted as a positive per-share price, but which
+// leg carries it depends on the structure: a credit spread's short leg is the
+// expensive one (mark = what it costs to buy the spread back), a debit
+// spread's long leg is (mark = what the position is currently worth). Using
+// the credit formula on a debit spread returns a negative mark and flips the
+// sign of G/L, so `is_credit` is load-bearing here — it defaults to credit
+// geometry only when the structure is genuinely unknown.
+export function spreadMark({ shortMid, longMid, is_credit }) {
   if (shortMid == null || longMid == null) return null;
-  return shortMid - longMid;
+  return is_credit === false ? longMid - shortMid : shortMid - longMid;
 }
 
 export function spreadUnrealized({ credit, shortMid, longMid, contracts, is_credit, max_gain }) {
-  const mark = spreadMark({ shortMid, longMid });
+  const mark = spreadMark({ shortMid, longMid, is_credit });
   if (mark == null || credit == null || !contracts) {
     return { mark: null, gl_dollars: null, pct_captured: null, close_50: false };
   }
@@ -40,7 +47,10 @@ export function spreadUnrealized({ credit, shortMid, longMid, contracts, is_cred
   const gl_dollars = is_credit
     ? (credit - mark) * 100 * contracts
     : (mark - credit) * 100 * contracts; // debit: bought at `credit` (the debit), now worth `mark`
-  const pct_captured = (is_credit && max_gain) ? gl_dollars / max_gain : null;
+  // Share of max gain captured — meaningful for both structures, so this gates
+  // on max_gain alone. Debit spreads have no premium_collected to carry it, so
+  // reshapePositions re-derives their max_gain from width and debit.
+  const pct_captured = max_gain ? gl_dollars / max_gain : null;
   return {
     mark,
     gl_dollars: Math.round(gl_dollars),
