@@ -38,6 +38,28 @@ describe("isTradingDay", () => {
     expect(isTradingDay("2026-08-10")).toBe(true);   // Monday
     expect(isTradingDay("2026-08-16")).toBe(false);  // Sunday
   });
+
+  it("fails closed on calendar overflow instead of silently rolling forward", () => {
+    // Native Date parsing rolls "2026-02-30" -> "2026-03-02" (a real Monday).
+    // Without a round-trip check this would return true.
+    expect(isTradingDay("2026-02-30")).toBe(false);
+    expect(isTradingDay("2026-11-31")).toBe(false); // November has 30 days
+  });
+
+  it("still rejects a real overflow-adjacent weekend date correctly", () => {
+    // 2026-02-28 is a real date (Feb has 28 days in 2026) and a Saturday, so
+    // the correct answer is false via the weekend check, not the overflow guard.
+    expect(isTradingDay("2026-02-28")).toBe(false);
+  });
+
+  it("rejects malformed and non-canonical input", () => {
+    expect(isTradingDay("")).toBe(false);
+    expect(isTradingDay("garbage")).toBe(false);
+    expect(isTradingDay("2026-13-01")).toBe(false);
+    expect(isTradingDay(null)).toBe(false);
+    expect(isTradingDay("2026-8-4")).toBe(false);   // non-zero-padded
+    expect(isTradingDay("2026/08/04")).toBe(false); // slash format
+  });
 });
 
 describe("nowMinutesET", () => {

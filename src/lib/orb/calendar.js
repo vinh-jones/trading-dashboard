@@ -20,11 +20,23 @@ export const NYSE_HOLIDAYS = new Set([
   "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
 ]);
 
-/** @param {string} sessionDate "YYYY-MM-DD" (an ET calendar date) */
+/**
+ * @param {string} sessionDate "YYYY-MM-DD" (an ET calendar date)
+ *
+ * Validates sessionDate rather than trusting the caller: native Date parsing
+ * silently rolls calendar overflow (e.g. "2026-02-30") forward to a real date,
+ * which would make this function return a confident wrong answer instead of
+ * failing closed. A malformed or out-of-range string always returns false.
+ */
 export function isTradingDay(sessionDate) {
   if (NYSE_HOLIDAYS.has(sessionDate)) return false;
   // Parse as UTC noon so no timezone can shift the weekday.
-  const day = new Date(`${sessionDate}T12:00:00Z`).getUTCDay();
+  const d = new Date(`${sessionDate}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  // Reject overflow (e.g. "2026-02-30" -> "2026-03-02") and non-canonical forms
+  // (e.g. "2026-8-4") by requiring the parsed date to serialize back exactly.
+  if (d.toISOString().slice(0, 10) !== sessionDate) return false;
+  const day = d.getUTCDay();
   return day >= 1 && day <= 5;
 }
 
