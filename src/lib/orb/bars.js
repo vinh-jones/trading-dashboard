@@ -20,17 +20,20 @@ export function etMinutes(iso) {
   return h * 60 + m;
 }
 
-// Number(null) and Number(undefined) coerce to 0 / NaN respectively — neither
-// is a signal we want to treat as "valid but zero". A null/undefined/missing
-// OHLC field should disqualify the bar, so coerce those to NaN explicitly
-// before Number.isFinite gets to judge them.
+// Number(null) coerces to 0 and Number("") / Number("  ") also coerce to 0 —
+// none of those are a signal we want to treat as "valid but zero". A
+// null/undefined/missing/blank OHLC field should disqualify the bar, so
+// coerce those to NaN explicitly before Number.isFinite gets to judge them.
 function toNum(v) {
-  return v === null || v === undefined ? NaN : Number(v);
+  if (v === null || v === undefined) return NaN;
+  if (typeof v === "string" && v.trim() === "") return NaN;
+  return Number(v);
 }
 
 export function normalizeBars(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
+    .filter((b) => b && typeof b === "object")
     .map((b) => ({
       start: b.start,
       end:   b.end,

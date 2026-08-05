@@ -4,7 +4,7 @@
 // row (the `params` jsonb column) so a later backtest can tell exactly which
 // parameterization produced a given verdict. Bump `version` on any change.
 
-export const ORB_PARAMS = {
+export const ORB_PARAMS = Object.freeze({
   version: 1,
 
   // Gate 2/3 — ATR and the liquidity threshold
@@ -24,4 +24,4 @@ export const ORB_PARAMS = {
 
   // Gate 6 — time
   windowMinutes:        90,     // from 09:30 ET; box completes at 09:45
-};
+});
