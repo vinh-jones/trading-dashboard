@@ -30,6 +30,17 @@ function toNum(v) {
   return Number(v);
 }
 
+// The real value set for `market` is unconfirmed beyond "po" (post-market,
+// documented). Keeping only known-good values is dangerous: an unexpected
+// regular-session label would drop the entire session, which is exactly the
+// failure that motivated this file's rewrite. So we deny-list known
+// extended-hours markers instead, case-insensitively, and keep everything
+// else (including "r", no field at all, and any label we haven't seen yet).
+const EXTENDED_HOURS_MARKERS = new Set(["pre", "po", "post", "after", "ah"]);
+function isExtendedHours(market) {
+  return typeof market === "string" && EXTENDED_HOURS_MARKERS.has(market.trim().toLowerCase());
+}
+
 export function normalizeBars(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -50,7 +61,7 @@ export function normalizeBars(raw) {
       // extended-hours bars can come back mixed in with regular-session ones.
       // Absent `market` must still pass — existing fixtures/tests omit the
       // field entirely, and only live payloads carry it.
-      (b.market === undefined || b.market === "r") &&
+      !isExtendedHours(b.market) &&
       [b.o, b.h, b.l, b.c].every((v) => Number.isFinite(v)))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
 }

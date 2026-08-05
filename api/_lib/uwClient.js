@@ -13,6 +13,8 @@
  *   GET /api/stock/{ticker}/flow-per-strike
  */
 
+import { adaptDailyCandles, adaptIntradayCandles } from "./uwCandles.js";
+
 const UW_BASE = "https://api.unusualwhales.com/api";
 const MIN_INTERVAL_MS = Number(process.env.UW_MIN_INTERVAL_MS) || 550;
 
@@ -126,22 +128,43 @@ export function fetchStockScreener(tickers) {
 // value UW returns when neither wrapper key is present) — callers do NOT
 // need to read `.data` off the result.
 
-/**
- * Daily OHLC for the ATR warm-up. 1d candles carry a `date` field, not
- * `start`/`end`. Pass the resolved array through normalizeDailyBars (NOT
- * normalizeBars, which requires `start` and would silently drop every row).
- */
-export function fetchDailyOhlc(ticker, limit = 150) {
+// Bare (unadapted) fetches, exported so callers with a debug affordance can
+// inspect exactly what UW sent on the wire — e.g. api/orb-open.js's
+// `?debug=1` path, which is how we confirm the real REST field names instead
+// of guessing again.
+
+export function fetchDailyOhlcRaw(ticker, limit = 150) {
   return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/1d?limit=${limit}`);
 }
 
-/**
- * 5-minute OHLC for one session. There is no regular-session query parameter,
- * so the response can include extended-hours bars — normalizeBars filters
- * them out via the `market` field (keeps `market === "r"` or absent).
- */
-export function fetchIntradayOhlc(ticker, sessionDate, { candleSize = "5m", limit = 500 } = {}) {
+export function fetchIntradayOhlcRaw(ticker, sessionDate, { candleSize = "5m", limit = 500 } = {}) {
   const q = new URLSearchParams({ limit: String(limit) });
   if (sessionDate) q.set("date", sessionDate);
   return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/${candleSize}?${q}`);
+}
+
+/**
+ * Daily OHLC for the ATR warm-up. Returns the internal shape
+ * ({date,o,h,l,c,vol}) — adaptDailyCandles (uwCandles.js) converts the raw
+ * REST candle (open/high/low/close/date-or-start_time) at the wire boundary
+ * before this resolves, so callers pass the result straight into
+ * normalizeDailyBars (NOT normalizeBars, which requires `start` and would
+ * silently drop every row).
+ */
+export async function fetchDailyOhlc(ticker, limit = 150) {
+  const raw = await fetchDailyOhlcRaw(ticker, limit);
+  return adaptDailyCandles(raw);
+}
+
+/**
+ * 5-minute OHLC for one session. Returns the internal shape
+ * ({start,end,o,h,l,c,vol,market}) — adaptIntradayCandles (uwCandles.js)
+ * converts the raw REST candle (open/high/low/close/start_time/market_time)
+ * at the wire boundary before this resolves. There is no regular-session
+ * query parameter, so the response can include extended-hours bars —
+ * normalizeBars filters them out via the `market` field.
+ */
+export async function fetchIntradayOhlc(ticker, sessionDate, opts = {}) {
+  const raw = await fetchIntradayOhlcRaw(ticker, sessionDate, opts);
+  return adaptIntradayCandles(raw);
 }

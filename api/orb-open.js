@@ -27,7 +27,7 @@
  * Soft no-op until UW_API_KEY is set. Self-authenticates.
  */
 
-import { hasUwKey, fetchDailyOhlc, fetchIntradayOhlc } from "./_lib/uwClient.js";
+import { hasUwKey, fetchDailyOhlc, fetchIntradayOhlc, fetchDailyOhlcRaw, fetchIntradayOhlcRaw } from "./_lib/uwClient.js";
 import { getSupabase, upsertSession } from "./_lib/orbDb.js";
 import { ORB_PARAMS } from "../src/lib/orb/params.js";
 import { normalizeBars, normalizeDailyBars, sliceSession } from "../src/lib/orb/bars.js";
@@ -59,6 +59,7 @@ export default async function handler(req, res) {
   if (!hasUwKey())          return res.status(200).json({ ok: true, skipped: "UW_API_KEY not configured" });
 
   const force       = req.query.force === "1";
+  const debug       = req.query.debug === "1";
   const sessionDate = todayET();
 
   if (!isTradingDay(sessionDate)) {
@@ -94,6 +95,28 @@ export default async function handler(req, res) {
     const session = intraOk ? sliceSession(normalizeBars(intraSettled.value), sessionDate) : [];
     const box     = buildBox(session);
 
+    // Debug affordance (?debug=1, still behind the normal auth check above):
+    // surface the first raw candle from each fetch BEFORE adaptation, plus
+    // post-normalization counts, so the real UW wire format can be confirmed
+    // instead of guessed at again. Extra requests, so only made when asked.
+    let debugInfo;
+    if (debug) {
+      const [dailyRawSettled, intraRawSettled] = await Promise.allSettled([
+        fetchDailyOhlcRaw(SYMBOL, ORB_PARAMS.atrWarmupBars + 30),
+        fetchIntradayOhlcRaw(SYMBOL, sessionDate),
+      ]);
+      const firstOf = (settled) =>
+        settled.status === "fulfilled" && Array.isArray(settled.value) && settled.value.length
+          ? settled.value[0]
+          : null;
+      debugInfo = {
+        dailyFirstRawCandle: firstOf(dailyRawSettled),
+        intradayFirstRawCandle: firstOf(intraRawSettled),
+        dailyNormalizedCount: daily.length,
+        intradayNormalizedCount: session.length,
+      };
+    }
+
     // A fetch failure is recorded, not thrown past — the day still gets a
     // row, just a degraded one built from whichever fetch survived. Fields
     // from the failed fetch are omitted entirely (never sent as null): per
@@ -119,7 +142,10 @@ export default async function handler(req, res) {
       }
 
       const written = await upsertSession(supabase, row);
-      return res.status(200).json({ ok: true, sessionDate, degraded: true, errors, id: written.id });
+      return res.status(200).json({
+        ok: true, sessionDate, degraded: true, errors, id: written.id,
+        ...(debug ? { debug: debugInfo } : {}),
+      });
     }
 
     if (!box) {
@@ -130,7 +156,10 @@ export default async function handler(req, res) {
         params: ORB_PARAMS,
         error: `opening range unavailable (${session.length} regular-session bars)`,
       });
-      return res.status(200).json({ ok: true, sessionDate, box: null, reason: "no opening range" });
+      return res.status(200).json({
+        ok: true, sessionDate, box: null, reason: "no opening range",
+        ...(debug ? { debug: debugInfo } : {}),
+      });
     }
 
     const liq       = evaluateLiquidity(box.range, atr, ORB_PARAMS);
@@ -152,7 +181,10 @@ export default async function handler(req, res) {
       error: null,
     });
 
-    return res.status(200).json({ ok: true, sessionDate, box, atr, liq, direction, id: row.id });
+    return res.status(200).json({
+      ok: true, sessionDate, box, atr, liq, direction, id: row.id,
+      ...(debug ? { debug: debugInfo } : {}),
+    });
   } catch (err) {
     console.error("[api/orb-open]", err);
     return res.status(500).json({ ok: false, error: err.message });

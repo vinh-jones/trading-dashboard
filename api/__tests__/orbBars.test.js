@@ -40,15 +40,24 @@ describe("normalizeBars", () => {
     expect(bars).toHaveLength(3);
   });
 
-  it("drops a bar with market: 'pre' but keeps market: 'r' and bars with no market field", () => {
+  it("drops known extended-hours markers (case-insensitively) but keeps 'r', unknown markers, and bars with no market field", () => {
     const bars = normalizeBars([
       ...RAW.map((b) => ({ ...b, market: "r" })),
       { start: "2026-08-04T09:00:00Z", end: "2026-08-04T09:05:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "pre" },
+      { start: "2026-08-04T09:05:00Z", end: "2026-08-04T09:10:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "PRE" },
+      { start: "2026-08-04T20:55:00Z", end: "2026-08-04T21:00:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "po" },
       { start: "2026-08-04T21:00:00Z", end: "2026-08-04T21:05:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "post" },
+      { start: "2026-08-04T21:05:00Z", end: "2026-08-04T21:10:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "after" },
+      { start: "2026-08-04T21:10:00Z", end: "2026-08-04T21:15:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "ah" },
+      // An unexpected/unknown label must be KEPT, not dropped — the real UW
+      // value set beyond "po" is unconfirmed, and dropping unknowns is what
+      // silently emptied a whole session in production.
+      { start: "2026-08-04T13:42:00Z", end: "2026-08-04T13:47:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "some-unseen-label" },
     ]);
-    // 3 from RAW (market: "r") — the "pre" and "post" bars are dropped.
-    expect(bars).toHaveLength(3);
-    expect(bars.every((b) => b.market === "r")).toBe(true);
+    // 3 from RAW (market: "r") + 1 unknown label kept — pre/PRE/po/post/after/ah dropped.
+    expect(bars).toHaveLength(4);
+    expect(bars.filter((b) => b.market === "r")).toHaveLength(3);
+    expect(bars.some((b) => b.market === "some-unseen-label")).toBe(true);
 
     // Bars with no `market` field at all (existing fixtures/tests) still pass.
     const noMarketField = normalizeBars(RAW);
