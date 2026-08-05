@@ -5,6 +5,7 @@ import { theme } from "../lib/theme";
 import { buildAttentionList } from "../lib/positionAttention";
 import { formatExpiry } from "../lib/format";
 import { AlertsBanner } from "./focus/AlertsBanner";
+import { OrbFocusStrip } from "./OrbFocusStrip";
 import { PositionsFeed } from "./focus/PositionsFeed";
 
 // Reference list of all Focus Engine rules — surfaced via the "? rules" toggle
@@ -261,6 +262,7 @@ export function FocusTab({
 
       {rulesOpen && <RulesPanel />}
 
+      <OrbFocusStrip />
       <AlertsBanner alerts={bannerAlerts} />
       <PositionsFeed rows={rows} />
       <MacroCalendar macroEvents={macroEvents} />

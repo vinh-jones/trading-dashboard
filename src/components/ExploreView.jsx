@@ -14,6 +14,7 @@ const TickersTab         = lazyNamed(() => import("./TickersTab"),         "Tick
 const TickerDetailView   = lazyNamed(() => import("./tickerDetail"),       "TickerDetailView");
 const StrategyBasketTab  = lazyNamed(() => import("./StrategyBasketTab"),  "StrategyBasketTab");
 const RiskTab            = lazyNamed(() => import("./RiskTab"),            "RiskTab");
+const OrbTab              = lazyNamed(() => import("./OrbTab"),             "OrbTab");
 
 function TabLoading() {
   return (
@@ -125,6 +126,7 @@ export function ExploreView({
         {active === "baskets" && (
           <StrategyBasketTab initialTag={basketTag} entries={strategyEntries} onEntriesChanged={loadStrategyEntries} />
         )}
+        {active === "orb"       && <OrbTab />}
       </Suspense>
     </div>
   );
