@@ -14,6 +14,16 @@
  * gates on actual ET wall-clock — a cron expression alone would drift by an
  * hour twice a year.
  *
+ * The daily (ATR) and intraday (box) fetches run via Promise.allSettled, not
+ * Promise.all — a single UW hiccup must not erase the day's record entirely.
+ * If either fetch rejects, a degraded row is still written: whichever of
+ * box/ATR the surviving fetch produced, `detection_status: "skipped"`, and an
+ * `error` naming which fetch failed and why. A field from the failed fetch is
+ * omitted (never null'd) — omission means "don't know", an explicit null on
+ * this column would mean "know it's empty" and would corrupt a later re-run
+ * that fills it in. `error: null` on the clean-success path is the one
+ * deliberate exception, clearing a stale error from a prior degraded run.
+ *
  * Soft no-op until UW_API_KEY is set. Self-authenticates.
  */
 
@@ -39,6 +49,10 @@ function authorized(req) {
   return !!(app && m && decodeURIComponent(m[1]) === app);
 }
 
+function reasonText(reason) {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
   if (!authorized(req))     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -58,21 +72,55 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    const [dailyRaw, intraRaw] = await Promise.all([
+    const [dailySettled, intraSettled] = await Promise.allSettled([
       fetchDailyOhlc(SYMBOL, ORB_PARAMS.atrWarmupBars + 30),
       fetchIntradayOhlc(SYMBOL, sessionDate),
     ]);
+    const dailyOk = dailySettled.status === "fulfilled";
+    const intraOk = intraSettled.status === "fulfilled";
 
     // Prior sessions only — today's partial bar must never reach the ATR.
-    const daily = normalizeDailyBars(dailyRaw)
-      .filter((b) => b.date < sessionDate)
-      .slice(-ORB_PARAMS.atrWarmupBars);
+    // When the daily fetch itself failed there is nothing to filter — `daily`
+    // stays empty and atr/atrAsOf stay null, which is a "don't know", not the
+    // same fact as "computed and it was null" (insufficient warm-up).
+    const daily = dailyOk
+      ? normalizeDailyBars(dailySettled.value)
+          .filter((b) => b.date < sessionDate)
+          .slice(-ORB_PARAMS.atrWarmupBars)
+      : [];
+    const atr     = dailyOk ? wilderAtr(daily, ORB_PARAMS.atrPeriod) : null;
+    const atrAsOf = dailyOk && daily.length ? daily[daily.length - 1].date : null;
 
-    const atr     = wilderAtr(daily, ORB_PARAMS.atrPeriod);
-    const atrAsOf = daily.length ? daily[daily.length - 1].date : null;
-
-    const session = sliceSession(normalizeBars(intraRaw), sessionDate);
+    const session = intraOk ? sliceSession(normalizeBars(intraSettled.value), sessionDate) : [];
     const box     = buildBox(session);
+
+    // A fetch failure is recorded, not thrown past — the day still gets a
+    // row, just a degraded one built from whichever fetch survived. Fields
+    // from the failed fetch are omitted entirely (never sent as null): per
+    // upsertSession's semantics an explicit null CLEARS a stored value, and
+    // "we never fetched this" is not the same fact as "we fetched it and it's
+    // empty". `qualified`/`direction`/etc. are skipped too — evaluateLiquidity
+    // needs both box and ATR, and we deliberately don't call it on a half set.
+    if (!dailyOk || !intraOk) {
+      const errors = [];
+      if (!dailyOk) errors.push(`daily OHLC fetch failed: ${reasonText(dailySettled.reason)}`);
+      if (!intraOk) errors.push(`intraday OHLC fetch failed: ${reasonText(intraSettled.reason)}`);
+
+      const row = {
+        symbol: SYMBOL, session_date: sessionDate,
+        detection_status: "skipped",
+        params: ORB_PARAMS,
+        error: errors.join("; "),
+      };
+      if (dailyOk) { row.atr14 = atr; row.atr_asof = atrAsOf; }
+      if (box) {
+        row.box_high = box.high; row.box_low = box.low; row.box_range = box.range;
+        row.candle_color = box.color; row.candle_open = box.open; row.candle_close = box.close;
+      }
+
+      const written = await upsertSession(supabase, row);
+      return res.status(200).json({ ok: true, sessionDate, degraded: true, errors, id: written.id });
+    }
 
     if (!box) {
       await upsertSession(supabase, {

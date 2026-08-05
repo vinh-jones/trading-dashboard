@@ -231,3 +231,80 @@ describe("api/orb-open — ATR correctness", () => {
     expect(row.atr14).toBeGreaterThan(0);
   });
 });
+
+describe("api/orb-open — degraded fetches (Promise.allSettled)", () => {
+  it("both fetches rejected: writes a skipped row with a non-empty error, does not throw", async () => {
+    fetchDailyOhlc.mockRejectedValue(new Error("UW 500 for /stock/QQQ/ohlc/1d"));
+    fetchIntradayOhlc.mockRejectedValue(new Error("UW 429 (retryable) for /stock/QQQ/ohlc/5m"));
+
+    const req = makeReq();
+    const res = makeRes();
+    await expect(handler(req, res)).resolves.not.toThrow();
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.body.ok).toBe(true);
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.detection_status).toBe("skipped");
+    expect(row.error).toBeTruthy();
+    expect(row.error).toMatch(/daily OHLC fetch failed/);
+    expect(row.error).toMatch(/intraday OHLC fetch failed/);
+    // No box, no ATR — neither fetch produced anything.
+    expect(row.box_high).toBeUndefined();
+    expect(row.atr14).toBeUndefined();
+  });
+
+  it("daily fetch rejected only: box fields present, atr14 absent/null, skipped, error names the daily failure", async () => {
+    fetchDailyOhlc.mockRejectedValue(new Error("UW 503 for /stock/QQQ/ohlc/1d"));
+    fetchIntradayOhlc.mockResolvedValue(genIntradayBars(SESSION_DATE, { qualify: true }));
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.detection_status).toBe("skipped");
+    expect(row.box_high).toBeCloseTo(501.5, 5);
+    expect(row.box_low).toBeCloseTo(499.5, 5);
+    expect(row.box_range).toBeCloseTo(2.0, 5);
+    // atr14 was never fetched — omitted (undefined) or explicitly null, but
+    // never a computed number.
+    expect(row.atr14 == null).toBe(true);
+    expect(row.error).toMatch(/daily OHLC fetch failed/);
+    expect(row.error).toMatch(/UW 503/);
+  });
+
+  it("intraday fetch rejected only: atr14 present, no box fields, skipped, error names the intraday failure", async () => {
+    fetchDailyOhlc.mockResolvedValue(genDailyBars(SESSION_DATE));
+    fetchIntradayOhlc.mockRejectedValue(new Error("UW 429 (retryable) for /stock/QQQ/ohlc/5m"));
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.detection_status).toBe("skipped");
+    expect(Number.isFinite(row.atr14)).toBe(true);
+    expect(row.atr14).toBeGreaterThan(0);
+    expect(row.box_high).toBeUndefined();
+    expect(row.box_low).toBeUndefined();
+    expect(row.candle_color).toBeUndefined();
+    expect(row.error).toMatch(/intraday OHLC fetch failed/);
+  });
+
+  it("the actual rejection reason text reaches the error column, not a generic message", async () => {
+    fetchDailyOhlc.mockResolvedValue(genDailyBars(SESSION_DATE));
+    fetchIntradayOhlc.mockRejectedValue(new Error("UW 429 (retryable) for /stock/QQQ/ohlc/5m"));
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.error).toContain("UW 429 (retryable) for /stock/QQQ/ohlc/5m");
+  });
+});
