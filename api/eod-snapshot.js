@@ -183,6 +183,10 @@ function buildTextBlob({
     );
     if (ds.vix != null)
       lines.push(`VIX: ${ds.vix} · ${ds.vix_band ?? ""}`);
+    // VXN is comparison context only — flagged as such so the brief never reads
+    // as a second, competing deployment instruction.
+    if (ds.vxn != null)
+      lines.push(`VXN: ${ds.vxn} · ${ds.vxn_band ?? ""} (Nasdaq vol, comparison only — VIX drives targets)`);
     lines.push(
       `Positions: ${ds.open_csp_count} CSPs · ${ds.open_cc_count} CCs · ${ds.open_leaps_count} LEAPs · ${ds.assigned_share_tickers} assigned tickers`
     );

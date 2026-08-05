@@ -4,7 +4,7 @@ import { useLiveVix } from "../hooks/useLiveVix";
 import { useWindowWidth } from "../hooks/useWindowWidth";
 import { formatDollars, formatDollarsFull } from "../lib/format";
 import { calcPipeline } from "../lib/trading";
-import { getVixBand } from "../lib/vixBand";
+import { getVixBand, getVxnBand } from "../lib/vixBand";
 import { theme } from "../lib/theme";
 import { SyncButton } from "./SyncButton";
 
@@ -44,8 +44,11 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
   // ── Free cash + VIX band status ─────────────────────────────────────────────
   const freeCashEst    = account.free_cash_est ?? null;
   const freeCashPctEst = account.free_cash_pct_est ?? null;
-  const { vix: liveVix, source: vixSource } = useLiveVix(account.vix_current);
+  const { vix: liveVix, vxn: liveVxn, source: vixSource } = useLiveVix(account.vix_current);
   const band = getVixBand(liveVix);
+  // VXN band is shown alongside for comparison only — `band` above stays the
+  // sole input to the free-cash status below. See getVxnBand's note.
+  const vxnBand = getVxnBand(liveVxn);
   const status = !band || freeCashPctEst == null ? "unknown"
     : freeCashPctEst < band.floorPct   ? "over"
     : freeCashPctEst > band.ceilingPct ? "under"
@@ -117,13 +120,17 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
         )}
       </Slot>
 
-      {/* ── Slot 2: VIX + posture band ───────────────────────────────────── */}
+      {/* ── Slot 2: VIX + posture band, with VXN alongside ───────────────────
+          VIX is the live framework; VXN renders under it in muted type while
+          Ryan's Nasdaq-vol framework is being evaluated. Both cash ranges show
+          so the two postures can be compared at a glance — they routinely
+          disagree, since VXN has run ~10pts over VIX. */}
       <Slot>
-        <SlotLabel>VIX</SlotLabel>
-        <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
-          {liveVix != null ? liveVix.toFixed(2) : "—"}
-        </div>
-        <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4 }}>
+        <SlotLabel>VIX{liveVxn != null ? " · VXN" : ""}</SlotLabel>
+        <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2] }}>
+          <span style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
+            {liveVix != null ? liveVix.toFixed(2) : "—"}
+          </span>
           {band && (
             <span style={{
               padding:      "1px 7px",
@@ -132,13 +139,38 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
               color:        theme.text.secondary,
               fontSize:     theme.size.xs,
             }}>
-              {band.sentiment}
+              {band.sentiment} · {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
             </span>
           )}
+        </div>
+        {liveVxn != null && (
+          <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], marginTop: 2 }}>
+            <span style={{ fontSize: theme.size.sm, fontWeight: 600, color: theme.text.muted }}>
+              {liveVxn.toFixed(2)}
+            </span>
+            {vxnBand && (
+              <span style={{
+                padding:      "1px 7px",
+                borderRadius: theme.radius.pill,
+                border:       `1px dashed ${theme.border.default}`,
+                color:        theme.text.subtle,
+                fontSize:     theme.size.xs,
+              }}>
+                {vxnBand.sentiment} · {(vxnBand.floorPct * 100).toFixed(0)}–{(vxnBand.ceilingPct * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+        )}
+        <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ color: vixSource === "live" ? theme.green : theme.text.faint, display: "flex", alignItems: "center", gap: 3 }}>
             {vixSource === "live" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.green, display: "inline-block" }} />}
             {vixSource === "live" ? "live" : vixSource === "manual" ? "manual" : "closed"}
           </span>
+          {liveVxn != null && liveVix != null && (
+            <span style={{ color: theme.text.faint }}>
+              · spread {(liveVxn - liveVix).toFixed(1)}
+            </span>
+          )}
         </div>
       </Slot>
 

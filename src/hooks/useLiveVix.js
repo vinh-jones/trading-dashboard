@@ -3,6 +3,7 @@ import { isMarketHours } from "../lib/trading";
 
 export function useLiveVix(fallbackVix) {
   const [vix, setVix]       = useState(fallbackVix);
+  const [vxn, setVxn]       = useState(null);
   const [source, setSource] = useState("manual");
 
   useEffect(() => {
@@ -13,6 +14,9 @@ export function useLiveVix(fallbackVix) {
         const r    = await fetch("/api/vix", { signal: controller.signal });
         clearTimeout(timeout);
         const data = await r.json();
+        // VXN has no manual fallback — there's no account.json field for it, so
+        // it simply doesn't render when the fetch comes back empty.
+        setVxn(data.vxn ?? null);
         if (data.vix != null) {
           setVix(data.vix);
           setSource("live");
@@ -33,5 +37,5 @@ export function useLiveVix(fallbackVix) {
     return () => clearInterval(interval);
   }, []);
 
-  return { vix, source };
+  return { vix, vxn, source };
 }

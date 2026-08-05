@@ -19,7 +19,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { syncFromSheets } from "../lib/syncSheets.js";
-import { getVixBand } from "../src/lib/vixBand.js";
+import { getVixBand, getVxnBand } from "../src/lib/vixBand.js";
 import { evaluateAlerts } from "./_lib/evaluateAlerts.js";
 import { reshapePositions } from "./_lib/reshapePositions.js";
 import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
@@ -41,7 +41,7 @@ function getSupabase() {
 }
 
 async function fetchMarketData() {
-  const symbols = ["%5EVIX", "SPY", "QQQ"];
+  const symbols = ["%5EVIX", "%5EVXN", "SPY", "QQQ"];
   const results = {};
 
   await Promise.all(symbols.map(async (symbol) => {
@@ -51,14 +51,14 @@ async function fetchMarketData() {
       );
       const data = await res.json();
       const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      const key = symbol.replace("%5E", "");  // VIX, SPY, QQQ
+      const key = symbol.replace("%5E", "");  // VIX, VXN, SPY, QQQ
       results[key] = price ?? null;
     } catch {
       results[symbol] = null;
     }
   }));
 
-  return { vix: results.VIX, spy: results.SPY, qqq: results.QQQ };
+  return { vix: results.VIX, vxn: results.VXN, spy: results.SPY, qqq: results.QQQ };
 }
 
 export default async function handler(req, res) {
@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     supabase.from("positions").select("*"),
   ]);
 
-  const { vix, spy, qqq } = marketData;
+  const { vix, vxn, spy, qqq } = marketData;
 
   if (accountResult.error) {
     console.error("[api/snapshot] Failed to load account snapshot:", accountResult.error);
@@ -236,11 +236,23 @@ export default async function handler(req, res) {
   // 8. VIX band and deployment flags
   const band = getVixBand(vix);
 
+  // VXN band rides along for comparison while Ryan's Nasdaq-vol framework is
+  // under evaluation. It is recorded, never acted on — every deployment flag
+  // below stays keyed off `band`.
+  const vxnBand = getVxnBand(vxn);
+
   // Patch account_snapshots with VIX — syncFromSheets (step 1) wrote the row
   // without it. Fire-and-forget; a write failure here never blocks the snapshot.
   if (vix != null) {
     supabase.from("account_snapshots")
-      .update({ vix_current: vix, vix_band: band?.label ?? null })
+      .update({
+        vix_current: vix,
+        vix_band:    band?.label ?? null,
+        // Null VXN writes null rather than skipping, so a Yahoo outage leaves a
+        // visible gap instead of a stale reading carried over from yesterday.
+        vxn_current: vxn ?? null,
+        vxn_band:    vxnBand?.label ?? null,
+      })
       .eq("snapshot_date", today)
       .then(({ error }) => { if (error) console.error("[api/snapshot] VIX patch failed:", error); });
   }
@@ -263,6 +275,8 @@ export default async function handler(req, res) {
     total_deployed_pct:        accountValue > 0 ? totalDeployed / accountValue : null,
     vix,
     vix_band:                  band?.label ?? null,
+    vxn:                       vxn ?? null,
+    vxn_band:                  vxnBand?.label ?? null,
     cash_floor_target_pct:     band?.floorPct ?? null,
     cash_ceiling_target_pct:   band?.ceilingPct ?? null,
     within_band:               withinBand,
