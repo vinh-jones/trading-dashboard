@@ -17,6 +17,15 @@ describe("anatomy", () => {
     expect(a.upperWick).toBeCloseTo(0.035, 4);
     expect(a.lowerWick).toBeCloseTo(0.785, 4);
   });
+
+  it("decomposes a green candle into body and wicks", () => {
+    const a = anatomy(BAR_0950);
+    expect(a.green).toBe(true);
+    expect(a.red).toBe(false);
+    expect(a.body).toBeCloseTo(0.97, 4);
+    expect(a.upperWick).toBeCloseTo(0.03, 4);
+    expect(a.lowerWick).toBeCloseTo(0.12, 4);
+  });
 });
 
 describe("detectPattern — engulfing tolerance", () => {
@@ -31,6 +40,28 @@ describe("detectPattern — engulfing tolerance", () => {
     expect(hit).not.toBeNull();
     expect(hit.pattern).toBe("bearish_engulfing");
     expect(hit.side).toBe("short");
+  });
+
+  // Mirror of the BAR_0950/BAR_0955 pair above: a prior red bar and a current
+  // green bar whose open sits half a cent ABOVE the prior close, so a
+  // zero-tolerance run misses and the default one-cent tolerance fires.
+  // The bullish path was previously never exercised end-to-end — only the
+  // bearish side had a real-data fixture — so a sign-flip bug in
+  // isBullishEngulfing would have sailed through the whole suite.
+  const PREV_RED  = { start: "x", o: 714.62, h: 714.65, l: 712.8,  c: 713.585 };
+  const CUR_GREEN = { start: "x", o: 713.59, h: 714.65, l: 713.53, c: 714.615 };
+
+  it("MISSES the mirrored bullish engulfing with zero tolerance", () => {
+    // current open 713.59 > prior close 713.585 — over by half a cent.
+    const p = { ...ORB_PARAMS, engulfTolerance: 0 };
+    expect(detectPattern(CUR_GREEN, PREV_RED, ATR, p)).toBeNull();
+  });
+
+  it("FIRES the mirrored bar with the default one-cent tolerance", () => {
+    const hit = detectPattern(CUR_GREEN, PREV_RED, ATR, ORB_PARAMS);
+    expect(hit).not.toBeNull();
+    expect(hit.pattern).toBe("bullish_engulfing");
+    expect(hit.side).toBe("long");
   });
 });
 
@@ -74,6 +105,44 @@ describe("detectPattern — hammers", () => {
     ["negative", -5],
   ])("rejects an otherwise-matching bar when atr is %s", (_label, atr) => {
     expect(detectPattern(hammer, null, atr, ORB_PARAMS)).toBeNull();
+  });
+
+  it("accepts a doji-guard boundary bar: body exactly minBodyPctOfRange * range", () => {
+    // range 10, body 1 (exactly 10%, the doji floor) — hammer shape:
+    // bodyBot 9 sits in the top third (floor 6.667), lowerWick 9 (>= 2x
+    // body), upperWick 0 (<= 0.5x body). Confirms the doji guard is
+    // inclusive (>=) at its own threshold, not exclusive.
+    const boundary = { start: "x", o: 9, h: 10, l: 0, c: 10 };
+    const hit = detectPattern(boundary, null, 10, ORB_PARAMS);
+    expect(hit).not.toBeNull();
+    expect(hit.pattern).toBe("hammer");
+  });
+
+  it("accepts a noise-guard boundary bar: range exactly minRangePctOfAtr * atr", () => {
+    // range 5, atr 100 -> threshold 0.05*100 = 5, so range == threshold
+    // exactly. body 1 (20% of range, well clear of the doji guard) in a
+    // hammer shape: bodyBot 4 in the top third (floor 3.333), lowerWick 4
+    // (>= 2x body), upperWick 0 (<= 0.5x body). Confirms the noise guard is
+    // inclusive (>=) at its own threshold, not exclusive.
+    const boundary = { start: "x", o: 4, h: 5, l: 0, c: 5 };
+    const hit = detectPattern(boundary, null, 100, ORB_PARAMS);
+    expect(hit).not.toBeNull();
+    expect(hit.pattern).toBe("hammer");
+  });
+
+  // Pins the ordering asserted only in a code comment: engulfing is checked
+  // before hammers, so a bar that structurally satisfies both definitions
+  // must resolve to the engulfing pattern. Without this test, "simplifying"
+  // detectPattern's if-chain order would silently flip which pattern wins
+  // and no other test would catch it. Fixture built to satisfy both
+  // bearish_engulfing and inverted_hammer simultaneously; noise guard needs
+  // a small ATR given the tiny (5-cent) range.
+  it("resolves a bar matching both bearish_engulfing and inverted_hammer to engulfing (precedence)", () => {
+    const prev = { start: "x", o: 100.00, h: 100.05, l: 99.99,  c: 100.01 };
+    const cur  = { start: "x", o: 100.01, h: 100.05, l: 99.995, c: 100.00 };
+    const hit = detectPattern(cur, prev, 0.5, ORB_PARAMS);
+    expect(hit).not.toBeNull();
+    expect(hit.pattern).toBe("bearish_engulfing");
   });
 });
 
