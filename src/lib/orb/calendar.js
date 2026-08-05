@@ -28,16 +28,53 @@ export function isTradingDay(sessionDate) {
   return day >= 1 && day <= 5;
 }
 
-/** Today's ET calendar date, "YYYY-MM-DD". */
-export function todayET() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+/**
+ * ET calendar date, "YYYY-MM-DD", for the given instant (defaults to now).
+ * A late-evening UTC instant can still be the previous day in ET — e.g.
+ * 2026-08-05T02:00:00Z is 2026-08-04 22:00 ET. Getting this wrong writes the
+ * handler's output to the wrong session row overnight.
+ */
+export function todayET(now = new Date()) {
+  return now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-/** Minutes past midnight, ET, right now. */
-export function nowMinutesET() {
-  const s = new Date().toLocaleTimeString("en-GB", {
+/**
+ * Minutes past midnight, ET, for the given instant (defaults to now).
+ *
+ * The same UTC instant lands on a different ET minute-of-day depending on
+ * whether DST is in effect (EDT = UTC-4, EST = UTC-5) — e.g. 13:45 UTC is
+ * 09:45 ET in March (EDT) but 08:45 ET in January (EST). This is the whole
+ * reason the crons are scheduled wide and the handlers gate on this function
+ * instead of relying on the cron expression's fixed UTC time: if this drifts,
+ * the system runs an hour off for half the year.
+ */
+export function nowMinutesET(now = new Date()) {
+  const s = now.toLocaleTimeString("en-GB", {
     timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false,
   });
   const [h, m] = s.split(":").map(Number);
   return h * 60 + m;
+}
+
+// Window predicates, expressed as pure functions of ET minutes-past-midnight so
+// they're testable without touching the clock. All three handlers gate on these.
+
+export const MARKET_OPEN_MIN = 9 * 60 + 30;   // 09:30 ET
+export const BOX_COMPLETE_MIN = 9 * 60 + 45;  // 09:45 ET — opening range is set
+export const WINDOW_END_MIN = 11 * 60;        // 11:00 ET — hard deadline
+
+/** The 09:45 job: build the box. Narrow window so a stuck cron cannot re-run it at noon. */
+export function isBoxWindow(mins) {
+  return mins >= BOX_COMPLETE_MIN && mins < BOX_COMPLETE_MIN + 15;
+}
+
+/** The 5-minute scan. Starts one bar after the box, runs 10 min past the deadline
+ *  so the final bars still get scanned and the row can be closed out as expired. */
+export function isScanWindow(mins) {
+  return mins >= BOX_COMPLETE_MIN + 5 && mins <= WINDOW_END_MIN + 10;
+}
+
+/** Outcome resolution: after the closing bell. */
+export function isAfterClose(mins) {
+  return mins >= 16 * 60;
 }
