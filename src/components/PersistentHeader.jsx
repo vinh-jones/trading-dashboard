@@ -75,10 +75,17 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
   const expectedPipeline = v2MonthTotal ?? (mtd + flatExpected);
   const pipelineIsV2    = v2MonthTotal != null;
 
-  // Mobile uses 3 compact slots; desktop uses 5-slot grid.
+  // Mobile uses 3 compact slots; desktop uses a 5-slot grid, 6 with VXN.
+  // VXN gets its own slot rather than sharing VIX's — two readings stacked in
+  // one slot forced the band pill to wrap. It needs a genuinely wide viewport:
+  // squeezing a sixth column in below ~1100px just moves the wrapping problem
+  // into the VIX slot, so below that the comparison drops rather than degrades.
+  const showVxn  = windowWidth >= 1100 && liveVxn != null;
   const gridCols = isMobile
     ? "1.3fr 0.9fr 0.8fr"
-    : "1.4fr 1fr 0.9fr 1.4fr auto";
+    : showVxn
+      ? "1.3fr 0.9fr 0.9fr 0.8fr 1.2fr auto"
+      : "1.4fr 1fr 0.9fr 1.4fr auto";
 
   return (
     <div style={{
@@ -120,17 +127,13 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
         )}
       </Slot>
 
-      {/* ── Slot 2: VIX + posture band, with VXN alongside ───────────────────
-          VIX is the live framework; VXN renders under it in muted type while
-          Ryan's Nasdaq-vol framework is being evaluated. Both cash ranges show
-          so the two postures can be compared at a glance — they routinely
-          disagree, since VXN has run ~10pts over VIX. */}
+      {/* ── Slot 2: VIX + posture band ───────────────────────────────────── */}
       <Slot>
-        <SlotLabel>VIX{liveVxn != null ? " · VXN" : ""}</SlotLabel>
-        <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2] }}>
-          <span style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
-            {liveVix != null ? liveVix.toFixed(2) : "—"}
-          </span>
+        <SlotLabel>VIX</SlotLabel>
+        <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.primary }}>
+          {liveVix != null ? liveVix.toFixed(2) : "—"}
+        </div>
+        <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           {band && (
             <span style={{
               padding:      "1px 7px",
@@ -138,43 +141,51 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
               border:       `1px solid ${theme.border.strong}`,
               color:        theme.text.secondary,
               fontSize:     theme.size.xs,
+              whiteSpace:   "nowrap",
             }}>
-              {band.sentiment} · {(band.floorPct * 100).toFixed(0)}–{(band.ceilingPct * 100).toFixed(0)}%
+              {band.sentiment}
             </span>
           )}
-        </div>
-        {liveVxn != null && (
-          <div style={{ display: "flex", alignItems: "baseline", gap: theme.space[2], marginTop: 2 }}>
-            <span style={{ fontSize: theme.size.sm, fontWeight: 600, color: theme.text.muted }}>
-              {liveVxn.toFixed(2)}
-            </span>
-            {vxnBand && (
-              <span style={{
-                padding:      "1px 7px",
-                borderRadius: theme.radius.pill,
-                border:       `1px dashed ${theme.border.default}`,
-                color:        theme.text.subtle,
-                fontSize:     theme.size.xs,
-              }}>
-                {vxnBand.sentiment} · {(vxnBand.floorPct * 100).toFixed(0)}–{(vxnBand.ceilingPct * 100).toFixed(0)}%
-              </span>
-            )}
-          </div>
-        )}
-        <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ color: vixSource === "live" ? theme.green : theme.text.faint, display: "flex", alignItems: "center", gap: 3 }}>
             {vixSource === "live" && <span style={{ width: 5, height: 5, borderRadius: "50%", background: theme.green, display: "inline-block" }} />}
             {vixSource === "live" ? "live" : vixSource === "manual" ? "manual" : "closed"}
           </span>
-          {liveVxn != null && liveVix != null && (
-            <span style={{ color: theme.text.faint }}>
-              · spread {(liveVxn - liveVix).toFixed(1)}
-            </span>
-          )}
         </div>
       </Slot>
 
-      {/* ── Slot 3: P1 alert count ───────────────────────────────────────── */}
+      {/* ── Slot 3: VXN, comparison only ──────────────────────────────────────
+          Mirrors the VIX slot's shape so the two read as a pair. The cash range
+          sits on the badge row rather than inside the badge — VIX's own range
+          lives in the Free Cash slot, so VXN needs to carry its own to be
+          comparable at all. Muted throughout: this framework is under
+          evaluation and drives nothing. */}
+      {showVxn && (
+        <Slot>
+          <SlotLabel>VXN · test</SlotLabel>
+          <div style={{ fontSize: theme.size.lg, fontWeight: 600, color: theme.text.secondary }}>
+            {liveVxn.toFixed(2)}
+          </div>
+          {vxnBand && (
+            <div style={{ fontSize: theme.size.xs, marginTop: theme.space[1], display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+              <span style={{
+                padding:      "1px 7px",
+                borderRadius: theme.radius.pill,
+                border:       `1px solid ${theme.border.default}`,
+                color:        theme.text.muted,
+                fontSize:     theme.size.xs,
+                whiteSpace:   "nowrap",
+              }}>
+                {vxnBand.sentiment}
+              </span>
+              <span style={{ color: theme.text.subtle }}>
+                {(vxnBand.floorPct * 100).toFixed(0)}–{(vxnBand.ceilingPct * 100).toFixed(0)}%
+              </span>
+            </div>
+          )}
+        </Slot>
+      )}
+
+      {/* ── Slot 4: P1 alert count ───────────────────────────────────────── */}
       <Slot>
         <SlotLabel>Alerts</SlotLabel>
         {p1Count > 0 ? (
@@ -198,7 +209,7 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
         )}
       </Slot>
 
-      {/* ── Slot 4: MTD Premium + pipeline (hidden on mobile) ────────────── */}
+      {/* ── Slot 5: MTD Premium + pipeline (hidden on mobile) ────────────── */}
       {!isMobile && (
         <Slot>
           <SlotLabel>MTD Premium</SlotLabel>
@@ -220,7 +231,7 @@ export function PersistentHeader({ captureRate, p1Count = 0 }) {
         </Slot>
       )}
 
-      {/* ── Slot 5: Sync (desktop only — mobile uses corner button) ────────── */}
+      {/* ── Slot 6: Sync (desktop only — mobile uses corner button) ────────── */}
       {!isMobile && (
         <Slot divider={false} style={{ textAlign: "right", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
           <SyncButton />
