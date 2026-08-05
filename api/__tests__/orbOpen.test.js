@@ -39,10 +39,10 @@ const CRON_SECRET = "test-cron-secret";
 const SESSION_DATE = "2026-08-04"; // Tuesday, EDT (UTC-4) — not an NYSE holiday
 const ET_OFFSET_HOURS = 4; // EDT
 
-function makeReq({ query = {} } = {}) {
+function makeReq({ query = {}, method = "GET", headers } = {}) {
   return {
-    method: "GET",
-    headers: { authorization: `Bearer ${CRON_SECRET}` },
+    method,
+    headers: headers ?? { authorization: `Bearer ${CRON_SECRET}` },
     query,
   };
 }
@@ -306,5 +306,98 @@ describe("api/orb-open — degraded fetches (Promise.allSettled)", () => {
 
     const [, row] = upsertSession.mock.calls[0];
     expect(row.error).toContain("UW 429 (retryable) for /stock/QQQ/ohlc/5m");
+  });
+});
+
+describe("api/orb-open — buildBox failure path (both fetches succeed, box unbuildable)", () => {
+  it("fewer than three intraday bars: skipped row, error mentions the opening range, atr14 still recorded", async () => {
+    fetchDailyOhlc.mockResolvedValue(genDailyBars(SESSION_DATE));
+    fetchIntradayOhlc.mockResolvedValue(
+      genIntradayBars(SESSION_DATE, { qualify: true }).slice(0, 2), // only 09:30 and 09:35
+    );
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.detection_status).toBe("skipped");
+    expect(row.error).toMatch(/opening range/i);
+    // The ATR fetch succeeded — that data must not be lost just because the
+    // box couldn't be built.
+    expect(Number.isFinite(row.atr14)).toBe(true);
+    expect(row.atr14).toBeGreaterThan(0);
+    expect(row.box_high).toBeUndefined();
+  });
+
+  it("three bars present but at the wrong ET minutes (dropped opening bar): same skipped outcome", async () => {
+    fetchDailyOhlc.mockResolvedValue(genDailyBars(SESSION_DATE));
+    // 09:35 / 09:40 / 09:45 instead of 09:30 / 09:35 / 09:40 — the 09:30 bar
+    // is missing, so buildBox's exact-ET-minute lookup must fail closed.
+    fetchIntradayOhlc.mockResolvedValue([
+      { start: etIso(SESSION_DATE, 9, 35), o: 500.2, h: 501,   l: 500,   c: 500.8, vol: 10_000 },
+      { start: etIso(SESSION_DATE, 9, 40), o: 500.8, h: 501.5, l: 500.3, c: 501.3, vol: 10_000 },
+      { start: etIso(SESSION_DATE, 9, 45), o: 501.3, h: 501.9, l: 501.0, c: 501.6, vol: 10_000 },
+    ]);
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.detection_status).toBe("skipped");
+    expect(row.error).toMatch(/opening range/i);
+    expect(Number.isFinite(row.atr14)).toBe(true);
+    expect(row.box_high).toBeUndefined();
+  });
+
+  it("pre-market bars occupying the first three array slots: box still builds correctly by ET minute", async () => {
+    fetchDailyOhlc.mockResolvedValue(genDailyBars(SESSION_DATE));
+    const premarket = [
+      { start: etIso(SESSION_DATE, 4, 0),  o: 700, h: 705, l: 695, c: 702, vol: 5_000 }, // 04:00 ET
+      { start: etIso(SESSION_DATE, 4, 5),  o: 702, h: 706, l: 698, c: 703, vol: 5_000 }, // 04:05 ET
+    ];
+    const opening = genIntradayBars(SESSION_DATE, { qualify: true });
+    fetchIntradayOhlc.mockResolvedValue([...premarket, ...opening]);
+
+    const req = makeReq();
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(upsertSession).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    // Box built from the real 09:30/09:35/09:40 bars, not the pre-market ones.
+    expect(row.box_high).toBeCloseTo(501.5, 5);
+    expect(row.box_low).toBeCloseTo(499.5, 5);
+    expect(row.detection_status).toBe("pending");
+  });
+});
+
+describe("api/orb-open — auth and method gates", () => {
+  it("rejects a non-GET method with 405", async () => {
+    const req = makeReq({ method: "POST" });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(405);
+    expect(res.body).toEqual({ ok: false, error: "Method not allowed" });
+    expect(fetchDailyOhlc).not.toHaveBeenCalled();
+    expect(fetchIntradayOhlc).not.toHaveBeenCalled();
+    expect(upsertSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with no credentials with 401, and never calls UW", async () => {
+    const req = makeReq({ headers: {} }); // no authorization header, no cookie
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.body).toEqual({ ok: false, error: "Unauthorized" });
+    expect(fetchDailyOhlc).not.toHaveBeenCalled();
+    expect(fetchIntradayOhlc).not.toHaveBeenCalled();
+    expect(upsertSession).not.toHaveBeenCalled();
   });
 });
