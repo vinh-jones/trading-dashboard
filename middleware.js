@@ -29,6 +29,11 @@ const BYPASS = new Set([
   "/api/uw-earnings-dates",
   "/api/uw-iv",
   "/api/uw-gex",
+  // ORB cron handlers — self-authenticate against CRON_SECRET/APP_SECRET.
+  // Not /api/orb-day: that is the UI read endpoint and goes through the gate.
+  "/api/orb-open",
+  "/api/orb-scan",
+  "/api/orb-outcome",
   "/api/ingest",
   "/api/ingest-iv",
   "/api/ingest-s5fi",
