@@ -1,10 +1,23 @@
 // src/lib/orb/openingRange.js
 //
-// The source strategy uses a 15-minute chart. Most REST bar APIs top out at
-// 5-minute granularity, so the opening candle is assembled from the 09:30,
-// 09:35 and 09:40 ET bars. This is exact, not an approximation: the 15-minute
-// high is the max of the three highs, the low the min of the three lows, the
-// open the first bar's open and the close the third bar's close.
+// The source strategy uses a 15-minute chart. We assemble the opening candle
+// from the 09:30, 09:35 and 09:40 ET bars: high = max of the three highs, low =
+// min of the three lows, open = first bar's open, close = third bar's close.
+//
+// This is NOT because the provider lacks 15-minute bars. Unusual Whales serves
+// `15m` natively, and on 2026-08-04 its native bar matched this assembly in
+// every field (o 708.21, h 713.48, l 707.59, c 712.5195, vol 5,546,830).
+//
+// We assemble anyway for self-consistency. Pattern detection runs on 5-minute
+// bars and tests each close against these box edges. Sourcing the box from a
+// separate 15m series would make that comparison depend on two aggregations
+// agreeing at a boundary, and a one-cent disagreement would silently corrupt
+// the exact decision that fires an alert. One series, consistent by
+// construction.
+//
+// Consequence: the expected values in the buildBox test are the provider's own
+// native 15m numbers, so that test cross-checks our assembly against UW's
+// aggregation. Do not "tidy" those constants.
 
 import { etMinutes, etDate } from "./bars.js";
 
