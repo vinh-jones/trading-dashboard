@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildSignal } from "../../src/lib/orb/signal.js";
+import { detectPattern } from "../../src/lib/orb/patterns.js";
+import { ORB_PARAMS } from "../../src/lib/orb/params.js";
 
 // The spec's own worked NVDA example.
 const NVDA_BOX = { high: 182, low: 176 };
@@ -74,15 +76,48 @@ describe("buildSignal", () => {
     expect(() => buildSignal({ pattern: "bogus", side: "long" }, bar, null, NVDA_BOX)).toThrow(/pattern/);
   });
 
-  it("rejects a hand-built long match whose stop sits above entry", () => {
-    // Unreachable via detectPattern's real outputs — passesGuards requires
-    // range > 0 and the pattern definitions force the stop/entry ordering —
-    // so this exercises the guard directly, the way a backtest harness or a
-    // REPL session that hand-builds inputs could trip it. Do not delete as
-    // dead code: it exists for exactly that direct-caller scenario.
-    const bar = { o: 102, h: 100, l: 105, c: 101 }; // hand-built, not from detectPattern
+  it("rejects a hand-built long match whose stop sits above entry (raw comparison, in isolation)", () => {
+    // Covers the guard's raw comparison in isolation with an impossible OHLC
+    // bar (h < l). This can never occur in real data — the real-data version
+    // of this guard firing is covered by the next test, which goes through
+    // detectPattern with two physically valid bars.
+    const bar = { o: 102, h: 100, l: 105, c: 101 }; // impossible OHLC, hand-built
     // hammer/long: entry = bar.h = 100, stop = bar.l = 105. stop > entry, incoherent for a long.
     expect(buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX)).toBeNull();
+  });
+
+  it("rejects a REAL bullish_engulfing from detectPattern when the prior bar is near-doji", () => {
+    // passesGuards' doji guard validates only the CURRENT (signal) bar's
+    // anatomy — `prev` is never checked. When the prior bar's body is smaller
+    // than engulfTolerance (0.01), entry (prev.h) and the signal bar's wick
+    // can land on the wrong side of each other even though both bars are
+    // physically valid OHLC. This goes through the real pipeline end to end.
+    const prev = { o: 100.005, h: 100.005, l: 99.99,  c: 100.000 }; // red, body 0.005 < tol 0.01
+    const bar  = { o: 100.008, h: 100.03,  l: 100.007, c: 100.02  }; // green
+
+    const match = detectPattern(bar, prev, 0.2, ORB_PARAMS);
+    expect(match).toEqual({ pattern: "bullish_engulfing", side: "long" });
+
+    // entry = prev.h = 100.005, stop = bar.l = 100.007 — stop sits ABOVE
+    // entry, incoherent for a long.
+    const sig = buildSignal(match, bar, prev, NVDA_BOX);
+    expect(sig).toBeNull();
+  });
+
+  it("rejects a REAL bearish_engulfing from detectPattern when the prior bar is near-doji (mirror)", () => {
+    // Symmetric construction: a near-doji GREEN prev (small body, upper wick
+    // instead of lower), a red signal bar whose high lands just below
+    // prev.l — entry (prev.l) sits ABOVE stop (bar.h), incoherent for a short.
+    const prev = { o: 100.000, h: 100.015, l: 100.000, c: 100.005 }; // green, body 0.005 < tol 0.01
+    const bar  = { o: 99.997,  h: 99.998,  l: 99.975,  c: 99.985  }; // red
+
+    const match = detectPattern(bar, prev, 0.2, ORB_PARAMS);
+    expect(match).toEqual({ pattern: "bearish_engulfing", side: "short" });
+
+    // entry = prev.l = 100.000, stop = bar.h = 99.998 — stop sits BELOW
+    // entry, incoherent for a short.
+    const sig = buildSignal(match, bar, prev, NVDA_BOX);
+    expect(sig).toBeNull();
   });
 
   it("returns null for an engulfing with no prior bar", () => {

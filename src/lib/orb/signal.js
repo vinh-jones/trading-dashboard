@@ -7,6 +7,10 @@
 // flattering number (its NVDA example is 2.7) but that is T2 alone — the same
 // trade's T1 ratio is 0.32, because T1 is only "price re-enters the range".
 // Recording one without the other makes every setup look better than it is.
+//
+// Contract: buildSignal either returns a signal object, returns null (the
+// setup is structurally incoherent — see the coherence guards below), or
+// throws (an unrecognized `match.pattern`, i.e. a caller bug).
 
 export function buildSignal(match, bar, prev, box) {
   let entry, stop;
@@ -35,13 +39,21 @@ export function buildSignal(match, bar, prev, box) {
   const long = match.side === "long";
 
   // Coherence guards. Two invariants, both structural, neither about how
-  // "good" the setup is. Both are unreachable via detectPattern's real
-  // outputs (passesGuards requires range > 0, and the engulfing definitions
-  // force the ordering) — they exist to defend `buildSignal` when called
-  // directly with a hand-built `match`/`bar` (a backtest harness, a REPL
-  // session), which is the same class of caller we defend against below.
-  // Do not delete them as dead code.
-  //   1. A long must stop out below entry, a short above.
+  // "good" the setup is. Do not delete either as dead code:
+  //   1. A long must stop out below entry, a short above. This is a LIVE
+  //      production path, not just defense against a hand-built match. It
+  //      fires on real detectPattern output whenever the PRIOR bar's body is
+  //      smaller than `engulfTolerance` (0.01): passesGuards' doji guard only
+  //      validates the CURRENT (signal) bar's anatomy — `prev` is never
+  //      checked at all. A near-doji prev collapses entry (prev.h for a
+  //      bullish engulfing, prev.l for bearish) to nearly a single point, and
+  //      the signal bar's wick can land on the wrong side of it. Concretely:
+  //        prev = { o: 100.005, h: 100.005, l: 99.99,   c: 100.000 } // red, body 0.005 < tol 0.01
+  //        bar  = { o: 100.008, h: 100.03,  l: 100.007, c: 100.02  } // green
+  //      detectPattern returns bullish_engulfing/long; entry = prev.h =
+  //      100.005, stop = bar.l = 100.007 — stop sits ABOVE entry, incoherent
+  //      for a long. Both bars are physically valid OHLC; this is not a
+  //      contrived input.
   //   2. Entry can't sit on the FAR side of the entire box — that's not a
   //      breakout setup at all, it's nonsense (e.g. a "long" whose entry is
   //      already above box.high). This does NOT reject an entry that's
