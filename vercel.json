@@ -48,6 +48,18 @@
     {
       "path": "/api/calibrate-forecast",
       "schedule": "0 14 1 * *"
+    },
+    {
+      "path": "/api/orb-open",
+      "schedule": "45 13,14 * * 1-5"
+    },
+    {
+      "path": "/api/orb-scan",
+      "schedule": "*/5 13-16 * * 1-5"
+    },
+    {
+      "path": "/api/orb-outcome",
+      "schedule": "5 20,21 * * 1-5"
     }
   ]
 }
