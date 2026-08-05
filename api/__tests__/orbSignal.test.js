@@ -65,10 +65,24 @@ describe("buildSignal", () => {
     expect(sig.t1Ahead).toBe(false);
   });
 
-  it("rejects a malformed match where the stop is on the wrong side", () => {
+  it("throws on an unrecognized pattern", () => {
     const bar = { o: 100, h: 101, l: 99, c: 100.5 };
-    // A "long" whose stop (h) sits above entry (l) is incoherent.
-    expect(buildSignal({ pattern: "bogus", side: "long" }, bar, null, NVDA_BOX)).toBeNull();
+    // Same class of caller bug patterns.js already throws on for an
+    // unrecognized direction/outsideRule: an unknown pattern means someone
+    // added a 5th pattern to detectPattern and forgot this switch. Returning
+    // null would be silently indistinguishable from "no pattern found today".
+    expect(() => buildSignal({ pattern: "bogus", side: "long" }, bar, null, NVDA_BOX)).toThrow(/pattern/);
+  });
+
+  it("rejects a hand-built long match whose stop sits above entry", () => {
+    // Unreachable via detectPattern's real outputs — passesGuards requires
+    // range > 0 and the pattern definitions force the stop/entry ordering —
+    // so this exercises the guard directly, the way a backtest harness or a
+    // REPL session that hand-builds inputs could trip it. Do not delete as
+    // dead code: it exists for exactly that direct-caller scenario.
+    const bar = { o: 102, h: 100, l: 105, c: 101 }; // hand-built, not from detectPattern
+    // hammer/long: entry = bar.h = 100, stop = bar.l = 105. stop > entry, incoherent for a long.
+    expect(buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX)).toBeNull();
   });
 
   it("returns null for an engulfing with no prior bar", () => {
@@ -99,5 +113,27 @@ describe("buildSignal", () => {
     expect(sig.entry).toBe(178.0);
     expect(sig.t1Ahead).toBe(false);
     expect(sig.rrT2).toBeGreaterThan(0);
+  });
+
+  it("still returns a signal when a short's entry sits inside the box (mirror of the long case)", () => {
+    // box is 176-182; entry 180 is inside it, not past the far edge (176).
+    const bar = { o: 180.5, h: 181.0, l: 180.0, c: 180.8 };
+    const sig = buildSignal({ pattern: "inverted_hammer", side: "short" }, bar, null, NVDA_BOX);
+    expect(sig).not.toBeNull();
+    expect(sig.entry).toBe(180.0);
+    expect(sig.t1Ahead).toBe(false);
+    expect(sig.rrT2).toBeGreaterThan(0);
+  });
+
+  it("locks in t1Ahead false and rrT1 exactly 0 when entry lands exactly on T1", () => {
+    // hammer/long: entry = bar.h = box.low exactly. t1 == entry, so t1 is not
+    // "ahead" of entry (t1 > entry is false), and rrT1 is honestly 0 — this
+    // must not drift to true/nonzero.
+    const bar = { o: 172.0, h: 176.0, l: 170.0, c: 171.0 };
+    const sig = buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX);
+    expect(sig.entry).toBe(176);
+    expect(sig.t1).toBe(176);
+    expect(sig.t1Ahead).toBe(false);
+    expect(sig.rrT1).toBe(0);
   });
 });

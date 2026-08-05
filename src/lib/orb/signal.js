@@ -23,13 +23,24 @@ export function buildSignal(match, bar, prev, box) {
       if (!prev) return null;
       entry = prev.l; stop = bar.h; break;
     default:
-      return null;
+      // Same class of caller bug as patterns.js throwing on an unrecognized
+      // `direction`/`outsideRule`: an unknown pattern is a code bug (someone
+      // added a 5th pattern to detectPattern and forgot this switch), not a
+      // "no signal today" outcome. Returning null here would be silently
+      // indistinguishable from "no pattern found" — exactly the failure mode
+      // this module exists to eliminate. Throw loud instead.
+      throw new Error(`buildSignal: unrecognized pattern "${match.pattern}"`);
   }
 
   const long = match.side === "long";
 
   // Coherence guards. Two invariants, both structural, neither about how
-  // "good" the setup is:
+  // "good" the setup is. Both are unreachable via detectPattern's real
+  // outputs (passesGuards requires range > 0, and the engulfing definitions
+  // force the ordering) — they exist to defend `buildSignal` when called
+  // directly with a hand-built `match`/`bar` (a backtest harness, a REPL
+  // session), which is the same class of caller we defend against below.
+  // Do not delete them as dead code.
   //   1. A long must stop out below entry, a short above.
   //   2. Entry can't sit on the FAR side of the entire box — that's not a
   //      breakout setup at all, it's nonsense (e.g. a "long" whose entry is
