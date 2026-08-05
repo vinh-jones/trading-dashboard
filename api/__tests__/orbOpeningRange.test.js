@@ -38,6 +38,37 @@ describe("buildBox", () => {
     const late = OPENING.map((b) => ({ ...b, start: b.start.replace("13:", "14:") }));
     expect(buildBox(late)).toBeNull();
   });
+
+  it("selects the opening bars by ET minute when pre-market bars are prepended", () => {
+    const premarket = [
+      { start: "2026-08-04T08:00:00Z", o: 700, h: 705, l: 695, c: 702 }, // 04:00 ET
+      { start: "2026-08-04T08:05:00Z", o: 702, h: 706, l: 698, c: 703 }, // 04:05 ET
+    ];
+    const box = buildBox([...premarket, ...OPENING]);
+    expect(box.high).toBe(713.48);
+    expect(box.low).toBe(707.59);
+  });
+
+  it("returns null when the three ET-minute bars span two different dates", () => {
+    const crossDay = [
+      OPENING[0],
+      OPENING[1],
+      { ...OPENING[2], start: "2026-08-05T13:40:00Z" }, // same ET minute, next day
+    ];
+    expect(buildBox(crossDay)).toBeNull();
+  });
+
+  it("builds the box during EST (winter, no DST) using the same ET-minute guard", () => {
+    const winterOpening = [
+      { start: "2026-01-05T14:30:00Z", o: 500, h: 502, l: 499,   c: 501 }, // 09:30 ET
+      { start: "2026-01-05T14:35:00Z", o: 501, h: 503, l: 500,   c: 502 }, // 09:35 ET
+      { start: "2026-01-05T14:40:00Z", o: 502, h: 504, l: 500.5, c: 503 }, // 09:40 ET
+    ];
+    const box = buildBox(winterOpening);
+    expect(box).not.toBeNull();
+    expect(box.high).toBe(504);
+    expect(box.low).toBe(499);
+  });
 });
 
 describe("evaluateLiquidity", () => {
@@ -63,6 +94,38 @@ describe("evaluateLiquidity", () => {
 
   it("returns a null verdict when ATR is unavailable", () => {
     expect(evaluateLiquidity(5.89, null, ORB_PARAMS).qualified).toBeNull();
+  });
+
+  it("qualifies with greyBand at the exact 0.22 boundary", () => {
+    const v = evaluateLiquidity(22, 100, ORB_PARAMS);
+    expect(v.rangeAtrPct).toBe(0.22);
+    expect(v.qualified).toBe(true);
+    expect(v.greyBand).toBe(true);
+  });
+
+  it("qualifies without greyBand at the exact 0.25 boundary", () => {
+    const v = evaluateLiquidity(25, 100, ORB_PARAMS);
+    expect(v.rangeAtrPct).toBe(0.25);
+    expect(v.qualified).toBe(true);
+    expect(v.greyBand).toBe(false);
+  });
+
+  it("returns a null verdict when atr is exactly zero", () => {
+    const v = evaluateLiquidity(5.89, 0, ORB_PARAMS);
+    expect(v.qualified).toBeNull();
+    expect(v.greyBand).toBeNull();
+  });
+
+  it("returns a null verdict when atr is negative", () => {
+    const v = evaluateLiquidity(5.89, -5, ORB_PARAMS);
+    expect(v.qualified).toBeNull();
+    expect(v.greyBand).toBeNull();
+  });
+
+  it("returns a null verdict when range is NaN", () => {
+    const v = evaluateLiquidity(NaN, 15, ORB_PARAMS);
+    expect(v.qualified).toBeNull();
+    expect(v.greyBand).toBeNull();
   });
 });
 
