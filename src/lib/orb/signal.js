@@ -28,9 +28,19 @@ export function buildSignal(match, bar, prev, box) {
 
   const long = match.side === "long";
 
-  // Coherence guard: a long must stop out below entry, a short above.
+  // Coherence guards. Two invariants, both structural, neither about how
+  // "good" the setup is:
+  //   1. A long must stop out below entry, a short above.
+  //   2. Entry can't sit on the FAR side of the entire box — that's not a
+  //      breakout setup at all, it's nonsense (e.g. a "long" whose entry is
+  //      already above box.high). This does NOT reject an entry that's
+  //      merely inside the box (high poked back through the near edge);
+  //      that's the degenerate-but-valid case t1Ahead exists to report, and
+  //      T2 is still a real target for it. Only the far-side case is rejected.
   if (long  && !(stop < entry)) return null;
   if (!long && !(stop > entry)) return null;
+  if (long  && entry > box.high) return null;
+  if (!long && entry < box.low)  return null;
 
   // A long sets up below the box, so the near edge is the box low; a short
   // sets up above it, so the near edge is the box high.

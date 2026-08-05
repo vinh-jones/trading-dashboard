@@ -80,4 +80,24 @@ describe("buildSignal", () => {
     const bar = { o: 100, h: 100, l: 100, c: 100 };
     expect(buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX)).toBeNull();
   });
+
+  it("rejects a long whose entry sits above the box entirely", () => {
+    const bar = { o: 182.5, h: 183.5, l: 181.0, c: 183.0 };
+    expect(buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX)).toBeNull();
+  });
+
+  it("rejects a short whose entry sits below the box entirely", () => {
+    const bar = { o: 175.5, h: 177.0, l: 174.5, c: 175.0 };
+    expect(buildSignal({ pattern: "inverted_hammer", side: "short" }, bar, null, NVDA_BOX)).toBeNull();
+  });
+
+  it("still returns a signal when a long's entry sits inside the box (degenerate but not incoherent)", () => {
+    // box is 176-182; entry 178 is inside it, not past the far edge.
+    const bar = { o: 175.5, h: 178.0, l: 174.0, c: 175.2 };
+    const sig = buildSignal({ pattern: "hammer", side: "long" }, bar, null, NVDA_BOX);
+    expect(sig).not.toBeNull();
+    expect(sig.entry).toBe(178.0);
+    expect(sig.t1Ahead).toBe(false);
+    expect(sig.rrT2).toBeGreaterThan(0);
+  });
 });
