@@ -115,3 +115,33 @@ export function fetchStockScreener(tickers) {
   const qs = list.length ? `?ticker=${encodeURIComponent(list.join(","))}` : "";
   return uwGet(`/screener/stocks${qs}`);
 }
+
+// GET /stock/{ticker}/ohlc/{candle_size} — no `market_time` query param exists
+// on this endpoint (do not add one). Results are capped at 2500 elements, and
+// a response for a given end_date may include 1-2 hours of the following
+// UTC day due to rollover.
+//
+// uwGet already unwraps `{ data: [...] }` / `{ result: [...] }`, so both
+// fetchers below resolve directly to the raw candle array (or whatever bare
+// value UW returns when neither wrapper key is present) — callers do NOT
+// need to read `.data` off the result.
+
+/**
+ * Daily OHLC for the ATR warm-up. 1d candles carry a `date` field, not
+ * `start`/`end`. Pass the resolved array through normalizeDailyBars (NOT
+ * normalizeBars, which requires `start` and would silently drop every row).
+ */
+export function fetchDailyOhlc(ticker, limit = 150) {
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/1d?limit=${limit}`);
+}
+
+/**
+ * 5-minute OHLC for one session. There is no regular-session query parameter,
+ * so the response can include extended-hours bars — normalizeBars filters
+ * them out via the `market` field (keeps `market === "r"` or absent).
+ */
+export function fetchIntradayOhlc(ticker, sessionDate, { candleSize = "5m", limit = 500 } = {}) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (sessionDate) q.set("date", sessionDate);
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/${candleSize}?${q}`);
+}

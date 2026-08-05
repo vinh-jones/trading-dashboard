@@ -42,13 +42,44 @@ export function normalizeBars(raw) {
       l: toNum(b.l),
       c: toNum(b.c),
       vol: Number(b.vol ?? 0),
+      market: b.market,
     }))
     .filter((b) =>
       b.start &&
+      // No regular-session query param exists on the UW OHLC endpoint, so
+      // extended-hours bars can come back mixed in with regular-session ones.
+      // Absent `market` must still pass — existing fixtures/tests omit the
+      // field entirely, and only live payloads carry it.
+      (b.market === undefined || b.market === "r") &&
       [b.o, b.h, b.l, b.c].every((v) => Number.isFinite(v)))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
 }
 
 export function sliceSession(bars, sessionDate) {
   return bars.filter((b) => etDate(b.start) === sessionDate);
+}
+
+/**
+ * UW's 1d/1w candles carry a `date` field and no start/end timestamps, so they
+ * cannot go through normalizeBars (which requires `start`). Keep daily bars in
+ * date space rather than synthesizing an instant — a bare date turned into a
+ * timestamp is exactly the kind of conversion that silently lands on the wrong
+ * calendar day.
+ *
+ * @returns {Array<{date:string,o:number,h:number,l:number,c:number,vol:number}>}
+ *          sorted ascending by date
+ */
+export function normalizeDailyBars(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((b) => b && typeof b === "object")
+    .map((b) => ({
+      date: b.date,
+      o: toNum(b.o), h: toNum(b.h), l: toNum(b.l), c: toNum(b.c),
+      vol: Number(b.vol ?? 0),
+    }))
+    .filter((b) =>
+      typeof b.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.date) &&
+      [b.o, b.h, b.l, b.c].every((v) => Number.isFinite(v)))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }

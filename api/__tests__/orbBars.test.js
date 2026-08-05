@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeBars, sliceSession, etDate, etMinutes } from "../../src/lib/orb/bars.js";
+import { normalizeBars, normalizeDailyBars, sliceSession, etDate, etMinutes } from "../../src/lib/orb/bars.js";
 
 const RAW = [
   { start: "2026-08-04T13:40:00Z", end: "2026-08-04T13:45:00Z", o: 712.07, h: "713.48", l: "711.85", c: 712.5195 },
@@ -38,6 +38,60 @@ describe("normalizeBars", () => {
     ).not.toThrow();
     const bars = normalizeBars([...RAW, null, undefined, "not-a-bar", 42]);
     expect(bars).toHaveLength(3);
+  });
+
+  it("drops a bar with market: 'pre' but keeps market: 'r' and bars with no market field", () => {
+    const bars = normalizeBars([
+      ...RAW.map((b) => ({ ...b, market: "r" })),
+      { start: "2026-08-04T09:00:00Z", end: "2026-08-04T09:05:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "pre" },
+      { start: "2026-08-04T21:00:00Z", end: "2026-08-04T21:05:00Z", o: 700, h: "701", l: "699", c: 700.5, market: "post" },
+    ]);
+    // 3 from RAW (market: "r") — the "pre" and "post" bars are dropped.
+    expect(bars).toHaveLength(3);
+    expect(bars.every((b) => b.market === "r")).toBe(true);
+
+    // Bars with no `market` field at all (existing fixtures/tests) still pass.
+    const noMarketField = normalizeBars(RAW);
+    expect(noMarketField).toHaveLength(3);
+  });
+});
+
+describe("normalizeDailyBars", () => {
+  const RAW_DAILY = [
+    { date: "2026-08-03", o: 700, h: "705", l: "698", c: 703, vol: 1000 },
+    { date: "2026-08-01", o: 690, h: "695", l: "688", c: 693, vol: 900 },
+    { date: "2026-08-04", o: 703, h: "710", l: "701", c: 708, vol: 1100 },
+  ];
+
+  it("sorts ascending by date and coerces string h/l to numbers", () => {
+    const bars = normalizeDailyBars(RAW_DAILY);
+    expect(bars.map((b) => b.date)).toEqual(["2026-08-01", "2026-08-03", "2026-08-04"]);
+    expect(bars[0].h).toBe(695);
+    expect(typeof bars[0].l).toBe("number");
+  });
+
+  it("drops rows with a malformed or missing date", () => {
+    const bars = normalizeDailyBars([
+      ...RAW_DAILY,
+      { date: "08/04/2026", o: 1, h: "2", l: "1", c: 1.5, vol: 1 },
+      { o: 1, h: "2", l: "1", c: 1.5, vol: 1 },
+      { date: null, o: 1, h: "2", l: "1", c: 1.5, vol: 1 },
+    ]);
+    expect(bars).toHaveLength(3);
+  });
+
+  it("drops rows with non-finite OHLC", () => {
+    const bars = normalizeDailyBars([
+      ...RAW_DAILY,
+      { date: "2026-08-05", o: null, h: "2", l: "1", c: 1.5, vol: 1 },
+      { date: "2026-08-06", o: 1, h: "", l: "1", c: 1.5, vol: 1 },
+    ]);
+    expect(bars).toHaveLength(3);
+  });
+
+  it("returns [] for non-array input", () => {
+    expect(normalizeDailyBars(null)).toEqual([]);
+    expect(normalizeDailyBars(undefined)).toEqual([]);
   });
 });
 
