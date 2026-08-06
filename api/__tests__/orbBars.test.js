@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeBars, normalizeDailyBars, sliceSession, etDate, etMinutes } from "../../src/lib/orb/bars.js";
+import { normalizeBars, normalizeDailyBars, sliceSession, etDate, etMinutes, isBarClosed } from "../../src/lib/orb/bars.js";
 
 const RAW = [
   { start: "2026-08-04T13:40:00Z", end: "2026-08-04T13:45:00Z", o: 712.07, h: "713.48", l: "711.85", c: 712.5195 },
@@ -111,6 +111,37 @@ describe("sliceSession", () => {
       { start: "2026-08-03T13:30:00Z", end: "2026-08-03T13:35:00Z", o: 1, h: "2", l: "1", c: 2 },
     ]);
     expect(sliceSession(bars, "2026-08-04")).toHaveLength(3);
+  });
+});
+
+describe("isBarClosed", () => {
+  const NOW = new Date("2026-08-04T13:50:00Z");
+
+  it("returns true when end is in the past", () => {
+    const bar = { start: "2026-08-04T13:40:00Z", end: "2026-08-04T13:45:00Z" };
+    expect(isBarClosed(bar, NOW, true)).toBe(true);
+  });
+
+  it("returns false when end is in the future", () => {
+    const bar = { start: "2026-08-04T13:45:00Z", end: "2026-08-04T13:50:01Z" };
+    expect(isBarClosed(bar, NOW, false)).toBe(false);
+  });
+
+  it("returns true at exactly end === now", () => {
+    const bar = { start: "2026-08-04T13:45:00Z", end: "2026-08-04T13:50:00Z" };
+    expect(isBarClosed(bar, NOW, false)).toBe(true);
+  });
+
+  it("falls back to hasLaterBar when end is absent", () => {
+    const bar = { start: "2026-08-04T13:45:00Z" };
+    expect(isBarClosed(bar, NOW, true)).toBe(true);
+    expect(isBarClosed(bar, NOW, false)).toBe(false);
+  });
+
+  it("falls back to hasLaterBar when end is unparseable garbage", () => {
+    const bar = { start: "2026-08-04T13:45:00Z", end: "not-a-date" };
+    expect(isBarClosed(bar, NOW, true)).toBe(true);
+    expect(isBarClosed(bar, NOW, false)).toBe(false);
   });
 });
 

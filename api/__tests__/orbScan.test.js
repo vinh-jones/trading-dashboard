@@ -9,7 +9,7 @@
 // below is hand-checked against the real hammer/engulfing geometry, not
 // hand-built match objects.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../_lib/uwClient.js", () => ({
   hasUwKey: vi.fn(() => true),
@@ -72,8 +72,18 @@ function etIso(hh, mm) {
   return `${SESSION_DATE}T${String(utcHour).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00.000Z`;
 }
 
+// `end` is a real 5-minute-bar end timestamp, computed from `start` rather
+// than hand-rolled per call site (mm can roll into the next hour, e.g. 55+5).
+// Every existing fixture in this file runs on SESSION_DATE 2026-08-04, which
+// is safely in the past relative to the real wall clock the un-faked tests
+// run under, so isBarClosed's real `end <= now` check passes for all of them
+// exactly as it would for closed bars in production. The in-progress-bar
+// tests below use vi.setSystemTime to move "now" inside a bar's own
+// [start, end) window instead of hand-crafting a fake `end`.
 function bar(hh, mm, { o, h, l, c }) {
-  return { start: etIso(hh, mm), o, h, l, c, vol: 10_000 };
+  const start = etIso(hh, mm);
+  const end = new Date(new Date(start).getTime() + 5 * 60 * 1000).toISOString();
+  return { start, end, o, h, l, c, vol: 10_000 };
 }
 
 // Doji-shaped, deliberately below minBodyPctOfRange so passesGuards rejects
@@ -531,6 +541,102 @@ describe("api/orb-scan — resilience", () => {
     const [, row] = upsertSession.mock.calls[0];
     expect(row.pattern_bar_start).toBe(hammer(9, 55).start);
     expect(row.last_scanned_bar).toBe(hammer(9, 55).start);
+  });
+});
+
+describe("api/orb-scan — in-progress bar exclusion", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a bar whose end is in the future is NOT evaluated, produces NO Pushover, and leaves last_scanned_bar unchanged", async () => {
+    const priorClosedBar = flat(9, 45);   // end 13:50:00Z — closed relative to "now" below
+    const inProgressBar  = hammer(9, 50); // end 13:55:00Z — "now" is 13:50:38Z -> unclosed
+
+    getSession.mockResolvedValue(baseRow({
+      ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish",
+      last_scanned_bar: priorClosedBar.start, // simulates a prior poll that already scanned 9:45
+    }));
+    fetchIntradayOhlc.mockResolvedValue([priorClosedBar, inProgressBar]);
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-04T13:50:38.000Z")); // 38s into the 9:50 bar
+
+    const res = makeRes();
+    await handler(makeReq(), res);
+
+    expect(sendPushover).not.toHaveBeenCalled();
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.last_scanned_bar).toBe(priorClosedBar.start); // unchanged from the prior cursor
+    expect(row.shadow_matches).toEqual([]);
+    expect(row.detection_status).toBeUndefined();
+  });
+
+  it("the same bar, once closed on a later invocation, IS evaluated and does alert — the break does not lose the bar", async () => {
+    const priorClosedBar = flat(9, 45);
+    const nowClosedBar   = hammer(9, 50); // same bar as above, now fully closed
+
+    getSession.mockResolvedValue(baseRow({
+      ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish",
+      last_scanned_bar: priorClosedBar.start, // cursor never advanced past it on the earlier poll
+    }));
+    fetchIntradayOhlc.mockResolvedValue([priorClosedBar, nowClosedBar]);
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-04T13:55:01.000Z")); // 1s after the bar's end
+
+    const res = makeRes();
+    await handler(makeReq(), res);
+
+    expect(sendPushover).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.pattern_bar_start).toBe(nowClosedBar.start);
+    expect(row.detection_status).toBe("matched");
+    expect(row.last_scanned_bar).toBe(nowClosedBar.start);
+  });
+
+  it("reproduces the live failure: the real 10:45 bar shape with end in the future produces no alert", async () => {
+    // Exact OHLC from the live false-positive row: open === high to 4dp, the
+    // signature of a bar barely 38 seconds old.
+    const priorClosedBar = flat(9, 45);
+    const liveBar = bar(10, 45, { o: 716.8174, h: 716.8174, l: 715.875, c: 716.075 }); // end 14:50:00Z
+
+    getSession.mockResolvedValue(baseRow({
+      ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish",
+      last_scanned_bar: priorClosedBar.start,
+    }));
+    fetchIntradayOhlc.mockResolvedValue([priorClosedBar, liveBar]);
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-04T14:45:38.000Z")); // 38s into the bar, matching alerted_at in the field report
+
+    const res = makeRes();
+    await handler(makeReq(), res);
+
+    expect(sendPushover).not.toHaveBeenCalled();
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.last_scanned_bar).toBe(priorClosedBar.start);
+  });
+
+  it("a closed bar followed by an unclosed one still evaluates the closed one and stops there", async () => {
+    const closedBar   = hammer(9, 50); // end 13:55:00Z
+    const unclosedBar = hammer(9, 55); // start 13:55:00Z, end 14:00:00Z
+
+    getSession.mockResolvedValue(baseRow({ ...HAMMER_BOX, atr14: HAMMER_ATR, direction: "bullish" }));
+    fetchIntradayOhlc.mockResolvedValue([flat(9, 45), closedBar, unclosedBar]);
+
+    vi.useFakeTimers();
+    // Past closedBar's end (13:55Z) but before unclosedBar's end (14:00Z).
+    vi.setSystemTime(new Date("2026-08-04T13:55:30.000Z"));
+
+    const res = makeRes();
+    await handler(makeReq(), res);
+
+    expect(sendPushover).toHaveBeenCalledTimes(1);
+    const [, row] = upsertSession.mock.calls[0];
+    expect(row.pattern_bar_start).toBe(closedBar.start);
+    expect(row.last_scanned_bar).toBe(closedBar.start);
+    expect(row.shadow_matches).toEqual([]);
   });
 });
 

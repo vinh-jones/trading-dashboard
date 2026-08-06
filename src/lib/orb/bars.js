@@ -71,6 +71,23 @@ export function sliceSession(bars, sessionDate) {
 }
 
 /**
+ * A bar is closed when its end timestamp has passed. UW returns the currently
+ * forming bar as an ordinary array element with partial OHLC — open and high
+ * still equal, close still moving — so evaluating it produces patterns that do
+ * not survive the bar.
+ *
+ * Falls back to "a later bar exists" when `end` is missing or unparseable:
+ * the provider having moved on is itself proof the bar closed.
+ */
+export function isBarClosed(bar, now, hasLaterBar) {
+  const end = bar && bar.end != null ? new Date(bar.end) : null;
+  if (end && !Number.isNaN(end.getTime())) {
+    return end.getTime() <= now.getTime();
+  }
+  return !!hasLaterBar;
+}
+
+/**
  * UW's 1d/1w candles carry a `date` field and no start/end timestamps, so they
  * cannot go through normalizeBars (which requires `start`). Keep daily bars in
  * date space rather than synthesizing an instant — a bare date turned into a

@@ -26,7 +26,7 @@ import { hasUwKey, fetchIntradayOhlc } from "./_lib/uwClient.js";
 import { getSupabase, getSession, upsertSession } from "./_lib/orbDb.js";
 import { sendPushover } from "./_lib/notify.js";
 import { ORB_PARAMS } from "../src/lib/orb/params.js";
-import { normalizeBars, sliceSession, etMinutes } from "../src/lib/orb/bars.js";
+import { normalizeBars, sliceSession, etMinutes, isBarClosed } from "../src/lib/orb/bars.js";
 import { detectPattern, isOutsideBox, matchesDirection } from "../src/lib/orb/patterns.js";
 import { buildSignal } from "../src/lib/orb/signal.js";
 import {
@@ -139,6 +139,15 @@ export default async function handler(req, res) {
       if (barMin >= WINDOW_END_MIN) break;           // hard time gate
       const barMs = new Date(bar.start).getTime();
       if (cursorMs != null && barMs <= cursorMs) continue; // already scanned
+
+      // UW returns the currently-forming bar as an ordinary array element
+      // with partial OHLC. Bars are ascending, so once an unclosed bar is
+      // hit every later bar is also unclosed — break, don't continue, and
+      // do NOT touch the cursor. That leaves last_scanned_bar at the last
+      // genuinely-closed bar, so the next poll re-reads this bar once it
+      // has settled instead of skipping it forever.
+      const hasLaterBar = i < bars.length - 1;
+      if (!isBarClosed(bar, new Date(), hasLaterBar)) break;
 
       lastScannedBar = bar.start;
 
