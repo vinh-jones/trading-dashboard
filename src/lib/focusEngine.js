@@ -41,29 +41,36 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Build a lookup map from marketContext.positions: { TICKER -> positionEntry }
-function buildEarningsMap(marketContext) {
-  if (!marketContext?.positions) return {};
+// Build { TICKER -> { date, time, epsEstimate } } from the quotes map.
+// quotes.earnings_date / earnings_meta are refreshed daily by the
+// uw-earnings-dates cron; earnings_meta carries hour + epsEstimate.
+//
+// NOT the same function as radarData.js's buildEarningsMap, which returns a
+// Map of ticker -> date string for the Radar filter ctx.
+function buildQuoteEarningsMap(quoteMap) {
   const map = {};
-  for (const p of marketContext.positions) {
-    if (p.nextEarnings?.date) map[p.ticker] = p.nextEarnings;
-  }
+  if (!quoteMap?.forEach) return map;
+  quoteMap.forEach((q, symbol) => {
+    if (q?.instrument_type !== "EQUITY") return;
+    if (!q?.earnings_date) return;
+    map[symbol] = {
+      date:        q.earnings_date,
+      time:        q.earnings_meta?.hour ?? null,
+      epsEstimate: q.earnings_meta?.epsEstimate ?? null,
+    };
+  });
   return map;
 }
 
-// Deduplicate macro events by eventType, keeping the soonest upcoming one per type
-function getUpcomingMacroEvents(marketContext) {
-  if (!marketContext?.macroEvents) return [];
+// Upcoming rows from the macro_events table. The table PK is
+// (event_date, event_type) and UW's horizon is ~8 days, so there is no
+// dedupe to do here — just drop what has already passed.
+function getUpcomingMacroEvents(macroEvents) {
+  if (!Array.isArray(macroEvents)) return [];
   const todayStr = today();
-  const byType = {};
-  for (const evt of marketContext.macroEvents) {
-    const evtDate = evt.dateTime.slice(0, 10);
-    if (evtDate < todayStr) continue; // already passed
-    if (!byType[evt.eventType] || evtDate < byType[evt.eventType].date) {
-      byType[evt.eventType] = { ...evt, date: evtDate };
-    }
-  }
-  return Object.values(byType);
+  return macroEvents
+    .filter(e => e?.event_date && e.event_date >= todayStr)
+    .map(e => ({ ...e, date: e.event_date, eventType: e.event_type }));
 }
 
 // ── Rule implementations ─────────────────────────────────────────────────────
@@ -418,10 +425,9 @@ function rule6060(positions, quoteMap) {
   return items;
 }
 
-function ruleEarningsBeforeExpiry(positions, marketContext) {
-  if (!marketContext) return [];
+function ruleEarningsBeforeExpiry(positions, quoteMap) {
   const items = [];
-  const earningsMap = buildEarningsMap(marketContext);
+  const earningsMap = buildQuoteEarningsMap(quoteMap);
   const options = [];
 
   for (const s of positions.assigned_shares ?? []) {
@@ -463,11 +469,10 @@ function ruleEarningsBeforeExpiry(positions, marketContext) {
   return items;
 }
 
-function ruleMacroOverlap(positions, marketContext) {
-  if (!marketContext) return [];
+function ruleMacroOverlap(positions, macroEvents) {
   const items = [];
-  const macroEvents = getUpcomingMacroEvents(marketContext);
-  if (!macroEvents.length) return items;
+  const upcoming = getUpcomingMacroEvents(macroEvents);
+  if (!upcoming.length) return items;
 
   const options = [];
   for (const s of positions.assigned_shares ?? []) {
@@ -478,7 +483,7 @@ function ruleMacroOverlap(positions, marketContext) {
   }
 
   const seen = new Set();
-  for (const evt of macroEvents) {
+  for (const evt of upcoming) {
     // Find options expiring within 2 days of this macro event
     const affected = options.filter(opt => {
       if (!opt.expiry_date) return false;
@@ -675,7 +680,7 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, marketContext, liveVix, quoteMap = new Map(), rollAnalysisMap = {}, assignedShareIncome = null) {
+export function generateFocusItems(positions, account, macroEvents, liveVix, quoteMap = new Map(), rollAnalysisMap = {}, assignedShareIncome = null) {
   if (!positions) return [];
 
   // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
@@ -696,8 +701,8 @@ export function generateFocusItems(positions, account, marketContext, liveVix, q
     ...ruleUncoveredShares(positions, quoteMap),
     ...ruleCCDeeplyITM(positions, quoteMap),
     ...ruleCSPITMUrgency(positions, quoteMap),
-    ...ruleEarningsBeforeExpiry(positions, marketContext),
-    ...ruleMacroOverlap(positions, marketContext),
+    ...ruleEarningsBeforeExpiry(positions, quoteMap),
+    ...ruleMacroOverlap(positions, macroEvents),
     ...ruleNearWorthlessOption(positions, quoteMap),
     ...items6060,
     ...cushionItems,
