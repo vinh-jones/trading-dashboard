@@ -16,7 +16,20 @@ const STRATEGY_PREFIX = "strategy:";
 function fmtMoney(n) {
   if (n == null || Number.isNaN(n)) return "—";
   const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(Math.round(n)).toLocaleString()}`;
+  const abs = Math.abs(n);
+  // Fractional attributions land on half dollars; show cents only when they exist.
+  const isWhole = Math.abs(abs - Math.round(abs)) < 0.005;
+  const body = isWhole
+    ? Math.round(abs).toLocaleString()
+    : abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${sign}$${body}`;
+}
+
+// Attributed counts can be fractional after scaling (25 of a 100-share lot);
+// show a decimal only when there is one. 4 → "4", 4.5 → "4.5".
+function fmtCount(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
 // ISO "YYYY-MM-DD" → "MM/DD/YY". Passes through anything non-ISO unchanged.
@@ -143,6 +156,76 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
     } finally {
       setAddBusy(false);
     }
+  };
+
+  // "Attribute a closed trade" affordance state — claims a slice (N of M) of a
+  // blended trade for this basket.
+  const [showAttribute, setShowAttribute] = useState(false);
+  const [attrForm, setAttrForm] = useState({ ticker: "", tradeId: "", count: "" });
+  const [attrBusy, setAttrBusy] = useState(false);
+  const [attrError, setAttrError] = useState(null);
+
+  // Only trades with a positive contract count can be sliced — there is no
+  // denominator otherwise, and the resolver would silently take them whole.
+  const attributableTickers = useMemo(() => {
+    const set = new Set();
+    for (const t of (trades ?? [])) if (Number(t.contracts) > 0) set.add(t.ticker);
+    return [...set].sort();
+  }, [trades]);
+
+  const attributableTrades = useMemo(() => {
+    if (!attrForm.ticker) return [];
+    return (trades ?? [])
+      .filter(t => t.ticker === attrForm.ticker && Number(t.contracts) > 0)
+      .sort((a, b) => String(b.close_date ?? "").localeCompare(String(a.close_date ?? "")))
+      .slice(0, 40);
+  }, [trades, attrForm.ticker]);
+
+  const attrTrade = attributableTrades.find(t => t.id === attrForm.tradeId) ?? null;
+  const attrCount = Number(attrForm.count);
+  const attrValid = attrTrade != null && Number.isFinite(attrCount)
+    && attrCount > 0 && attrCount <= Number(attrTrade.contracts);
+  const attrPreview = attrValid
+    ? (attrTrade.premium ?? 0) * attrCount / Number(attrTrade.contracts)
+    : null;
+
+  const submitAttribution = async () => {
+    if (!activeTag) { setAttrError("No active basket tag."); return; }
+    if (!attrTrade) { setAttrError("Pick a trade."); return; }
+    const total = Number(attrTrade.contracts);
+    if (!attrValid) { setAttrError(`Enter a count between 1 and ${total}.`); return; }
+    setAttrBusy(true);
+    setAttrError(null);
+    try {
+      const unit = attrTrade.type === "Shares" ? "shares" : "contracts";
+      await createJournalEntry({
+        entry_type: "position_note",
+        ticker: attrTrade.ticker,
+        type: attrTrade.type,
+        strike: attrTrade.strike ?? null,
+        expiry: attrTrade.expiry_date ?? null,
+        entry_date: new Date().toISOString().slice(0, 10),
+        trade_id: attrTrade.id,
+        tags: [activeTag],
+        body: `Attributed ${attrCount} of ${total} ${unit} to the basket (${fmtMoney(attrPreview)}).`,
+        source: "Self",
+        metadata: { contracts: attrCount },
+      });
+      setAttrForm({ ticker: "", tradeId: "", count: "" });
+      setShowAttribute(false);
+      if (onEntriesChanged) await onEntriesChanged();
+    } catch (err) {
+      setAttrError(err.message || "Failed to attribute trade.");
+    } finally {
+      setAttrBusy(false);
+    }
+  };
+
+  // "CC $157.50 · 08/07/26 · 4 ct · $2,008"
+  const attrTradeLabel = (t) => {
+    const strike = t.strike != null ? `$${t.strike} · ` : "";
+    const unit = t.type === "Shares" ? "sh" : "ct";
+    return `${t.type} ${strike}${fmtDate(t.close_date)} · ${t.contracts} ${unit} · ${fmtMoney(t.premium ?? 0)}`;
   };
 
   // Transaction-table sort. col=null → natural order (baseline pinned, recovery as resolved).
@@ -277,11 +360,18 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
       {/* Add-assigned-shares affordance */}
       <div style={{ marginBottom: theme.space[3] }}>
         {!showAddShares ? (
-          <button onClick={() => { setShowAddShares(true); setAddError(null); }} style={{
-            padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
-            background: theme.bg.surface, color: theme.text.secondary,
-            border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
-          }}>+ Add assigned shares</button>
+          <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => { setShowAddShares(true); setAddError(null); }} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+              background: theme.bg.surface, color: theme.text.secondary,
+              border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+            }}>+ Add assigned shares</button>
+            <button onClick={() => { setShowAttribute(v => !v); setAttrError(null); }} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+              background: theme.bg.surface, color: theme.text.secondary,
+              border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+            }}>+ Attribute a closed trade</button>
+          </div>
         ) : (
           <div style={{
             display: "flex", flexWrap: "wrap", gap: theme.space[2], alignItems: "center",
@@ -309,6 +399,68 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
             }}>Cancel</button>
             <span style={{ flexBasis: "100%", fontSize: theme.size.xs, color: addError ? theme.red : theme.text.subtle }}>
               {addError || `Basis = full assignment strike (premium is booked separately). Then close the CSP as Assigned in your sheet and sync to book the premium.`}
+            </span>
+          </div>
+        )}
+
+        {showAttribute && (
+          <div style={{
+            display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
+            marginTop: theme.space[2], padding: theme.space[3],
+            background: theme.bg.surface, border: `1px solid ${theme.border.default}`,
+            borderRadius: theme.radius.md,
+          }}>
+            <select value={attrForm.ticker}
+              onChange={e => setAttrForm({ ticker: e.target.value, tradeId: "", count: "" })}
+              style={{
+                width: 100, padding: "6px 8px", fontSize: theme.size.sm, fontFamily: "inherit",
+                background: theme.bg.base, color: theme.text.primary,
+                border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+              }}>
+              <option value="">Ticker…</option>
+              {attributableTickers.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={attrForm.tradeId} disabled={!attrForm.ticker}
+              onChange={e => setAttrForm(f => ({ ...f, tradeId: e.target.value, count: "" }))}
+              style={{
+                flex: "1 1 280px", minWidth: 0, padding: "6px 8px", fontSize: theme.size.sm, fontFamily: "inherit",
+                background: theme.bg.base, color: theme.text.primary,
+                border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+                opacity: attrForm.ticker ? 1 : 0.5,
+              }}>
+              <option value="">{attrForm.ticker ? "Trade…" : "Pick a ticker first"}</option>
+              {attributableTrades.map(t => <option key={t.id} value={t.id}>{attrTradeLabel(t)}</option>)}
+            </select>
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>I own</span>
+            <input value={attrForm.count} placeholder="N" inputMode="decimal" disabled={!attrTrade}
+              onChange={e => setAttrForm(f => ({ ...f, count: e.target.value }))}
+              style={{
+                width: 56, padding: "6px 8px", fontSize: theme.size.sm, fontFamily: theme.font.mono,
+                background: theme.bg.base, color: theme.text.primary,
+                border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+                opacity: attrTrade ? 1 : 0.5,
+              }} />
+            <span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
+              of {attrTrade ? `${attrTrade.contracts} ${attrTrade.type === "Shares" ? "sh" : "ct"}` : "—"}
+            </span>
+            <span style={{
+              fontSize: theme.size.sm, fontFamily: theme.font.mono,
+              color: attrPreview == null ? theme.text.subtle : attrPreview >= 0 ? theme.green : theme.red,
+            }}>→ {attrPreview == null ? "—" : fmtMoney(attrPreview)}</span>
+            <button onClick={submitAttribution} disabled={attrBusy || !attrValid} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, fontFamily: "inherit",
+              cursor: (attrBusy || !attrValid) ? "default" : "pointer",
+              background: theme.bg.elevated, color: theme.blue,
+              border: `1px solid ${theme.blue}`, borderRadius: theme.radius.sm,
+              opacity: (attrBusy || !attrValid) ? 0.6 : 1,
+            }}>{attrBusy ? "Adding…" : "Add to basket"}</button>
+            <button onClick={() => { setShowAttribute(false); setAttrError(null); }} disabled={attrBusy} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+              background: "transparent", color: theme.text.muted,
+              border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
+            }}>Cancel</button>
+            <span style={{ flexBasis: "100%", fontSize: theme.size.xs, color: attrError ? theme.red : theme.text.subtle }}>
+              {attrError || "The basket is credited this share of the trade's P/L. The trade's own contract count is the denominator — it is never stored, so the two can't drift."}
             </span>
           </div>
         )}
