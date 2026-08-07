@@ -457,7 +457,28 @@ describe("reducers under fractional attribution", () => {
     expect(realizedRecovery(members)).toBeCloseTo(914.5, 6);
   });
 
-  it("capitalDeployed counts open members only, so attributed closed legs add nothing", () => {
+  it("basketTarget scales an attributed BASELINE loss, shrinking the target", () => {
+    // Documents today's behavior, which is NOT obviously desirable: fromTrade
+    // scales `realized` by weight for every role, and basketTarget is the
+    // denominator of the whole basket progress display. So declaring
+    // metadata.contracts on a baseline entry silently shrinks the goalpost
+    // rather than just re-slicing a recovery leg. 1200 of a 3300-share loss:
+    // -26400 * 1200/3300 = -9600, and the target drops 26400 → 9600.
+    // Whether an attributed baseline SHOULD scale is a design call, not a bug
+    // this test asserts either way — it just pins what ships today.
+    const t = [{ id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry_date: null, contracts: 3300, close_date: "2026-06-01", premium_collected: -26400, capital_fronted: 85800 }];
+    const whole = [{ tags: ["strategy:b1", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null }];
+    const sliced = [{ tags: ["strategy:b2", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null, metadata: { contracts: 1200 } }];
+    expect(basketTarget(resolveBasket("strategy:b1", { trades: t, entries: whole }))).toBe(26400);
+    const m = resolveBasket("strategy:b2", { trades: t, entries: sliced });
+    expect(m[0]).toMatchObject({ role: "baseline", status: "closed", contracts: 1200 });
+    expect(basketTarget(m)).toBeCloseTo(9600, 6);
+  });
+
+  it("capitalDeployed counts open members only", () => {
+    // Pins the open/closed filter, NOT attribution: every member here is closed,
+    // so this stays 0 whether or not scaling is applied. No other test covers
+    // capitalDeployed with an all-closed basket, which is why it earns its keep.
     expect(capitalDeployed(members)).toBe(0);
   });
 
@@ -473,7 +494,9 @@ describe("reducers under fractional attribution", () => {
     // would compute 1500.0000000000002 > 1500 and cry over-allocation at a
     // basket whose CCs cover its shares EXACTLY — the deliberate steady state
     // for a wheel trader. 2,981 such pairs exist under total <= 400.
-    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 232000, entry_cost: 1.0 }];
+    // capital_fronted = contracts x 100 x 150, matching the basis: 150 declared
+    // on the co-located Shares entry, so the fixture reads coherently.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 435000, entry_cost: 1.0 }];
     const e = [
       { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 15 } },
       { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 1500, basis: 150 } },
@@ -488,8 +511,15 @@ describe("reducers under fractional attribution", () => {
     // multiplies by `contracts` exactly once, so the attributed path is
     // provably linear — there is no arithmetic error here to catch. What this
     // pins is the natural future mistake: someone "completing" attribution by
-    // multiplying spreadUnrealized's result by attr.weight a second time, or
-    // dropping the leg fields on the attributed path.
+    // multiplying spreadUnrealized's result by attr.weight a second time.
+    //
+    // It does NOT guard the leg fields, and the anchor below is why it needs to
+    // exist at all: a ratio assertion alone is vacuous when both sides are null.
+    // Drop `longStrike` on the attributed path and spreadUnrealized returns
+    // gl_dollars: null for BOTH members — null / 2 === 0, and
+    // expect(null).toBeCloseTo(0) passes, since Math.abs(null - 0) === 0.
+    // Anchoring `whole` to a concrete dollar value is what makes the ratio mean
+    // something.
     const spread = { ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put", is_credit: true, expiry_date: "2026-07-31", contracts: 4, capital_fronted: 2000, credit: 1.20 };
     const e = (n) => [{ tags: [`strategy:s${n}`], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31", metadata: { contracts: n } }];
     const quoteMap = new Map([
@@ -500,11 +530,15 @@ describe("reducers under fractional attribution", () => {
     const half  = resolveBasket("strategy:s2", { openPositions: [spread], trades: [], entries: e(2) })[0];
     expect(half.entryCost).toBe(1.20);          // per-unit credit unscaled
     expect(half.contracts).toBe(2);
+    // Anchor: credit spread, mark = 0.50 - 0.20 = 0.30 → (1.20 - 0.30) * 100 * 4 = 360.
+    // Without this the ratio below passes on two nulls.
+    expect(memberUnrealized(whole, quoteMap)).toBeCloseTo(360, 6);
     expect(memberUnrealized(half, quoteMap)).toBeCloseTo(memberUnrealized(whole, quoteMap) / 2, 6);
   });
 
   it("shareCoverageWarnings still fires when the scaled CCs exceed declared shares", () => {
-    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 8, capital_fronted: 64000, entry_cost: 1.0 }];
+    // capital_fronted = 8 x 100 x 150, matching the basis: 150 declared below.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 8, capital_fronted: 120000, entry_cost: 1.0 }];
     const e = [
       { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 4 } },
       { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 300, basis: 150 } },
