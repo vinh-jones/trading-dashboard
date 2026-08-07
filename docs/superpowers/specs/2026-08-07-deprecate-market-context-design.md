@@ -180,17 +180,75 @@ unused for now.
 record. Dropping a table is irreversible and is not required to complete the deprecation.
 Drop it in a follow-up once this has run clean for a week.
 
-## Out of scope — flagged
+## Out of scope — the rest of the OpenClaw decay
 
-**`fundamentals` is frozen at 2026-07-01**, the same OpenClaw death, a different table.
-Radar's P/E column (`radarData.js:107`) and `useRiskUnits`' per-ticker beta
-(`useRiskUnits.js:29`) are both running on five-week-old data right now. This is a real
-problem and a separate one; this change does not address it. It is also the reason
+`market_context` is not the only casualty. Every OpenClaw-fed table was audited on
+2026-08-07; findings and UW feasibility below. **None of this is in scope for this
+change** — it is recorded here so the next person does not have to re-derive it.
+
+| Table | State | UW replacement |
+|---|---|---|
+| `fundamentals` | Stale 2026-07-01, live consumers | Yes, P/E derived |
+| `s5fi` | Stale 2026-07-01, **feeds a live score** | No practical path |
+| `fedwatch` | **0 rows — never worked** | Partial only |
+| `quotes.iv` (via `ingest-iv`) | Fresh — already superseded | N/A, done |
+
+### `fundamentals` — UW covers it
+
+Frozen at 2026-07-01. Radar's P/E column (`radarData.js:107`) and `useRiskUnits`'
+per-ticker beta (`useRiskUnits.js:29`) are both live on five-week-old data. This is why
 `api/ingest.js` is reduced rather than deleted.
 
-The same question applies to `api/ingest-wheel-earnings.js`, `api/ingest-fedwatch.js`,
-`api/ingest-iv.js` and `api/ingest-s5fi.js` — all OpenClaw-fed, all presumably dead, none
-audited here. Worth a sweep after this lands.
+- **`beta`** — direct field on UW `get_company_info` (CEG: `beta: "1.3503"`). Drop-in.
+- **EPS / P/E** — derivable from `get_fundamental_breakdown`, which returns ~19 rows of
+  quarterly `earnings_per_share`. Verified the rows are **period-scoped, not cumulative**:
+  CEG's 10-K row for 2025-12-31 reports net income 2,319M while Q1–Q3 already total
+  2,962M, so the annual filing row carries Q4 alone. Therefore `eps_ttm` = sum of the
+  trailing four rows (CEG: 2.98 + 1.37 + 4.49 + 1.42 = 10.26) and `pe_ttm` = current price
+  ÷ that (265.08 / 10.26 ≈ 25.8, sane for CEG).
+
+P/E becomes a derived number rather than a vendor figure, so the edge cases are ours:
+negative EPS, non-December fiscal years, mid-year share-count changes. Cost is two calls
+per ticker — ~67s for 61 equities at the 550ms gate, so it needs a raised `maxDuration`
+and a weekly schedule, since filings only move quarterly.
+
+### `s5fi` — no UW path, and it is serving wrong numbers today
+
+29 rows, frozen at 2026-07-01. `fetchS5fi` (`api/macro.js:457`) takes the newest row
+**with no recency check** and passes it to `labelS5fi`, whose score lands in
+`computePosture` alongside six other signals (`api/macro.js:981`) and in the EOD snapshot
+(`api/snapshot.js:374`). The Macro tab is presenting five-week-old breadth as a current
+reading and it is moving the composite posture score — the same failure mode as the
+`MacroCalendar` fallback this spec removes.
+
+The `scrapeS5fiFinviz()` fallback does not save it: it only fires when *no* row exists,
+and its own comment notes it 403s on Vercel.
+
+UW has no equivalent. Deriving "% of S&P 500 above the 50-day MA" needs a 50-day MA per
+constituent — roughly 500 `get_ticker_indicator_series` calls, about 4.6 minutes at the
+rate gate, past the 300s function ceiling. Not viable as a single cron.
+
+**Recommended to do first, independent of sourcing:** add a staleness guard to
+`fetchS5fi` so a row older than ~3 trading days degrades to the existing `score: 3`
+"Unavailable" branch instead of being served as live. Small, and it stops a wrong number
+reaching a score you act on, whether or not the feed is ever restored.
+
+### `fedwatch` — never worked; partial UW cover
+
+The table has **zero rows**, so `fetchFedWatch` has always fallen through to the direct
+fetch, which 403s on Vercel. The signal has been scoring a neutral 3 since it shipped.
+Not a regression — an unlanded feature.
+
+UW's `get_central_bank_rates` returns the Fed's current rate (3.75) and next meeting
+date (2026-09-16), but **not** the CME probability distribution across rate buckets.
+`computeFedWatch` is built on `todayRows` / `weekAgoRows` probability sets, so the signal
+as designed cannot be reproduced. UW would support a different, simpler tile.
+
+### `ingest-iv` — already resolved
+
+`quotes.refreshed_at` was 2026-08-07 12:31 at audit time; the `uw-iv` cron superseded this
+path. `api/ingest-iv.js` is dead code with nothing to replace. `api/ingest-wheel-earnings.js`
+is likewise superseded by `uw-earnings-dates`. Both can be deleted in the same sweep.
 
 ## Testing
 
