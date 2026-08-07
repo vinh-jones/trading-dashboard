@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount } from "../strategyBasket";
 import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
@@ -574,5 +574,70 @@ describe("groupMembersByType", () => {
 
   it("returns an empty array for no members", () => {
     expect(groupMembersByType([])).toEqual([]);
+  });
+});
+
+describe("attributedCount", () => {
+  // 29 contracts, never a power of two: an assertion like 15 + 7 = 22 against 29
+  // cannot be satisfied by an accidental halving or doubling the way 8 and 4 can.
+  const t29 = {
+    id: "t-29", ticker: "SOFI", type: "CSP",
+    strike: 15, expiry_date: "2026-07-02", contracts: 29,
+  };
+  const TAG = ["strategy:sofi-makeup"];
+
+  it("counts a slice entry as its declared count", () => {
+    const es = [{ trade_id: "t-29", metadata: { contracts: 15 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(15);
+  });
+
+  it("counts an entry with metadata: null as claiming the trade WHOLE", () => {
+    // The legacy shape: hand-written SQL rows written before fractional
+    // attribution existed carry no metadata at all. Reading only
+    // metadata.contracts scores them 0 and waves through a second full claim.
+    const t8 = { id: "t-8", ticker: "SOFI", type: "CC", strike: 22, expiry_date: "2026-07-02", contracts: 8 };
+    const es = [{ trade_id: "t-8", metadata: null, tags: TAG }];
+    expect(attributedCount(es, t8)).toBe(8);
+  });
+
+  it("sums across multiple claiming entries", () => {
+    const es = [
+      { trade_id: "t-29", metadata: { contracts: 15 }, tags: TAG },
+      { trade_id: "t-29", metadata: { contracts: 7 }, tags: TAG },
+    ];
+    expect(attributedCount(es, t29)).toBe(22);
+  });
+
+  it("ignores an entry claiming a different trade", () => {
+    const es = [{ trade_id: "t-other", metadata: { contracts: 15 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(0);
+  });
+
+  it("resolves an entry that carries its trade id under metadata.trade_id", () => {
+    // No tuple fields at all, so metadata.trade_id is the ONLY way this resolves.
+    const es = [{ trade_id: null, metadata: { trade_id: "t-29", contracts: 7 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(7);
+  });
+
+  it("falls back to a tuple match when the entry carries no trade id anywhere", () => {
+    const es = [{
+      trade_id: null, ticker: "SOFI", type: "CSP", strike: 15, expiry: "2026-07-02",
+      metadata: { contracts: 15 }, tags: TAG,
+    }];
+    expect(attributedCount(es, t29)).toBe(15);
+  });
+
+  it("treats zero, negative and non-numeric declared counts as WHOLE claims", () => {
+    // Same test resolveAttribution applies: non-finite or <= 0 means the member
+    // owns the trade outright, so the guard must consume all 29 — not 0.
+    for (const contracts of [0, -3, "abc", null]) {
+      const es = [{ trade_id: "t-29", metadata: { contracts }, tags: TAG }];
+      expect(attributedCount(es, t29)).toBe(29);
+    }
+  });
+
+  it("returns 0 for no entries and for no selected trade", () => {
+    expect(attributedCount([], t29)).toBe(0);
+    expect(attributedCount([{ trade_id: "t-29", metadata: { contracts: 15 } }], null)).toBe(0);
   });
 });

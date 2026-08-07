@@ -67,6 +67,56 @@ function resolveAttribution(entry, source) {
   return { weight: capped / total, owned: capped, total };
 }
 
+/**
+ * How much of `trade` is already claimed by existing tagged journal entries.
+ * Lives next to resolveAttribution deliberately: its correctness IS the mirror
+ * of that function's whole-vs-slice rule, so a future divergence between the two
+ * should be visible in one screen of review.
+ *
+ * Counts BOTH ways an entry can resolve to this trade, mirroring resolveBasket:
+ * an explicit trade_id (`trade_id` or `metadata.trade_id`), or — when the entry
+ * carries neither — a tuple match. Every entry the attribution form writes
+ * carries trade_id, but the hand-written SQL rows that form replaces are exactly
+ * the population likely to omit it, and resolveBasket treats `trade_id: null` +
+ * metadata.contracts as a supported shape. A trade_id-only guard would silently
+ * miss the prior attributions this exists to catch.
+ *
+ * An entry with no usable metadata.contracts counts as the WHOLE trade, not as
+ * zero. That is the same test resolveAttribution applies (non-finite or <= 0 →
+ * null → the member owns the trade outright), so a legacy whole-claim consumes
+ * the trade here exactly as it does there. Reading only metadata.contracts is
+ * what fails OPEN: the pre-attribution rows carry `metadata: null` by
+ * construction, so every one of them would report 0 claimed and wave through a
+ * second full attribution of an already-spoken-for trade.
+ *
+ * Everything left over is deliberately conservative — it over-counts rather than
+ * under-counts, blocking an attribution instead of permitting a double one. Two
+ * ways it does: a null-strike/null-expiry Shares entry tuple-matches EVERY
+ * Shares trade on that ticker (the same ambiguity resolveBasket has when it
+ * picks the first tuple match), and an over-large declared count is summed raw
+ * here while resolveAttribution clamps it to the trade's total. Do NOT add a
+ * per-entry clamp: the unclamped direction is the safe one.
+ *
+ * @param {Array} entries tagged journal entries (all baskets, not just one)
+ * @param {Object|null} trade the trade being claimed against
+ * @returns {number} count already claimed, in the trade's own units
+ */
+export function attributedCount(entries, trade) {
+  if (!trade) return 0;
+  const total = Number(trade.contracts);
+  return (entries ?? [])
+    .filter(e => {
+      const eTradeId = e.trade_id ?? e.metadata?.trade_id;
+      return eTradeId != null
+        ? eTradeId === trade.id
+        : tupleMatch(e, trade);
+    })
+    .reduce((s, e) => {
+      const c = Number(e.metadata?.contracts);
+      return s + (Number.isFinite(c) && c > 0 ? c : total);
+    }, 0);
+}
+
 function fromOpenPosition(pos, role, attr = null) {
   // Attribution rules 1 and 2 live on resolveAttribution — read them before editing.
   const scale = (v) => (attr ? v * attr.weight : v);
