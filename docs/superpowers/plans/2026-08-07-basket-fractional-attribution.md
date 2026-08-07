@@ -250,10 +250,11 @@ Expected: FAIL — `contracts` is 8, `capitalFronted` is 29600, `memberUnrealize
 
 Replace `fromOpenPosition` in `src/lib/strategyBasket.js` with:
 
+Use the SAME `scale` closure and `attr.owned` pattern Task 1 settled on. Do NOT write `contracts * weight` — `total * (owned/total)` is not an identity in IEEE 754 (`22 * (15/22) = 14.999999999999998`), and `shareCoverageWarnings` compares `ccContracts * 100 > shares` on an exact boundary, so dust there silently suppresses a real over-allocation warning.
+
 ```js
 function fromOpenPosition(pos, role, attr = null) {
-  const w = attr ? attr.weight : 1;
-  const contracts = pos.contracts ?? null;
+  const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "open",
     role,
@@ -263,8 +264,8 @@ function fromOpenPosition(pos, role, attr = null) {
     expiry: pos.expiry_date ?? null,
     openDate: pos.open_date ?? null,
     closeDate: null,
-    contracts: contracts == null ? null : contracts * w,
-    capitalFronted: (pos.capital_fronted ?? 0) * w,
+    contracts: attr ? attr.owned : (pos.contracts ?? null),
+    capitalFronted: scale(pos.capital_fronted ?? 0),
     // Spreads carry the per-share price in `credit`, not `entry_cost`.
     entryCost: pos.entry_cost ?? pos.credit ?? null,
     realized: null,
@@ -293,6 +294,8 @@ npx vitest run src/lib/__tests__/strategyBasket.test.js
 ```
 
 Expected: PASS. `memberUnrealized` needed no change — it multiplies by `member.contracts`, which is now scaled.
+
+Note the assertion `expect(m.contracts).toBeCloseTo(4, 6)` should hold *exactly* (4, not 3.9999…) because `contracts` comes from `attr.owned`, never from a multiply.
 
 - [ ] **Step 6: Commit**
 
