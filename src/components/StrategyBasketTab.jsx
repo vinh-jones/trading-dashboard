@@ -5,7 +5,7 @@ import { theme } from "../lib/theme";
 import { TYPE_COLORS } from "../lib/constants";
 import { getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads } from "../lib/positionSchema";
 import {
-  resolveBasket, basketTarget, capitalDeployed,
+  resolveBasket, basketTarget, capitalDeployed, basketCapitalBudget,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
   shareCoverageWarnings, attributedCount, groupMembersByType,
 } from "../lib/strategyBasket";
@@ -137,6 +137,12 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
 
   const target    = basketTarget(members);
   const deployed  = capitalDeployed(members);
+  // Capital runway: what the baseline tied up, minus what's committed to open
+  // recovery legs right now. Tells you how much is left to deploy into this
+  // strategy. Null budget = no baseline, so there's nothing to measure against.
+  const budget    = basketCapitalBudget(members);
+  const runway    = budget == null ? null : budget - deployed;
+  const usedPct   = budget > 0 ? Math.min(100, (deployed / budget) * 100) : 0;
   const realized  = realizedRecovery(members);
   const cushion   = unrealizedCushion(members, quoteMap);
 
@@ -365,7 +371,14 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
       {/* Summary cards */}
       <div style={{ display: "flex", gap: theme.space[3], flexWrap: "wrap", marginBottom: theme.space[4] }}>
         <Card label="Target to recover" value={target > 0 ? fmtMoney(target) : "—"} />
-        <Card label="Capital deployed" value={fmtMoney(deployed)} />
+        <Card
+          label="Capital deployed"
+          value={fmtMoney(deployed)}
+          valueColor={runway != null && runway < 0 ? theme.red : undefined}
+          sub={budget != null
+            ? `of ${fmtMoney(budget)} · ${fmtMoney(runway)} ${runway < 0 ? "over" : "left to deploy"}`
+            : undefined}
+        />
         <Card label="Realized recovery" value={fmtMoney(realized)} valueColor={realized >= 0 ? theme.green : theme.red} />
         <Card
           label="Unrealized cushion"
@@ -390,6 +403,23 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
       ) : (
         <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[5] }}>
           No baseline set — tag the loss trade with <code>role:makeup-baseline</code> to enable the progress bar.
+        </div>
+      )}
+
+      {/* Capital runway: how much of the baseline's capital is currently committed.
+          Separate bar from the recovery one above — that measures progress toward
+          earning the loss back, this measures how much is left to deploy. */}
+      {budget > 0 && (
+        <div style={{ marginBottom: theme.space[5] }}>
+          <div style={{ display: "flex", height: 10, background: theme.bg.surface, borderRadius: theme.radius.pill, overflow: "hidden", border: `1px solid ${theme.border.default}` }}>
+            <div style={{ width: `${usedPct}%`, height: "100%", background: runway < 0 ? theme.red : theme.blue, transition: "width 0.3s" }} />
+          </div>
+          <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
+            {fmtMoney(deployed)} deployed of {fmtMoney(budget)} ({usedPct.toFixed(1)}%)
+            {runway < 0
+              ? ` · ${fmtMoney(Math.abs(runway))} over budget`
+              : ` · ${fmtMoney(runway)} left to deploy`}
+          </div>
         </div>
       )}
 

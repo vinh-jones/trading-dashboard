@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount, basketCapitalBudget } from "../strategyBasket";
 import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
@@ -639,5 +639,58 @@ describe("attributedCount", () => {
   it("returns 0 for no entries and for no selected trade", () => {
     expect(attributedCount([], t29)).toBe(0);
     expect(attributedCount([{ trade_id: "t-29", metadata: { contracts: 15 } }], null)).toBe(0);
+  });
+});
+
+describe("basketCapitalBudget", () => {
+  // The real SOFI makeup baseline: 3,300 shares assigned at $26 = $85,800
+  // tied up. That figure already lives on the trade as capital_fronted, so the
+  // budget needs no configuration.
+  const baselineTrade = {
+    id: "sofi-loss", ticker: "SOFI", type: "Shares", strike: null, expiry_date: null,
+    contracts: 3300, open_date: "2026-02-12", close_date: "2026-06-01",
+    premium_collected: -26400, capital_fronted: 85800, entry_cost: 26,
+  };
+  const baselineEntry = {
+    tags: ["strategy:b", "role:makeup-baseline"], trade_id: "sofi-loss",
+    ticker: "SOFI", type: "Shares", strike: null, expiry: null,
+  };
+
+  it("reads the budget off the closed baseline", () => {
+    const members = resolveBasket("strategy:b", { openPositions: [], trades: [baselineTrade], entries: [baselineEntry] });
+    expect(basketCapitalBudget(members)).toBe(85800);
+  });
+
+  it("is null — not zero — when the basket has no baseline", () => {
+    // A recovery-only basket has no budget to measure against. Zero would read
+    // as "fully consumed" and paint the card red.
+    const t = [{ id: "r", ticker: "COHR", type: "CSP", strike: 310, expiry_date: "2026-07-02", contracts: 1, close_date: "2026-05-20", premium_collected: 450, capital_fronted: 31000 }];
+    const e = [{ tags: ["strategy:b"], trade_id: "r", ticker: "COHR", type: "CSP", strike: 310, expiry: "2026-07-02" }];
+    expect(basketCapitalBudget(resolveBasket("strategy:b", { openPositions: [], trades: t, entries: e }))).toBeNull();
+  });
+
+  it("ignores recovery legs, counting only the baseline", () => {
+    const open = [{ ticker: "COHR", type: "CSP", strike: 310, expiry_date: "2026-07-02", contracts: 1, capital_fronted: 31000, entry_cost: 6 }];
+    const e = [baselineEntry, { tags: ["strategy:b"], trade_id: null, ticker: "COHR", type: "CSP", strike: 310, expiry: "2026-07-02" }];
+    const members = resolveBasket("strategy:b", { openPositions: open, trades: [baselineTrade], entries: e });
+    expect(basketCapitalBudget(members)).toBe(85800);
+    expect(capitalDeployed(members)).toBe(31000);
+  });
+
+  it("sums multiple baselines", () => {
+    const t2 = { ...baselineTrade, id: "sofi-loss-2", capital_fronted: 14200 };
+    const e2 = { ...baselineEntry, trade_id: "sofi-loss-2" };
+    const members = resolveBasket("strategy:b", { openPositions: [], trades: [baselineTrade, t2], entries: [baselineEntry, e2] });
+    expect(basketCapitalBudget(members)).toBe(100000);
+  });
+
+  it("scales with an attributed baseline, matching basketTarget's rule", () => {
+    // Owning 1,200 of the 3,300 lost shares means owning that share of the
+    // capital too — budget and target must slice together or the basket's
+    // runway and its goal would disagree.
+    const e = [{ ...baselineEntry, metadata: { contracts: 1200 } }];
+    const members = resolveBasket("strategy:b", { openPositions: [], trades: [baselineTrade], entries: e });
+    expect(basketCapitalBudget(members)).toBeCloseTo(85800 * 1200 / 3300, 6);
+    expect(basketTarget(members)).toBeCloseTo(26400 * 1200 / 3300, 6);
   });
 });

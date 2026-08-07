@@ -273,6 +273,27 @@ export function capitalDeployed(members) {
     .reduce((sum, m) => sum + (m.capitalFronted ?? 0), 0);
 }
 
+/**
+ * The capital the basket has to work with: what was tied up in the baseline
+ * position before it was closed. For the SOFI makeup basket that is
+ * 3,300 shares x $26 = $85,800 — already stored as the baseline trade's
+ * `capital_fronted`, so nothing needs configuring.
+ *
+ * Pairs with `capitalDeployed` to answer "how much can I still deploy into
+ * this strategy?". Deployed counts each open recovery leg's committed
+ * capital in the same units: CSP collateral, a LEAPS' cost basis, and a
+ * declared shares lot at its assignment-price basis.
+ *
+ * Returns null when the basket has no closed baseline — a recovery-only
+ * basket has no budget to measure against, which is different from a budget
+ * of zero.
+ */
+export function basketCapitalBudget(members) {
+  const baselines = members.filter(m => m.role === "baseline" && m.status === "closed");
+  if (baselines.length === 0) return null;
+  return baselines.reduce((sum, m) => sum + (m.capitalFronted ?? 0), 0);
+}
+
 export function realizedRecovery(members) {
   return members
     .filter(m => m.role === "recovery" && m.status === "closed")
