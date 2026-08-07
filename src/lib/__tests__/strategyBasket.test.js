@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings } from "../strategyBasket";
-import { buildOccSymbol } from "../trading";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount } from "../strategyBasket";
+import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
   { ticker: "SOFI", type: "LEAPS", strike: 15,  expiry_date: "2027-01-21", contracts: 20, capital_fronted: 8000, entry_cost: 4.0, open_date: "2026-06-01" },
@@ -100,6 +100,135 @@ describe("resolveBasket", () => {
     const members = resolveBasket("strategy:sofi-makeup", { openPositions, trades, entries });
     const baseline = members.find(m => m.role === "baseline");
     expect(baseline).toMatchObject({ status: "closed", ticker: "SOFI", realized: -26400 });
+  });
+
+  // A blended 12-contract CC of which the basket owns 4.
+  const dramTrades = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
+  const dramEntries = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+
+  it("scales a closed member's realized P/L by metadata.contracts / trade.contracts", () => {
+    const [m] = resolveBasket("strategy:w", { trades: dramTrades, entries: dramEntries });
+    expect(m.realized).toBeCloseTo(580, 6);
+    expect(m.capitalFronted).toBeCloseTo(20516, 6);
+    expect(m.contracts).toBeCloseTo(4, 6);
+    expect(m.attribution).toEqual({ owned: 4, total: 12 });
+  });
+
+  it("leaves per-unit values unscaled when attributed", () => {
+    const [m] = resolveBasket("strategy:w", { trades: dramTrades, entries: dramEntries });
+    expect(m).toMatchObject({ entryCost: 1.45, roi: 2.8, keptPct: 0.5, daysHeld: 7, strike: 63 });
+  });
+
+  it("reports an exact integer contract count where total x weight would not round-trip", () => {
+    // 22 * (15/22) === 14.999999999999998 — the count must come from the
+    // declared value, not from re-multiplying the weight.
+    const t = [{ id: "odd", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 22, premium_collected: 2200, capital_fronted: 44000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "odd", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 15 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.contracts).toBe(15);
+    expect(m.attribution).toEqual({ owned: 15, total: 22 });
+  });
+
+  it("resolves whole (weight 1) when the entry declares no contracts", () => {
+    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28" }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1740);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("resolves whole when the trade carries no usable contract count", () => {
+    // Older Shares rows have a null contracts column — there is no denominator.
+    const t = [{ id: "old", ticker: "IREN", type: "Shares", strike: null, expiry_date: null, contracts: null, premium_collected: 4548, capital_fronted: 26000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "old", ticker: "IREN", type: "Shares", strike: null, expiry: null, metadata: { contracts: 50 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(4548);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("clamps an over-declared count to the whole trade", () => {
+    const t = [{ id: "c", ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 4, premium_collected: 1028, capital_fronted: 64668 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "c", ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 9 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1028);
+    expect(m.attribution).toEqual({ owned: 4, total: 4 });
+  });
+
+  it("ignores a zero or negative declared count", () => {
+    const t = [{ id: "c", ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 4, premium_collected: 1028, capital_fronted: 64668 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "c", ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 0 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1028);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("scales a fractional share lot (25 of a 100-share lot)", () => {
+    const t = [{ id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, premium_collected: 1650, capital_fronted: 14100 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { contracts: 25 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBeCloseTo(412.5, 6);
+    // toBe, not toBeCloseTo: counts are exact integers taken verbatim from the
+    // declared value. Dollar amounts tolerate float dust; contract counts do not.
+    expect(m.contracts).toBe(25);
+  });
+
+  it("still takes the declared-open-shares path when shares AND basis are present", () => {
+    // metadata.contracts must not hijack an open declared lot: the entry carries
+    // both {shares, basis} and {contracts}, and the declared-shares branch has to
+    // win. Verified by stubbing that branch to `if (false)` — the member comes back
+    // UNDEFINED, not as a scaled closed one. The closed GLW trade below never takes
+    // over, because trade_id is null and tupleMatch can't reach it either: the entry
+    // sets `expiry: null` → String(null) = "null", while the trade's
+    // `expiry_date ?? expiry` is `null ?? undefined` = undefined → "undefined".
+    // So this test pins the branch's EXISTENCE (no branch, no member), not a
+    // contest between two candidate resolutions.
+    const t = [{ id: "glw-closed", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, premium_collected: 4000, capital_fronted: 18000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, entry_date: "2026-06-17", metadata: { shares: 100, basis: 190, contracts: 25 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: [], trades: t, entries: e });
+    expect(m).toMatchObject({ status: "open", contracts: 100, entryCost: 190, capitalFronted: 19000 });
+    expect(m.attribution).toBeNull();
+  });
+
+  it("scales a trade in the normalized shape the app actually passes", () => {
+    // App.jsx feeds normalizeTrade() output, not raw DB rows — premium_collected
+    // becomes `premium`, capital_fronted becomes `fronted`. Build the fixture by
+    // running the real normalizer so dropping `contracts` from it fails here
+    // instead of silently reverting every attributed member to the whole trade.
+    const raw = { id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, open_date: "2026-08-01", close_date: "2026-08-08", premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45 };
+    const normalized = normalizeTrade(raw);
+    expect(normalized.contracts).toBe(12); // guards the denominator's existence
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { trades: [normalized], entries: e });
+    expect(m.realized).toBeCloseTo(580, 6);
+    expect(m.capitalFronted).toBeCloseTo(20516, 6);
+    expect(m.contracts).toBe(4);
+    expect(m.attribution).toEqual({ owned: 4, total: 12 });
+  });
+
+  it("scales an open member, and its unrealized P/L follows the scaled contract count", () => {
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 8, capital_fronted: 29600, entry_cost: 0.70, open_date: "2026-07-27" }];
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: open, trades: [], entries: e });
+    expect(m).toMatchObject({ status: "open", entryCost: 0.70 });
+    expect(m.contracts).toBe(4);
+    expect(m.capitalFronted).toBeCloseTo(14800, 6);
+    expect(m.attribution).toEqual({ owned: 4, total: 8 });
+
+    // Short CC: (entry - mark) * contracts * 100 → (0.70 - 0.20) * 4 * 100 = 200
+    const sym = buildOccSymbol("IREN", "2026-08-21", true, 50);
+    const quoteMap = new Map([[sym, { mid: 0.20 }]]);
+    expect(memberUnrealized(m, quoteMap)).toBeCloseTo(200, 6);
+  });
+
+  it("takes an open member's contract count from the declared integer, not total x weight", () => {
+    // 8/4 above is a power-of-2 pair, so total × weight lands exactly and cannot
+    // catch the dust. 29 × (15/29) = 15.000000000000002 — and that upward dust is
+    // what fires a spurious shareCoverageWarnings over-allocation on a basket
+    // whose CCs exactly cover its shares. toBe, not toBeCloseTo.
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 29, capital_fronted: 29000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 15 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: open, trades: [], entries: e });
+    expect(m.contracts).toBe(15);
   });
 });
 
@@ -309,5 +438,206 @@ describe("vertical spreads", () => {
     const members = resolveBasket("strategy:x", { openPositions: [], trades: [closedSpreadTrade], entries: e });
     expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 1056 });
     expect(realizedRecovery(members)).toBe(1056);
+  });
+});
+
+describe("reducers under fractional attribution", () => {
+  const trades = [
+    { id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, close_date: "2026-08-07", premium_collected: 1650, capital_fronted: 14100 },
+    { id: "glw-cc",  ticker: "GLW", type: "CC", strike: 157.5, expiry_date: "2026-08-07", contracts: 4, close_date: "2026-08-07", premium_collected: 2008, capital_fronted: 63512 },
+  ];
+  const entries = [
+    { tags: ["strategy:f"], trade_id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { contracts: 25 } },
+    { tags: ["strategy:f"], trade_id: "glw-cc",  ticker: "GLW", type: "CC", strike: 157.5, expiry: "2026-08-07", metadata: { contracts: 1 } },
+  ];
+  const members = resolveBasket("strategy:f", { openPositions: [], trades, entries });
+
+  it("realizedRecovery sums the scaled slices", () => {
+    // 1650 * 25/100 = 412.50 ; 2008 * 1/4 = 502.00
+    expect(realizedRecovery(members)).toBeCloseTo(914.5, 6);
+  });
+
+  it("basketTarget scales an attributed BASELINE loss, shrinking the target", () => {
+    // DECIDED, not incidental: scaling an attributed baseline is intended.
+    // fromTrade scales `realized` by weight for every role, and basketTarget is
+    // the denominator of the whole basket progress display — so declaring
+    // metadata.contracts on a baseline entry moves the goalpost. That is the
+    // right behavior: attributing a baseline means the basket owns only that
+    // share of the loss, so it should only be trying to earn back its share.
+    // A basket that claims 1200 of a 3300-share loss but still has to recover
+    // all $26,400 would be permanently and wrongly behind.
+    // 1200 of a 3300-share loss: -26400 * 1200/3300 = -9600, target 26400 → 9600.
+    const t = [{ id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry_date: null, contracts: 3300, close_date: "2026-06-01", premium_collected: -26400, capital_fronted: 85800 }];
+    const whole = [{ tags: ["strategy:b1", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null }];
+    const sliced = [{ tags: ["strategy:b2", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null, metadata: { contracts: 1200 } }];
+    expect(basketTarget(resolveBasket("strategy:b1", { trades: t, entries: whole }))).toBe(26400);
+    const m = resolveBasket("strategy:b2", { trades: t, entries: sliced });
+    expect(m[0]).toMatchObject({ role: "baseline", status: "closed", contracts: 1200 });
+    expect(basketTarget(m)).toBeCloseTo(9600, 6);
+  });
+
+  it("capitalDeployed counts open members only", () => {
+    // Pins the open/closed filter, NOT attribution: every member here is closed,
+    // so this stays 0 whether or not scaling is applied. No other test covers
+    // capitalDeployed with an all-closed basket, which is why it earns its keep.
+    expect(capitalDeployed(members)).toBe(0);
+  });
+
+  it("capitalDeployed scales an attributed OPEN member", () => {
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 8, capital_fronted: 29600, entry_cost: 0.70 }];
+    const e = [{ tags: ["strategy:d"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 2 } }];
+    expect(capitalDeployed(resolveBasket("strategy:d", { openPositions: open, trades: [], entries: e }))).toBeCloseTo(7400, 6);
+  });
+
+  it("shareCoverageWarnings does NOT fire on an exactly-covered basket built from a dust-producing pair", () => {
+    // The user-visible symptom the attr.owned fix exists to prevent. 15 of a
+    // 29-contract lot: 29 * (15/29) = 15.000000000000002, so a scaled count
+    // would compute 1500.0000000000002 > 1500 and cry over-allocation at a
+    // basket whose CCs cover its shares EXACTLY — the deliberate steady state
+    // for a wheel trader. 2,981 such pairs exist under total <= 400.
+    // capital_fronted = contracts x 100 x 150, matching the basis: 150 declared
+    // on the co-located Shares entry, so the fixture reads coherently.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 435000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 15 } },
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 1500, basis: 150 } },
+    ];
+    const members = resolveBasket("strategy:x", { openPositions: open, trades: [], entries: e });
+    expect(members.find(m => m.type === "CC").contracts).toBe(15);
+    expect(shareCoverageWarnings(members)).toEqual([]);
+  });
+
+  it("marks an attributed vertical spread from both legs", () => {
+    // This is a DOUBLE-SCALING GUARD, not a math check. spreadUnrealized
+    // multiplies by `contracts` exactly once, so the attributed path is
+    // provably linear — there is no arithmetic error here to catch. What this
+    // pins is the natural future mistake: someone "completing" attribution by
+    // multiplying spreadUnrealized's result by attr.weight a second time.
+    //
+    // It does NOT guard the leg fields, and the anchor below is why it needs to
+    // exist at all: a ratio assertion alone is vacuous when both sides are null.
+    // Drop `longStrike` on the attributed path and spreadUnrealized returns
+    // gl_dollars: null for BOTH members — null / 2 === 0, and
+    // expect(null).toBeCloseTo(0) passes, since Math.abs(null - 0) === 0.
+    // Anchoring `whole` to a concrete dollar value is what makes the ratio mean
+    // something.
+    const spread = { ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put", is_credit: true, expiry_date: "2026-07-31", contracts: 4, capital_fronted: 2000, credit: 1.20 };
+    const e = (n) => [{ tags: [`strategy:s${n}`], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31", metadata: { contracts: n } }];
+    const quoteMap = new Map([
+      [buildOccSymbol("XSP", "2026-07-31", false, 708), { mid: 0.50 }],
+      [buildOccSymbol("XSP", "2026-07-31", false, 703), { mid: 0.20 }],
+    ]);
+    const whole = resolveBasket("strategy:s4", { openPositions: [spread], trades: [], entries: e(4) })[0];
+    const half  = resolveBasket("strategy:s2", { openPositions: [spread], trades: [], entries: e(2) })[0];
+    expect(half.entryCost).toBe(1.20);          // per-unit credit unscaled
+    expect(half.contracts).toBe(2);
+    // Anchor: credit spread, mark = 0.50 - 0.20 = 0.30 → (1.20 - 0.30) * 100 * 4 = 360.
+    // Without this the ratio below passes on two nulls.
+    expect(memberUnrealized(whole, quoteMap)).toBeCloseTo(360, 6);
+    expect(memberUnrealized(half, quoteMap)).toBeCloseTo(memberUnrealized(whole, quoteMap) / 2, 6);
+  });
+
+  it("shareCoverageWarnings still fires when the scaled CCs exceed declared shares", () => {
+    // capital_fronted = 8 x 100 x 150, matching the basis: 150 declared below.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 8, capital_fronted: 120000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 4 } },
+      { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 300, basis: 150 } },
+    ];
+    const [w] = shareCoverageWarnings(resolveBasket("strategy:c2", { openPositions: open, trades: [], entries: e }));
+    expect(w).toMatchObject({ ticker: "GLW", declaredShares: 300, ccContracts: 4, coveredShares: 400 });
+  });
+});
+
+describe("groupMembersByType", () => {
+  const mk = (type, ticker = "X") => ({ type, ticker, status: "closed", role: "recovery" });
+
+  it("groups members by type in a fixed display order", () => {
+    const groups = groupMembersByType([mk("Shares"), mk("CSP"), mk("CC"), mk("CSP")]);
+    expect(groups.map(g => g.type)).toEqual(["CC", "CSP", "Shares"]);
+    expect(groups.find(g => g.type === "CSP").members).toHaveLength(2);
+  });
+
+  it("preserves the incoming order within a group", () => {
+    const a = mk("CSP", "AAA"), b = mk("CSP", "BBB");
+    expect(groupMembersByType([b, a]).find(g => g.type === "CSP").members).toEqual([b, a]);
+  });
+
+  it("sorts unknown types after the known ones, alphabetically", () => {
+    const groups = groupMembersByType([mk("Zebra"), mk("CC"), mk("Apple")]);
+    expect(groups.map(g => g.type)).toEqual(["CC", "Apple", "Zebra"]);
+  });
+
+  it("buckets a null type as Other", () => {
+    expect(groupMembersByType([mk(null)]).map(g => g.type)).toEqual(["Other"]);
+  });
+
+  it("returns an empty array for no members", () => {
+    expect(groupMembersByType([])).toEqual([]);
+  });
+});
+
+describe("attributedCount", () => {
+  // 29 contracts, never a power of two: an assertion like 15 + 7 = 22 against 29
+  // cannot be satisfied by an accidental halving or doubling the way 8 and 4 can.
+  const t29 = {
+    id: "t-29", ticker: "SOFI", type: "CSP",
+    strike: 15, expiry_date: "2026-07-02", contracts: 29,
+  };
+  const TAG = ["strategy:sofi-makeup"];
+
+  it("counts a slice entry as its declared count", () => {
+    const es = [{ trade_id: "t-29", metadata: { contracts: 15 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(15);
+  });
+
+  it("counts an entry with metadata: null as claiming the trade WHOLE", () => {
+    // The legacy shape: hand-written SQL rows written before fractional
+    // attribution existed carry no metadata at all. Reading only
+    // metadata.contracts scores them 0 and waves through a second full claim.
+    const t8 = { id: "t-8", ticker: "SOFI", type: "CC", strike: 22, expiry_date: "2026-07-02", contracts: 8 };
+    const es = [{ trade_id: "t-8", metadata: null, tags: TAG }];
+    expect(attributedCount(es, t8)).toBe(8);
+  });
+
+  it("sums across multiple claiming entries", () => {
+    const es = [
+      { trade_id: "t-29", metadata: { contracts: 15 }, tags: TAG },
+      { trade_id: "t-29", metadata: { contracts: 7 }, tags: TAG },
+    ];
+    expect(attributedCount(es, t29)).toBe(22);
+  });
+
+  it("ignores an entry claiming a different trade", () => {
+    const es = [{ trade_id: "t-other", metadata: { contracts: 15 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(0);
+  });
+
+  it("resolves an entry that carries its trade id under metadata.trade_id", () => {
+    // No tuple fields at all, so metadata.trade_id is the ONLY way this resolves.
+    const es = [{ trade_id: null, metadata: { trade_id: "t-29", contracts: 7 }, tags: TAG }];
+    expect(attributedCount(es, t29)).toBe(7);
+  });
+
+  it("falls back to a tuple match when the entry carries no trade id anywhere", () => {
+    const es = [{
+      trade_id: null, ticker: "SOFI", type: "CSP", strike: 15, expiry: "2026-07-02",
+      metadata: { contracts: 15 }, tags: TAG,
+    }];
+    expect(attributedCount(es, t29)).toBe(15);
+  });
+
+  it("treats zero, negative and non-numeric declared counts as WHOLE claims", () => {
+    // Same test resolveAttribution applies: non-finite or <= 0 means the member
+    // owns the trade outright, so the guard must consume all 29 — not 0.
+    for (const contracts of [0, -3, "abc", null]) {
+      const es = [{ trade_id: "t-29", metadata: { contracts }, tags: TAG }];
+      expect(attributedCount(es, t29)).toBe(29);
+    }
+  });
+
+  it("returns 0 for no entries and for no selected trade", () => {
+    expect(attributedCount([], t29)).toBe(0);
+    expect(attributedCount([{ trade_id: "t-29", metadata: { contracts: 15 } }], null)).toBe(0);
   });
 });

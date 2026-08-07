@@ -250,10 +250,11 @@ Expected: FAIL — `contracts` is 8, `capitalFronted` is 29600, `memberUnrealize
 
 Replace `fromOpenPosition` in `src/lib/strategyBasket.js` with:
 
+Use the SAME `scale` closure and `attr.owned` pattern Task 1 settled on. Do NOT write `contracts * weight` — `total * (owned/total)` is not an identity in IEEE 754 (`22 * (15/22) = 14.999999999999998`), and `shareCoverageWarnings` compares `ccContracts * 100 > shares` on an exact boundary, so dust there silently suppresses a real over-allocation warning.
+
 ```js
 function fromOpenPosition(pos, role, attr = null) {
-  const w = attr ? attr.weight : 1;
-  const contracts = pos.contracts ?? null;
+  const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "open",
     role,
@@ -263,8 +264,8 @@ function fromOpenPosition(pos, role, attr = null) {
     expiry: pos.expiry_date ?? null,
     openDate: pos.open_date ?? null,
     closeDate: null,
-    contracts: contracts == null ? null : contracts * w,
-    capitalFronted: (pos.capital_fronted ?? 0) * w,
+    contracts: attr ? attr.owned : (pos.contracts ?? null),
+    capitalFronted: scale(pos.capital_fronted ?? 0),
     // Spreads carry the per-share price in `credit`, not `entry_cost`.
     entryCost: pos.entry_cost ?? pos.credit ?? null,
     realized: null,
@@ -294,6 +295,8 @@ npx vitest run src/lib/__tests__/strategyBasket.test.js
 
 Expected: PASS. `memberUnrealized` needed no change — it multiplies by `member.contracts`, which is now scaled.
 
+Note the assertion `expect(m.contracts).toBeCloseTo(4, 6)` should hold *exactly* (4, not 3.9999…) because `contracts` comes from `attr.owned`, never from a multiply.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -306,6 +309,8 @@ git commit -m "feat(basket): scale open members and their mark-to-market by attr
 ### Task 3: Reducers and coverage warnings under attribution
 
 No production code should be needed here — this task proves the reducers inherit the scaling. If a test fails, fix the reducer; do not adjust the expectation.
+
+**Fixture discipline:** never assert scaling with a power-of-two pair. Task 2's spec'd fixture used 8 contracts / 4 owned, where `8 * (4/8) === 4` exactly, so the mutation the test existed to catch passed silently. Use a pair that produces dust (29/15, 22/15, 100/7) whenever the assertion is about counts.
 
 **Files:**
 - Test: `src/lib/__tests__/strategyBasket.test.js`
@@ -349,6 +354,42 @@ describe("reducers under fractional attribution", () => {
       { tags: ["strategy:c"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 300, basis: 150 } },
     ];
     expect(shareCoverageWarnings(resolveBasket("strategy:c", { openPositions: open, trades: [], entries: e }))).toEqual([]);
+  });
+
+  it("shareCoverageWarnings does NOT fire on an exactly-covered basket built from a dust-producing pair", () => {
+    // The user-visible symptom the attr.owned fix exists to prevent. 15 of a
+    // 29-contract lot: 29 * (15/29) = 15.000000000000002, so a scaled count
+    // would compute 1500.0000000000002 > 1500 and cry over-allocation at a
+    // basket whose CCs cover its shares EXACTLY — the deliberate steady state
+    // for a wheel trader. 2,981 such pairs exist under total <= 400.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 232000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 15 } },
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 1500, basis: 150 } },
+    ];
+    const members = resolveBasket("strategy:x", { openPositions: open, trades: [], entries: e });
+    expect(members.find(m => m.type === "CC").contracts).toBe(15);
+    expect(shareCoverageWarnings(members)).toEqual([]);
+  });
+
+  it("marks an attributed vertical spread from both legs", () => {
+    // This is a DOUBLE-SCALING GUARD, not a math check. spreadUnrealized
+    // multiplies by `contracts` exactly once, so the attributed path is
+    // provably linear — there is no arithmetic error here to catch. What this
+    // pins is the natural future mistake: someone "completing" attribution by
+    // multiplying spreadUnrealized's result by attr.weight a second time, or
+    // dropping the leg fields on the attributed path.
+    const spread = { ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put", is_credit: true, expiry_date: "2026-07-31", contracts: 4, capital_fronted: 2000, credit: 1.20 };
+    const e = (n) => [{ tags: [`strategy:s${n}`], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31", metadata: { contracts: n } }];
+    const quoteMap = new Map([
+      [buildOccSymbol("XSP", "2026-07-31", false, 708), { mid: 0.50 }],
+      [buildOccSymbol("XSP", "2026-07-31", false, 703), { mid: 0.20 }],
+    ]);
+    const whole = resolveBasket("strategy:s4", { openPositions: [spread], trades: [], entries: e(4) })[0];
+    const half  = resolveBasket("strategy:s2", { openPositions: [spread], trades: [], entries: e(2) })[0];
+    expect(half.entryCost).toBe(1.20);          // per-unit credit unscaled
+    expect(half.contracts).toBe(2);
+    expect(memberUnrealized(half, quoteMap)).toBeCloseTo(memberUnrealized(whole, quoteMap) / 2, 6);
   });
 
   it("shareCoverageWarnings still fires when the scaled CCs exceed declared shares", () => {
@@ -918,6 +959,20 @@ order by j.ticker, t.close_date;
 ```
 
 Expected: 9 rows, every `credited` matching the spec's table — GLW -187.50 / -250.00 / +237.50 / +412.50 / +257.00 / +502.00, DRAM +580.00, IREN +280.00 / +256.00. Sum: **+$2,087.50**. No null `total` (that would mean the resolver takes the trade whole).
+
+Then check for over-attribution. `resolveAttribution` clamps each entry to the trade's total individually, but nothing caps the SUM across entries — two entries claiming 8 of the same 12-contract trade would credit 133% silently. The Task 5 form guards this, but these rows are being inserted by hand and bypass it:
+
+```sql
+select j.trade_id, t.ticker, t.type, t.contracts as total,
+       sum((j.metadata->>'contracts')::numeric) as claimed
+from journal_entries j
+join trades t on t.id = j.trade_id
+where j.metadata ? 'contracts'
+group by j.trade_id, t.ticker, t.type, t.contracts
+having sum((j.metadata->>'contracts')::numeric) > t.contracts;
+```
+
+Expected: **zero rows**. Any row here is a double-count — resolve it before moving on.
 
 - [ ] **Step 5: Verify on the dashboard**
 
