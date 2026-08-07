@@ -7,11 +7,15 @@ import { getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads } from "../lib/po
 import {
   resolveBasket, basketTarget, capitalDeployed,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
-  shareCoverageWarnings,
+  shareCoverageWarnings, tupleMatch,
 } from "../lib/strategyBasket";
 import { createJournalEntry } from "../lib/journalApi";
 
 const STRATEGY_PREFIX = "strategy:";
+
+// Most-recent-N closed trades offered in the attribution picker. The overflow is
+// disclosed in the form's hint line rather than silently dropped.
+const ATTR_TRADE_CAP = 40;
 
 // Coerce-then-check, rather than Number.isFinite(n) on the raw argument: the
 // unattributed path in strategyBasket.js deliberately passes DB values through
@@ -206,7 +210,6 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
       .sort((a, b) => String(b.close_date ?? "").localeCompare(String(a.close_date ?? "")));
   }, [trades, attrForm.ticker]);
 
-  const ATTR_TRADE_CAP = 40;
   const attributableTrades = useMemo(
     () => attrTradesAll.slice(0, ATTR_TRADE_CAP),
     [attrTradesAll],
@@ -221,13 +224,28 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
   // 8 with no warning, and over-100% attribution is never a correct state.
   // `entries` already holds every strategy:-tagged row, so this needs no new fetch.
   //
-  // Matches on trade_id only — mirroring resolveBasket's `entry.trade_id ??
-  // entry.metadata?.trade_id` — so a sibling entry that resolves by TUPLE MATCH
-  // instead would slip past this guard. Acceptable: every entry this form writes
-  // carries trade_id, and metadata.contracts has no other writer in the codebase.
+  // Counts BOTH ways an entry can resolve to this trade, mirroring resolveBasket:
+  // an explicit trade_id, or — when the entry carries none — a tuple match. Every
+  // entry this form writes carries trade_id, but the hand-written SQL rows this
+  // form replaces are exactly the population likely to omit it, and
+  // strategyBasket.js treats `trade_id: null` + metadata.contracts as a supported
+  // shape. A trade_id-only guard would silently miss the prior attributions it
+  // exists to catch. tupleMatch(entry, normalizedTrade) is the same call
+  // resolveBasket makes at its closedMatch step, so the shapes line up.
+  //
+  // Deliberately conservative: a null-strike/null-expiry Shares entry tuple-matches
+  // EVERY Shares trade on that ticker, so a ticker with several share lots can
+  // over-count and understate what's left. That direction fails closed (it blocks
+  // an attribution rather than allowing a double one) and mirrors the same
+  // ambiguity resolveBasket already has when it picks the first tuple match.
   const attrAlready = attrTrade
     ? entries
-        .filter(e => (e.trade_id ?? e.metadata?.trade_id) === attrTrade.id)
+        .filter(e => {
+          const eTradeId = e.trade_id ?? e.metadata?.trade_id;
+          return eTradeId != null
+            ? eTradeId === attrTrade.id
+            : tupleMatch(e, attrTrade);
+        })
         .reduce((s, e) => s + (Number(e.metadata?.contracts) || 0), 0)
     : 0;
   const attrRemaining = attrTotal - attrAlready;
@@ -439,12 +457,17 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
       <div style={{ marginBottom: theme.space[3] }}>
         <div style={{ display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap" }}>
           {[["shares", "+ Add assigned shares"], ["attribute", "+ Attribute a closed trade"]].map(([name, label]) => (
-            <button key={name} onClick={() => toggleForm(name)} style={{
-              padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
+            <button key={name} onClick={() => toggleForm(name)}
+              // Locked mid-write: switching panels would unmount the in-flight
+              // form and take its "Adding…" state and any error with it.
+              disabled={addBusy || attrBusy} style={{
+              padding: "6px 12px", fontSize: theme.size.sm, fontFamily: "inherit",
+              cursor: (addBusy || attrBusy) ? "default" : "pointer",
               background: openForm === name ? theme.bg.elevated : theme.bg.surface,
               color: openForm === name ? theme.blue : theme.text.secondary,
               border: `1px solid ${openForm === name ? theme.blue : theme.border.default}`,
               borderRadius: theme.radius.sm,
+              opacity: (addBusy || attrBusy) ? 0.6 : 1,
             }}>{label}</button>
           ))}
         </div>
@@ -470,7 +493,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               background: theme.bg.elevated, color: theme.blue,
               border: `1px solid ${theme.blue}`, borderRadius: theme.radius.sm, opacity: addBusy ? 0.6 : 1,
             }}>{addBusy ? "Adding…" : "Add to basket"}</button>
-            <button onClick={() => { setOpenForm(null); setAddError(null); }} disabled={addBusy} style={{
+            <button onClick={() => { setOpenForm(null); setAddError(null); setAddForm({ ticker: "", shares: "", basis: "" }); }} disabled={addBusy} style={{
               padding: "6px 12px", fontSize: theme.size.sm, cursor: "pointer", fontFamily: "inherit",
               background: "transparent", color: theme.text.muted,
               border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
@@ -518,8 +541,13 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
                 border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
                 opacity: attrTrade ? 1 : 0.5,
               }} />
+            {/* "of 9 ct left" once part is spoken for — the bound the input is
+                validated against, stated where the count is typed, so it stays
+                visible even when attrHint replaces the informational line. */}
             <span style={{ fontSize: theme.size.sm, color: theme.text.muted }}>
-              of {attrTrade ? `${fmtCount(attrRemaining)} ${attrTrade.type === "Shares" ? "sh" : "ct"}` : "—"}
+              of {attrTrade
+                ? `${fmtCount(Math.max(0, attrRemaining))} ${attrTrade.type === "Shares" ? "sh" : "ct"}${attrAlready > 0 ? " left" : ""}`
+                : "—"}
             </span>
             <span style={{
               fontSize: theme.size.sm, fontFamily: theme.font.mono,
@@ -537,7 +565,11 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               background: "transparent", color: theme.text.muted,
               border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.sm,
             }}>Cancel</button>
-            <span style={{ flexBasis: "100%", fontSize: theme.size.xs, color: (attrError || attrHint) ? theme.red : theme.text.subtle }}>
+            {/* Three meanings share this line — write error, blocking hint, passive
+                note — and color alone can't distinguish them, so mark the first two
+                as an alert and the last as a status. */}
+            <span role={(attrError || attrHint) ? "alert" : "status"}
+              style={{ flexBasis: "100%", fontSize: theme.size.xs, color: (attrError || attrHint) ? theme.red : theme.text.subtle }}>
               {attrError || attrHint || attrNotes}
             </span>
           </div>
