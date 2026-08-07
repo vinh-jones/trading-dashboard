@@ -126,14 +126,26 @@ export async function fetchRadarRows(supabase) {
 }
 
 /**
- * Days until a ticker's next earnings, from the market_context payload.
- * Moved out of RadarTab so the server can build the same filter ctx.
- * Returns null when market_context has no entry for the ticker — callers
- * (and rowMatchesFilters) treat null as "unknown", not "fails the filter".
+ * Ticker → earnings_date map, built from merged Radar rows or quote rows.
+ * Both carry `earnings_date` sourced from the uw-earnings-dates cron.
  */
-export function getEarningsDaysAway(ticker, marketContext) {
-  if (!marketContext?.positions) return null;
-  const ctx = marketContext.positions.find(p => p.ticker === ticker);
-  if (!ctx?.nextEarnings?.date) return null;
-  return Math.ceil((new Date(ctx.nextEarnings.date) - new Date()) / (1000 * 60 * 60 * 24));
+export function buildEarningsMap(rows) {
+  const map = new Map();
+  for (const r of rows || []) {
+    if (r?.ticker && r.earnings_date) map.set(r.ticker, r.earnings_date);
+  }
+  return map;
+}
+
+/**
+ * Days until a ticker's next earnings, from a ticker → date map.
+ * Shared with api/agent-scan.js so the server builds the same filter ctx.
+ *
+ * Returns null when the ticker has no known date — callers (and
+ * rowMatchesFilters) treat null as "unknown", NOT as "fails the filter".
+ */
+export function getEarningsDaysAway(ticker, earningsByTicker) {
+  const date = earningsByTicker?.get?.(ticker);
+  if (!date) return null;
+  return Math.ceil((new Date(date) - new Date()) / (1000 * 60 * 60 * 24));
 }
