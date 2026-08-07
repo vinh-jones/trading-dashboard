@@ -29,12 +29,32 @@ function toIsoDate(v) {
   return String(v);
 }
 
-// The slice of a shared trade a basket owns, asserted on the tagged journal
-// entry as metadata.contracts. The denominator is the resolved trade's own
-// contracts column — never stored, so the two can't drift apart. Returns null
-// (meaning "the whole thing", today's behavior) when the entry declares
+// The slice of a shared position or trade a basket owns, asserted on the tagged
+// journal entry as metadata.contracts. The denominator is the resolved source's
+// own contracts column — never stored, so the two can't drift apart. Returns
+// null (meaning "the whole thing", today's behavior) when the entry declares
 // nothing, when the declared count is not a positive number, or when the
 // source carries no usable count to divide by.
+//
+// TWO RULES bind every consumer of the returned {weight, owned, total}, and both
+// fromTrade and fromOpenPosition follow them — read this before adding a third:
+//
+//  1. Take the contract count from `owned`, NEVER from `total × weight`.
+//     total × (owned/total) is not an identity in IEEE 754: it dusts in both
+//     directions (22 × (15/22) = 14.999999999999998, 29 × (15/29) =
+//     15.000000000000002) for 151,406 of the pairs with total ∈ [1,2000].
+//     `owned` is already the exact clamped integer. Upward dust is not cosmetic:
+//     it makes shareCoverageWarnings' `ccContracts * 100 > shares` fire a
+//     spurious over-allocation on a basket whose CCs exactly cover its shares —
+//     a wheel trader's most common deliberate state — and 2,981 pairs under
+//     total ≤ 400 dust upward.
+//
+//  2. Multiply only on the attributed path — `(v) => (attr ? v * attr.weight : v)`,
+//     never `v * (attr?.weight ?? 1)`. The unattributed path must pass values
+//     through untouched, so nothing is silently coerced (a string "61548" would
+//     become a number, a non-numeric one NaN) on rows the user never asked to split.
+//
+// Per-unit and metadata fields (entryCost, strike, expiry, dates) never scale.
 function resolveAttribution(entry, source) {
   const owned = Number(entry?.metadata?.contracts);
   const total = Number(source?.contracts);
@@ -45,8 +65,7 @@ function resolveAttribution(entry, source) {
 }
 
 function fromOpenPosition(pos, role, attr = null) {
-  // Only the attributed path multiplies — an unattributed position passes through
-  // untouched, so no value is silently coerced on rows the user never asked to split.
+  // Attribution rules 1 and 2 live on resolveAttribution — read them before editing.
   const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "open",
@@ -57,11 +76,7 @@ function fromOpenPosition(pos, role, attr = null) {
     expiry: pos.expiry_date ?? null,
     openDate: pos.open_date ?? null,
     closeDate: null,
-    // The declared count verbatim — never total × weight, which does not
-    // round-trip to an integer (29 × (15/29) = 15.000000000000002). Upward dust
-    // here would fire a spurious shareCoverageWarnings over-allocation on a
-    // basket whose CCs exactly cover its shares.
-    contracts: attr ? attr.owned : (pos.contracts ?? null),
+    contracts: attr ? attr.owned : (pos.contracts ?? null), // rule 1: `owned`, not total × weight
     capitalFronted: scale(pos.capital_fronted ?? 0),
     // Spreads carry the per-share price in `credit`, not `entry_cost`.
     entryCost: pos.entry_cost ?? pos.credit ?? null,
@@ -80,9 +95,7 @@ function fromOpenPosition(pos, role, attr = null) {
 // close_date (keeping `close` as MM/DD). The app only ever passes the normalized
 // shape, so read those first with the raw names as fallback.
 function fromTrade(trade, role, attr = null) {
-  // Only the attributed path multiplies — an unattributed trade passes through
-  // untouched, so no value is silently coerced (a string "61548" would become a
-  // number, a non-numeric one NaN) on rows the user never asked to split.
+  // Attribution rules 1 and 2 live on resolveAttribution — read them before editing.
   const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "closed",
@@ -93,9 +106,7 @@ function fromTrade(trade, role, attr = null) {
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
     closeDate: toIsoDate(trade.close_date ?? trade.closeDate) ?? trade.close ?? null,
-    // The declared count verbatim — never total × weight, which does not
-    // round-trip to an integer (22 × (15/22) = 14.999999999999998).
-    contracts: attr ? attr.owned : (trade.contracts ?? null),
+    contracts: attr ? attr.owned : (trade.contracts ?? null), // rule 1: `owned`, not total × weight
     capitalFronted: scale(trade.capital_fronted ?? trade.fronted ?? 0),
     entryCost: trade.entry_cost ?? null,
     exitCost: trade.exit_cost ?? null,
@@ -112,6 +123,19 @@ function fromTrade(trade, role, attr = null) {
 // The basket slice is ASSERTED via metadata (shares + basis), never derived from
 // the blended broker position — so a partial or multi-basis lot stays honest, and
 // the null-strike/null-expiry tuple-match landmine is avoided entirely.
+//
+// LOAD-BEARING DEPENDENCY: nothing in here enforces that. Since metadata.contracts
+// now scales OPEN positions too, a Shares entry carrying {contracts: N} and no
+// `basis` would tuple-match a blended broker Shares position and inherit its
+// BLENDED basis — the exact dishonesty this function exists to prevent. Two
+// accidents block it today, neither of them a deliberate guard:
+//   1. flattenOpen (StrategyBasketTab.jsx) builds openPositions from CSP/CC/LEAPS/
+//      Spread only, so no Shares row is ever in the array to match. This is the
+//      real barrier — do not widen that filter without revisiting this.
+//   2. tupleMatch compares String(expiry_date ?? expiry), and the Shares entries
+//      we write carry an explicit `expiry: null` → "null", while a position with
+//      neither key yields "undefined". Weak: an entry that merely OMITS `expiry`
+//      yields "undefined" too and WOULD match. Do not rely on this one.
 function fromDeclaredShares(entry, role, meta) {
   const shares = meta.shares;
   const basis = meta.basis;
@@ -149,13 +173,17 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
     // metadata.shares and fall through to the trade_id path below.
     //
     // LANDMINE — two different metadata keys mean "part of a lot", and this
-    // branch decides which one is read. `shares` + `basis` declares an OPEN lot
-    // (asserted outright, no trade behind it); `contracts` scales a CLOSED
-    // trade fractionally. Declaring a partial slice of a CLOSED shares lot as
-    // `{shares: 50}` matches neither: `basis` is absent so this branch is
-    // skipped, and the trade path reads `contracts`, which is unset — so the
-    // basket is silently credited the ENTIRE lot. Use `{contracts: 50}` for a
-    // closed lot; `shares` + `basis` only for an open one.
+    // branch decides which one is read. The split is ASSERTED vs. DERIVED, not
+    // open vs. closed: `shares` + `basis` asserts an open shares lot outright,
+    // with no position or trade behind it, while `contracts` scales a
+    // tuple-matched position or trade fractionally — either side, open or
+    // closed. When an entry carries both, this branch wins and `contracts` is
+    // ignored. Declaring a partial slice as `{shares: 50}` with no `basis`
+    // reaches neither: this branch is skipped, and every fallback path below
+    // reads `contracts`, which is unset — so resolveAttribution returns null
+    // and the basket is silently credited the ENTIRE lot. Use `{contracts: 50}`
+    // to slice something that already exists as a position or trade; `shares` +
+    // `basis` only to assert an open lot that does not.
     const meta = entry.metadata ?? {};
     if (entry.type === "Shares" && meta.shares != null && meta.basis != null) {
       members.push(fromDeclaredShares(entry, role, meta));

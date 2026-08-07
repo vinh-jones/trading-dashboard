@@ -167,7 +167,9 @@ describe("resolveBasket", () => {
     const e = [{ tags: ["strategy:w"], trade_id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { contracts: 25 } }];
     const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
     expect(m.realized).toBeCloseTo(412.5, 6);
-    expect(m.contracts).toBeCloseTo(25, 6);
+    // toBe, not toBeCloseTo: counts are exact integers taken verbatim from the
+    // declared value. Dollar amounts tolerate float dust; contract counts do not.
+    expect(m.contracts).toBe(25);
   });
 
   it("still takes the declared-open-shares path when shares AND basis are present", () => {
