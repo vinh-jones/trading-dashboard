@@ -310,6 +310,8 @@ git commit -m "feat(basket): scale open members and their mark-to-market by attr
 
 No production code should be needed here — this task proves the reducers inherit the scaling. If a test fails, fix the reducer; do not adjust the expectation.
 
+**Fixture discipline:** never assert scaling with a power-of-two pair. Task 2's spec'd fixture used 8 contracts / 4 owned, where `8 * (4/8) === 4` exactly, so the mutation the test existed to catch passed silently. Use a pair that produces dust (29/15, 22/15, 100/7) whenever the assertion is about counts.
+
 **Files:**
 - Test: `src/lib/__tests__/strategyBasket.test.js`
 
@@ -352,6 +354,42 @@ describe("reducers under fractional attribution", () => {
       { tags: ["strategy:c"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 300, basis: 150 } },
     ];
     expect(shareCoverageWarnings(resolveBasket("strategy:c", { openPositions: open, trades: [], entries: e }))).toEqual([]);
+  });
+
+  it("shareCoverageWarnings does NOT fire on an exactly-covered basket built from a dust-producing pair", () => {
+    // The user-visible symptom the attr.owned fix exists to prevent. 15 of a
+    // 29-contract lot: 29 * (15/29) = 15.000000000000002, so a scaled count
+    // would compute 1500.0000000000002 > 1500 and cry over-allocation at a
+    // basket whose CCs cover its shares EXACTLY — the deliberate steady state
+    // for a wheel trader. 2,981 such pairs exist under total <= 400.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 232000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 15 } },
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 1500, basis: 150 } },
+    ];
+    const members = resolveBasket("strategy:x", { openPositions: open, trades: [], entries: e });
+    expect(members.find(m => m.type === "CC").contracts).toBe(15);
+    expect(shareCoverageWarnings(members)).toEqual([]);
+  });
+
+  it("marks an attributed vertical spread from both legs", () => {
+    // This is a DOUBLE-SCALING GUARD, not a math check. spreadUnrealized
+    // multiplies by `contracts` exactly once, so the attributed path is
+    // provably linear — there is no arithmetic error here to catch. What this
+    // pins is the natural future mistake: someone "completing" attribution by
+    // multiplying spreadUnrealized's result by attr.weight a second time, or
+    // dropping the leg fields on the attributed path.
+    const spread = { ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put", is_credit: true, expiry_date: "2026-07-31", contracts: 4, capital_fronted: 2000, credit: 1.20 };
+    const e = (n) => [{ tags: [`strategy:s${n}`], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31", metadata: { contracts: n } }];
+    const quoteMap = new Map([
+      [buildOccSymbol("XSP", "2026-07-31", false, 708), { mid: 0.50 }],
+      [buildOccSymbol("XSP", "2026-07-31", false, 703), { mid: 0.20 }],
+    ]);
+    const whole = resolveBasket("strategy:s4", { openPositions: [spread], trades: [], entries: e(4) })[0];
+    const half  = resolveBasket("strategy:s2", { openPositions: [spread], trades: [], entries: e(2) })[0];
+    expect(half.entryCost).toBe(1.20);          // per-unit credit unscaled
+    expect(half.contracts).toBe(2);
+    expect(memberUnrealized(half, quoteMap)).toBeCloseTo(memberUnrealized(whole, quoteMap) / 2, 6);
   });
 
   it("shareCoverageWarnings still fires when the scaled CCs exceed declared shares", () => {
