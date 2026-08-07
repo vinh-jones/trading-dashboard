@@ -278,7 +278,8 @@ export default function TradeDashboard() {
               categorized={focus.categorized}
               quoteMap={focus.quoteMap}
               quotesRefreshedAt={focus.quotesRefreshedAt}
-              marketContext={focus.marketContext}
+              macroEvents={focus.macroEvents}
+              macroRefreshedAt={focus.macroRefreshedAt}
             />
           )}
           <Suspense fallback={<TabLoading />}>

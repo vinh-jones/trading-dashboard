@@ -118,6 +118,15 @@ export function fetchStockScreener(tickers) {
   return uwGet(`/screener/stocks${qs}`);
 }
 
+// Economic calendar — upcoming US macro releases. UW only publishes ~8 days
+// forward; a wider max_date returns nothing extra, it does not error.
+export function fetchMarketEvents(minDate, maxDate) {
+  const qs = minDate && maxDate
+    ? `?min_date=${encodeURIComponent(minDate)}&max_date=${encodeURIComponent(maxDate)}`
+    : "";
+  return uwGet(`/market/economic-calendar${qs}`);
+}
+
 // GET /stock/{ticker}/ohlc/{candle_size} — no `market_time` query param exists
 // on this endpoint (do not add one). Results are capped at 2500 elements, and
 // a response for a given end_date may include 1-2 hours of the following

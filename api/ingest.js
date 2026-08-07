@@ -3,22 +3,23 @@
  *
  * POST /api/ingest
  *
- * Single ingest endpoint for all OpenClaw data. Replaces:
- *   - /api/ingest-market-context
- *   - /api/ingest-fundamentals
+ * Fundamentals ingest. The market_context branch was removed on 2026-08-07 when
+ * that table was deprecated — see
+ * docs/superpowers/specs/2026-08-07-deprecate-market-context-design.md
  *
- * Authentication: X-Ingest-Secret header must match MARKET_CONTEXT_INGEST_SECRET env var.
+ * NOTE: the OpenClaw pusher that fed this endpoint is no longer running, so
+ * `fundamentals` is itself frozen (last write 2026-07-01) and Radar's P/E plus
+ * useRiskUnits' beta are stale. Re-sourcing it from UW is tracked in that
+ * spec's out-of-scope section. The endpoint is kept, not deleted, so that work
+ * has somewhere to land.
+ *
+ * Authentication: X-Ingest-Secret header must match MARKET_CONTEXT_INGEST_SECRET
+ * env var. The env var keeps its historical name so no Vercel change is needed.
  *
  * Expected body shape:
  *   {
- *     asOf:         string (ISO timestamp)   — required
- *     positions:    array                    — required
- *     macroEvents:  array                    — required
- *     fundamentals: array (optional)         — [{ ticker, pe_ttm, pe_annual, eps_ttm, eps_annual, beta }]
- *     source?:      object                   — ignored, not stored
+ *     fundamentals: array — [{ ticker, pe_ttm, pe_annual, eps_ttm, eps_annual, beta }]
  *   }
- *
- * Both market context and fundamentals are processed in parallel if both are present.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -45,32 +46,17 @@ export default async function handler(req, res) {
 
   const body = req.body ?? {};
 
-  if (!body.asOf || !Array.isArray(body.positions) || !Array.isArray(body.macroEvents)) {
-    return res.status(400).json({ ok: false, error: "Invalid payload: missing asOf, positions, or macroEvents" });
+  if (!Array.isArray(body.fundamentals)) {
+    return res.status(400).json({ ok: false, error: "Invalid payload: missing fundamentals" });
   }
 
   try {
     const supabase = getSupabase();
     const now = new Date().toISOString();
 
-    // ── Market context + fundamentals in parallel ──────────────────────────────
     const tasks = [];
 
-    // Always: insert market context row
-    tasks.push(
-      supabase.from("market_context").insert({
-        as_of:        body.asOf,
-        positions:    body.positions,
-        macro_events: body.macroEvents,
-      }).then(({ error }) => {
-        if (error) throw new Error(`market_context insert failed: ${error.message}`);
-        console.log(`[api/ingest] market context inserted as_of=${body.asOf}`);
-        return { type: "marketContext", asOf: body.asOf };
-      })
-    );
-
-    // Optional: upsert fundamentals if included
-    if (Array.isArray(body.fundamentals) && body.fundamentals.length > 0) {
+    if (body.fundamentals.length > 0) {
       // Base fundamentals — the generator emits these as full rows every run,
       // so overwriting them wholesale is fine.
       //
@@ -114,8 +100,7 @@ export default async function handler(req, res) {
 
     const response = { ok: true };
     for (const r of results) {
-      if (r.type === "marketContext") response.asOf = r.asOf;
-      if (r.type === "fundamentals")  response.fundamentalsCount = r.count;
+      if (r.type === "fundamentals") response.fundamentalsCount = r.count;
     }
 
     return res.status(200).json(response);

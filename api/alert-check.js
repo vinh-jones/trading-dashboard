@@ -72,7 +72,7 @@ export default async function handler(req, res) {
       supabase,
       accountSnap:  accountResult.data,
       positionRows: positionsResult.data ?? [],
-      liveVix:      null,   // no live VIX fetch — the quote-cached marketContext row fills in recent VIX
+      liveVix:      null,   // no live VIX fetch — focusEngine falls back to accountSnap.vix_current
     });
 
     return res.status(200).json({

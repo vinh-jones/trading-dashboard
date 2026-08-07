@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import marketContextDev from "../data/market-context.json";
 import { useLiveVix } from "./useLiveVix";
 import { useQuotes } from "./useQuotes";
 import { useRollAnalysis } from "./useRollAnalysis";
@@ -18,21 +17,22 @@ export function useFocusItems({ positions, account }) {
   const { rollMap } = useRollAnalysis();
   const { data: assignedShareIncome } = useAssignedShareIncome();
 
-  const [marketContext, setMarketContext] = useState(null);
-  const [mcLoading, setMcLoading]         = useState(true);
+  const [macroEvents, setMacroEvents]           = useState([]);
+  const [macroRefreshedAt, setMacroRefreshedAt] = useState(null);
+  const [mcLoading, setMcLoading]               = useState(true);
   const [notifiedMap, setNotifiedMap]     = useState(() => new Map());
 
   useEffect(() => {
-    if (!import.meta.env.PROD) {
-      setMarketContext(marketContextDev);
-      setMcLoading(false);
-      return;
-    }
+    // No dev fixture: local Vite does not serve api/*, so this simply stays
+    // empty locally and the macro calendar renders nothing. That is honest —
+    // the old market-context.json fixture is exactly how stale data got
+    // mistaken for live during development.
     fetch("/api/focus-context")
       .then(r => r.json())
       .then(data => {
         if (!data.ok) return;
-        if (data.marketContext) setMarketContext(data.marketContext);
+        if (Array.isArray(data.macroEvents)) setMacroEvents(data.macroEvents);
+        if (data.macroRefreshedAt) setMacroRefreshedAt(data.macroRefreshedAt);
         if (Array.isArray(data.alertState)) {
           setNotifiedMap(new Map(data.alertState.map(a => [a.alert_id, { firstFiredAt: a.first_fired_at }])));
         }
@@ -42,8 +42,8 @@ export function useFocusItems({ positions, account }) {
   }, []);
 
   const items = useMemo(
-    () => generateFocusItems(positions, account, marketContext, liveVix, quoteMap, rollMap, assignedShareIncome),
-    [positions, account, marketContext, liveVix, quoteMap, rollMap, assignedShareIncome]
+    () => generateFocusItems(positions, account, macroEvents, liveVix, quoteMap, rollMap, assignedShareIncome),
+    [positions, account, macroEvents, liveVix, quoteMap, rollMap, assignedShareIncome]
   );
 
   const categorized = useMemo(() => categorizeFocusItems(items), [items]);
@@ -59,7 +59,8 @@ export function useFocusItems({ positions, account }) {
     quotesRefreshedAt,
     rollMap,
     liveVix,
-    marketContext,
+    macroEvents,
+    macroRefreshedAt,
     mcLoading,
     notifiedMap,
   };

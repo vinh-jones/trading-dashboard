@@ -4,7 +4,7 @@
  * GET /api/focus-context
  *
  * Returns, in a single round-trip:
- *   - `marketContext`: latest row from `market_context` (OpenClaw ETL) or null
+ *   - `macroEvents`:   upcoming rows from `macro_events` (UW economic calendar)
  *   - `alertState`:    all currently-outstanding Focus Engine alerts that
  *                      have already been pushed (from `alert_state`). Used by
  *                      FocusTab to render a bell badge + "pushed at" tooltip
@@ -18,7 +18,7 @@ import { createClient } from "@supabase/supabase-js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  // market_context is RLS-locked (no anon policy) — must use the service
+  // macro_events is RLS-locked (no anon policy) — must use the service
   // role server-side. Anon fallback is for local dev only.
   const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
@@ -34,30 +34,22 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabase();
 
-    const [contextResult, alertStateResult] = await Promise.all([
+    const [macroResult, alertStateResult] = await Promise.all([
       supabase
-        .from("market_context")
-        .select("*")
-        .order("as_of", { ascending: false })
-        .limit(1)
-        .single(),
+        .from("macro_events")
+        .select("event_date, event_type, event_time, title, forecast, previous, refreshed_at")
+        .gte("event_date", new Date().toISOString().slice(0, 10))
+        .order("event_date", { ascending: true }),
       supabase
         .from("alert_state")
         .select("alert_id, first_fired_at, last_seen_at, title"),
     ]);
 
-    // PGRST116 = no rows found — not an error for us
-    if (contextResult.error && contextResult.error.code !== "PGRST116") {
-      throw new Error(contextResult.error.message);
+    if (macroResult.error) {
+      console.warn("[api/focus-context] macro_events read failed:", macroResult.error.message);
     }
-
-    const marketContext = contextResult.data
-      ? {
-          asOf:        contextResult.data.as_of,
-          positions:   contextResult.data.positions,
-          macroEvents: contextResult.data.macro_events,
-        }
-      : null;
+    const macroEvents      = macroResult.data ?? [];
+    const macroRefreshedAt = macroEvents[0]?.refreshed_at ?? null;
 
     // alert_state is nice-to-have; log but don't fail the request on read error
     let alertState = [];
@@ -68,7 +60,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.status(200).json({ ok: true, marketContext, alertState });
+    res.status(200).json({ ok: true, macroEvents, macroRefreshedAt, alertState });
   } catch (err) {
     console.error("[api/focus-context] Error:", err.message);
     res.status(500).json({ ok: false, error: err.message });

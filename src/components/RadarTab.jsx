@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import marketContextDev from "../data/market-context.json";
 import { theme } from "../lib/theme";
 import { useRadar } from "../hooks/useRadar";
 import { supabase } from "../lib/supabase";
@@ -8,7 +7,7 @@ import { bbBucket, BB_BUCKET_LABELS, BB_BUCKET_COLORS } from "../lib/bbBucket";
 import { rsiBucket, RSI_BUCKET_LABELS, RSI_BUCKET_DEFINITIONS, RSI_BUCKET_COLORS } from "../lib/rsi";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../lib/entryScore";
 import { rowMatchesFilters } from "../lib/radarFilter";
-import { getEarningsDaysAway } from "../lib/radarData";
+import { getEarningsDaysAway, buildEarningsMap } from "../lib/radarData";
 import { isTickerHeld } from "../lib/positionSchema";
 import { describeStrikeVsGex } from "../lib/gexLevels";
 import { WhaleFlowPanel } from "./WhaleFlowPanel";
@@ -89,12 +88,10 @@ function getPositionIndicators(ticker, positions) {
 
 // ── Earnings warning ──────────────────────────────────────────────────────────
 
-function getEarningsWarning(ticker, marketContext) {
-  if (!marketContext?.positions) return null;
-  const ctx = marketContext.positions.find(p => p.ticker === ticker);
-  if (!ctx?.nextEarnings?.date) return null;
-  const daysAway = Math.ceil((new Date(ctx.nextEarnings.date) - new Date()) / (1000 * 60 * 60 * 24));
-  if (daysAway <= 21 && daysAway >= 0) return `⚠ Earnings ${ctx.nextEarnings.date}`;
+function getEarningsWarning(earningsDate) {
+  if (!earningsDate) return null;
+  const daysAway = Math.ceil((new Date(earningsDate) - new Date()) / (1000 * 60 * 60 * 24));
+  if (daysAway <= 21 && daysAway >= 0) return `⚠ Earnings ${earningsDate}`;
   return null;
 }
 
@@ -531,7 +528,7 @@ function ChipWithTooltip({ label, tooltip, color, background }) {
   );
 }
 
-function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, sortBy, account, ivTrend }) {
+function RadarRow({ row, sample, positions, expanded, onToggle, sortBy, account, ivTrend }) {
   const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, bb_refreshed_at, pe_ttm, beta, ma_50, ma_200, rsi_14, gamma_env, flow_tape_ema, gex_env } = row;
   const bucket   = bbBucket(bb_position);
   const rsiBkt   = rsiBucket(rsi_14);
@@ -544,7 +541,7 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
   const label    = scoreLabel(score);
   const bucketColors = bucket ? BB_BUCKET_COLORS[bucket] : null;
   const indicators   = getPositionIndicators(ticker, positions);
-  const earningsWarn = getEarningsWarning(ticker, marketContext);
+  const earningsWarn = getEarningsWarning(row.earnings_date);
 
   // Highlight the active sort field's value
   const sortId = sortBy?.id;
@@ -767,7 +764,6 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
           sample={sample}
           indicators={indicators}
           positions={positions}
-          marketContext={marketContext}
           bucket={bucket}
           score={score}
           account={account}
@@ -780,8 +776,8 @@ function RadarRow({ row, sample, positions, marketContext, expanded, onToggle, s
 
 // ── Expanded detail panel ─────────────────────────────────────────────────────
 
-function ExpandedPanel({ row, sample, indicators, positions, marketContext, bucket, score, account, ivTrend }) {
-  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, rsi_14, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance, gex_air_pocket } = row;
+function ExpandedPanel({ row, sample, indicators, positions, bucket, score, account, ivTrend }) {
+  const { ticker, company, sector, last, iv, iv_rank, bb_position, bb_upper, bb_lower, bb_sma20, rsi_14, pe_ttm, pe_annual, eps_ttm, beta, ma_50, ma_200, gex_env, gex_support, gex_resistance, gex_air_pocket, earnings_date } = row;
   const rsiBkt = rsiBucket(rsi_14);
   const trend = getTrendState(last, ma_50, ma_200);
 
@@ -802,7 +798,7 @@ function ExpandedPanel({ row, sample, indicators, positions, marketContext, buck
   const vixSentiment       = getVixBand(account?.vix_current)?.sentiment ?? null;
 
   // Earnings info
-  const earningsDate = marketContext?.positions?.find(p => p.ticker === ticker)?.nextEarnings?.date ?? null;
+  const earningsDate = earnings_date ?? null;
   const daysAway = earningsDate
     ? Math.ceil((new Date(earningsDate) - new Date()) / (1000 * 60 * 60 * 24))
     : null;
@@ -1411,7 +1407,10 @@ export function RadarTab({ positions = null, account = null }) {
     return m;
   }, [rows, ivTrendsByTicker]);
 
-  const [marketContext, setMarketContext]       = useState(null);
+  // Earnings dates ride along on the Radar rows (quotes.earnings_date, refreshed
+  // daily by the uw-earnings-dates cron) — no separate fetch needed.
+  const earningsByTicker = useMemo(() => buildEarningsMap(rows), [rows]);
+
   const [bbFilter, setBbFilter]                 = useState("all");
   const [sortBy, setSortBy]                     = useState({ id: "score", dir: "desc" });
   const [expandedTicker, setExpandedTicker]     = useState(null);
@@ -1420,17 +1419,6 @@ export function RadarTab({ positions = null, account = null }) {
   const [presets, setPresets]                   = useState([]);
   const [activePresetId, setActivePresetId]     = useState(null);
   const [saveModalOpen, setSaveModalOpen]       = useState(false);
-
-  useEffect(() => {
-    if (!import.meta.env.PROD) {
-      setMarketContext(marketContextDev);
-      return;
-    }
-    fetch("/api/focus-context")
-      .then(r => r.json())
-      .then(data => { if (data.ok && data.marketContext) setMarketContext(data.marketContext); })
-      .catch(err => console.warn("[RadarTab] market context fetch failed:", err.message));
-  }, []);
 
   // Load presets from Supabase
   useEffect(() => {
@@ -1487,7 +1475,7 @@ export function RadarTab({ positions = null, account = null }) {
       const pf = { ...DEFAULT_FILTERS, ...p.filters };
       const ctx = {
         isHeld:           (ticker) => isTickerHeld(positions, ticker),
-        earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
+        earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, earningsByTicker),
         ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
         includeSectors:   expandGroupsToSectors(pf.sectors_include),
         excludeSectors:   expandGroupsToSectors(pf.sectors_exclude),
@@ -1495,7 +1483,7 @@ export function RadarTab({ positions = null, account = null }) {
       counts[p.id] = rows.filter(row => rowMatchesFilters(row, pf, ctx)).length;
     }
     return counts;
-  }, [rows, positions, marketContext, ivTrendsByTicker]);
+  }, [rows, positions, earningsByTicker, ivTrendsByTicker]);
 
   // Filter + sort
   const processedRows = useMemo(() => {
@@ -1510,7 +1498,7 @@ export function RadarTab({ positions = null, account = null }) {
     const f = advancedFilters;
     const ctx = {
       isHeld:           (ticker) => isTickerHeld(positions, ticker),
-      earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
+      earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, earningsByTicker),
       ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
       includeSectors:   expandGroupsToSectors(f.sectors_include),
       excludeSectors:   expandGroupsToSectors(f.sectors_exclude),
@@ -1545,7 +1533,7 @@ export function RadarTab({ positions = null, account = null }) {
     }
 
     return result;
-  }, [rows, bbFilter, advancedFilters, sortBy, positions, marketContext, ivTrendsByTicker]);
+  }, [rows, bbFilter, advancedFilters, sortBy, positions, earningsByTicker, ivTrendsByTicker]);
 
   const strongCount = useMemo(() =>
     processedRows.filter(r => scoreLabel(entryScore(r.bb_position, r.iv, r.iv_rank, r.last, r.ma_50, r.ma_200, ivTrendsByTicker.get(r.ticker) ?? null, r.gamma_env, r.flow_tape_ema)) === "Strong").length,
@@ -1691,7 +1679,6 @@ export function RadarTab({ positions = null, account = null }) {
               row={row}
               sample={samplesByTicker.get(row.ticker) ?? null}
               positions={positions}
-              marketContext={marketContext}
               expanded={expandedTicker === row.ticker}
               onToggle={() => handleRowToggle(row.ticker)}
               sortBy={sortBy}

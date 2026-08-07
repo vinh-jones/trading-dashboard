@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeRadarRows, getEarningsDaysAway } from "../radarData.js";
+import { mergeRadarRows, getEarningsDaysAway, buildEarningsMap } from "../radarData.js";
 
 const universe = [
   { ticker: "AAA", company: "Alpha", sector: "Technology", price_category: "mid" },
@@ -42,19 +42,44 @@ describe("mergeRadarRows", () => {
   });
 });
 
-describe("getEarningsDaysAway", () => {
-  const ctxFor = (date) => ({ positions: [{ ticker: "AAA", nextEarnings: { date } }] });
-
-  it("counts calendar days to the next earnings date", () => {
-    const inTen = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
-    expect(getEarningsDaysAway("AAA", ctxFor(inTen))).toBeGreaterThanOrEqual(9);
-    expect(getEarningsDaysAway("AAA", ctxFor(inTen))).toBeLessThanOrEqual(11);
+describe("buildEarningsMap", () => {
+  it("maps ticker to earnings_date, skipping rows without one", () => {
+    const map = buildEarningsMap([
+      { ticker: "AAA", earnings_date: "2026-09-01" },
+      { ticker: "BBB", earnings_date: null },
+      { ticker: "CCC" },
+    ]);
+    expect(map.get("AAA")).toBe("2026-09-01");
+    expect(map.has("BBB")).toBe(false);
+    expect(map.has("CCC")).toBe(false);
   });
 
-  it("returns null when the ticker is absent, unknown, or context is missing", () => {
-    expect(getEarningsDaysAway("ZZZ", ctxFor("2026-12-01"))).toBeNull();
-    expect(getEarningsDaysAway("AAA", { positions: [{ ticker: "AAA" }] })).toBeNull();
+  it("tolerates junk input", () => {
+    expect(buildEarningsMap(null).size).toBe(0);
+  });
+});
+
+describe("getEarningsDaysAway", () => {
+  const iso = (offsetDays) =>
+    new Date(Date.now() + offsetDays * 864e5).toISOString().slice(0, 10);
+
+  it("returns whole days until the earnings date", () => {
+    const map = new Map([["AAA", iso(10)]]);
+    expect(getEarningsDaysAway("AAA", map)).toBe(10);
+  });
+
+  it("returns null for an unknown ticker — unknown is not zero", () => {
+    // radarFilter treats null as "don't filter". Returning 0 here would make
+    // every unknown ticker look like it reports today and fail earnings_days_min.
+    expect(getEarningsDaysAway("ZZZ", new Map())).toBeNull();
+  });
+
+  it("returns null when the map is missing entirely", () => {
     expect(getEarningsDaysAway("AAA", null)).toBeNull();
-    expect(getEarningsDaysAway("AAA", {})).toBeNull();
+  });
+
+  it("returns a negative number for a past date", () => {
+    const map = new Map([["AAA", iso(-5)]]);
+    expect(getEarningsDaysAway("AAA", map)).toBeLessThan(0);
   });
 });

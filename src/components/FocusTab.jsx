@@ -74,38 +74,26 @@ function RulesPanel() {
   );
 }
 
-// Dedupes macro events by eventType. Prefers upcoming events; if none are
-// future-dated, falls back to the most recent past release so the panel still
-// renders something useful. Events missing dateTime sort last with a dash.
-function MacroCalendar({ macroEvents }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const byType = {};
-  for (const evt of macroEvents) {
-    const d = evt.dateTime ? evt.dateTime.slice(0, 10) : null;
-    const prev = byType[evt.eventType];
+const MACRO_LABELS = {
+  CPI:          "CPI",
+  PPI:          "PPI",
+  NFP:          "Jobs report",
+  FOMC:         "FOMC",
+  PCE:          "PCE",
+  RETAIL_SALES: "Retail sales",
+};
 
-    // Prefer: upcoming > most-recent-past > undated
-    // For each eventType, keep the soonest future date. If none, keep the latest past date.
-    if (!prev) {
-      byType[evt.eventType] = { ...evt, _date: d };
-      continue;
-    }
-    const prevIsFuture = prev._date && prev._date >= todayStr;
-    const thisIsFuture = d && d >= todayStr;
-    if (thisIsFuture && prevIsFuture) {
-      if (d < prev._date) byType[evt.eventType] = { ...evt, _date: d };
-    } else if (thisIsFuture && !prevIsFuture) {
-      byType[evt.eventType] = { ...evt, _date: d };
-    } else if (!thisIsFuture && !prevIsFuture && d && (!prev._date || d > prev._date)) {
-      byType[evt.eventType] = { ...evt, _date: d };
-    }
-  }
-  const events = Object.values(byType).sort((a, b) => {
-    if (a._date && b._date) return a._date.localeCompare(b._date);
-    if (a._date) return -1;
-    if (b._date) return 1;
-    return 0;
-  });
+// Upcoming macro releases from the macro_events table (UW economic calendar,
+// ~8-day horizon). Rows arrive pre-deduped — one per (date, type) — and already
+// filtered to today-or-later by the API, so there is nothing to collapse here.
+//
+// Deliberately NO fall-back-to-most-recent-past-release: the old market_context
+// version did that, and when its feed died it rendered four-month-old CPI/PPI as
+// if current. An empty upcoming set renders nothing.
+function MacroCalendar({ macroEvents }) {
+  const events = [...(macroEvents ?? [])].sort((a, b) =>
+    a.event_date.localeCompare(b.event_date),
+  );
   if (!events.length) return null;
 
   const colStyle = { fontSize: theme.size.sm, padding: "5px 10px", textAlign: "left" };
@@ -135,26 +123,23 @@ function MacroCalendar({ macroEvents }) {
             <th style={{ ...colStyle, fontWeight: 500 }}>Date</th>
             <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Previous</th>
             <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Forecast</th>
-            <th style={{ ...colStyle, fontWeight: 500, textAlign: "right" }}>Actual</th>
           </tr>
         </thead>
         <tbody>
-          {events.map((evt, i) => {
-            const label  = evt.eventType === "FOMC_RATE_DECISION" ? "FOMC Rate" : evt.eventType;
-            const isPast = evt.actual != null;
-            return (
-              <tr key={i} style={{
+          {events.map((evt) => (
+            <tr
+              key={`${evt.event_date}-${evt.event_type}`}
+              style={{
                 borderBottom: `1px solid ${theme.border.default}`,
-                color:        isPast ? theme.text.subtle : theme.text.secondary,
-              }}>
-                <td style={colStyle}>{label}</td>
-                <td style={{ ...colStyle, color: theme.text.muted }}>{formatExpiry(evt._date)}</td>
-                <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>{evt.previous != null ? evt.previous : "—"}</td>
-                <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>{evt.forecast != null ? evt.forecast : "—"}</td>
-                <td style={{ ...colStyle, textAlign: "right", color: isPast ? theme.green : theme.text.subtle }}>{evt.actual != null ? evt.actual : "—"}</td>
-              </tr>
-            );
-          })}
+                color:        theme.text.secondary,
+              }}
+            >
+              <td style={colStyle}>{MACRO_LABELS[evt.event_type] ?? evt.event_type}</td>
+              <td style={{ ...colStyle, color: theme.text.muted }}>{formatExpiry(evt.event_date)}</td>
+              <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>{evt.previous ?? "—"}</td>
+              <td style={{ ...colStyle, textAlign: "right", color: theme.text.muted }}>{evt.forecast ?? "—"}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -162,7 +147,7 @@ function MacroCalendar({ macroEvents }) {
 }
 
 // Data-freshness chip preserved from the previous shell
-function DataFreshnessInfo({ quotesRefreshedAt, contextAsOf, positionsLastUpdated }) {
+function DataFreshnessInfo({ quotesRefreshedAt, macroRefreshedAt, positionsLastUpdated }) {
   const [hovered, setHovered] = useState(false);
   const fmt = (iso) => {
     if (!iso) return "—";
@@ -170,9 +155,9 @@ function DataFreshnessInfo({ quotesRefreshedAt, contextAsOf, positionsLastUpdate
     return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
   };
   const rows = [
-    { label: "Quotes",         value: fmt(quotesRefreshedAt),          note: "30 min cache · market hours only" },
-    { label: "Market context", value: fmt(contextAsOf),                note: "updated by ingest job" },
-    { label: "Positions",      value: positionsLastUpdated || "—",     note: "daily snapshot" },
+    { label: "Quotes",         value: fmt(quotesRefreshedAt),      note: "30 min cache · market hours only" },
+    { label: "Macro calendar", value: fmt(macroRefreshedAt),       note: "daily · uw-macro-events cron" },
+    { label: "Positions",      value: positionsLastUpdated || "—", note: "daily snapshot" },
   ];
   return (
     <div
@@ -215,7 +200,8 @@ export function FocusTab({
   categorized,
   quoteMap,
   quotesRefreshedAt,
-  marketContext,
+  macroEvents,
+  macroRefreshedAt,
 }) {
   const { positions, account } = useData();
   useWindowWidth(); // subscribe to resize so the feed re-measures
@@ -228,14 +214,12 @@ export function FocusTab({
     .filter(it => it.priority === "P1" || it.priority === "P2")
     .filter(it => isNonPositionAlert(it, tickersWithPositions));
 
-  const macroEvents = marketContext?.macroEvents ?? [];
-
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.space[3], gap: theme.space[3] }}>
         <DataFreshnessInfo
           quotesRefreshedAt={quotesRefreshedAt}
-          contextAsOf={marketContext?.asOf}
+          macroRefreshedAt={macroRefreshedAt}
           positionsLastUpdated={account?.last_updated}
         />
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[3] }}>

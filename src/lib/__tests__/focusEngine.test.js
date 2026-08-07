@@ -187,6 +187,85 @@ describe("generateFocusItems", () => {
     // P1 (cash_below_floor) should come before P3 (expiry_cluster)
     expect(priorities.indexOf("P1")).toBeLessThan(priorities.indexOf("P3"));
   });
+
+  it("fires earnings_before_expiry from quoteMap earnings data", () => {
+    const soon   = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+    const expiry = new Date(Date.now() + 12 * 864e5).toISOString().slice(0, 10);
+    const positions = {
+      ...emptyPositions(),
+      open_csps: [{ ticker: "AAA", type: "CSP", strike: 100, expiry_date: expiry }],
+    };
+    const quoteMap = new Map([
+      ["AAA", {
+        symbol: "AAA",
+        instrument_type: "EQUITY",
+        earnings_date: soon,
+        earnings_meta: { hour: "amc", epsEstimate: 1.25 },
+      }],
+    ]);
+
+    const items = generateFocusItems(positions, {}, null, null, quoteMap);
+    const item  = items.find(i => i.rule === "earnings_before_expiry");
+
+    expect(item).toBeDefined();
+    expect(item.ticker).toBe("AAA");
+    expect(item.detail).toContain("AMC");
+    expect(item.detail).toContain("+1.25");
+  });
+
+  it("does not fire earnings_before_expiry when earnings land after expiry", () => {
+    const expiry = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+    const later  = new Date(Date.now() + 20 * 864e5).toISOString().slice(0, 10);
+    const positions = {
+      ...emptyPositions(),
+      open_csps: [{ ticker: "AAA", type: "CSP", strike: 100, expiry_date: expiry }],
+    };
+    const quoteMap = new Map([
+      ["AAA", { symbol: "AAA", instrument_type: "EQUITY", earnings_date: later }],
+    ]);
+
+    const items = generateFocusItems(positions, {}, null, null, quoteMap);
+    expect(items.find(i => i.rule === "earnings_before_expiry")).toBeUndefined();
+  });
+
+  it("fires macro_overlap from a macroEvents array", () => {
+    const evtDate = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10);
+    const positions = {
+      ...emptyPositions(),
+      open_csps: [{ ticker: "AAA", type: "CSP", strike: 100, expiry_date: evtDate }],
+    };
+    const macroEvents = [{ event_date: evtDate, event_type: "CPI", title: "Consumer price index" }];
+
+    const items = generateFocusItems(positions, {}, macroEvents, null);
+    const item  = items.find(i => i.rule === "macro_overlap");
+
+    expect(item).toBeDefined();
+    expect(item.id).toBe(`macro-CPI-${evtDate}`);
+  });
+
+  it("ignores macro events that have already passed", () => {
+    const past = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+    const positions = {
+      ...emptyPositions(),
+      open_csps: [{ ticker: "AAA", type: "CSP", strike: 100, expiry_date: past }],
+    };
+    const macroEvents = [{ event_date: past, event_type: "CPI", title: "Consumer price index" }];
+
+    const items = generateFocusItems(positions, {}, macroEvents, null);
+    expect(items.find(i => i.rule === "macro_overlap")).toBeUndefined();
+  });
+
+  it("fires no macro_overlap when the macro_events table is empty", () => {
+    // The empty case is the one that used to render April data via
+    // MacroCalendar's past-release fallback. Empty must stay empty.
+    const evtDate = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10);
+    const positions = {
+      ...emptyPositions(),
+      open_csps: [{ ticker: "AAA", type: "CSP", strike: 100, expiry_date: evtDate }],
+    };
+    expect(generateFocusItems(positions, {}, [],   null).find(i => i.rule === "macro_overlap")).toBeUndefined();
+    expect(generateFocusItems(positions, {}, null, null).find(i => i.rule === "macro_overlap")).toBeUndefined();
+  });
 });
 
 describe("categorizeFocusItems", () => {

@@ -604,11 +604,22 @@ export default async function handler(req, res) {
     const resp = await fetchMarketEvents(today, maxDate);
     const rows = normalizeEvents(resp, now);
 
-    // Replace the whole forward window so passed events clear.
+    // Clear the range we are about to rewrite: everything up to and including
+    // maxDate. Bounded on purpose — rows past the window (which UW never
+    // produces) are left alone rather than swept up by a match-all predicate.
+    //
+    // The floor has to be open, not `>= today`. A `>= today` delete orphans one
+    // row every single day: a row written today for today sits below tomorrow's
+    // floor and is never revisited, so the table grows without bound — the
+    // opposite of what replace-per-run is for. Every consumer filters
+    // `>= today`, so those strays would accumulate invisibly.
+    //
+    // Deleting the whole range also means a cancelled or renamed UW release
+    // cannot linger as a phantom future row, which a plain upsert would leave.
     const { error: delErr } = await supabase
       .from("macro_events")
       .delete()
-      .gte("event_date", today);
+      .lte("event_date", maxDate);
     if (delErr) throw new Error(`macro_events delete failed: ${delErr.message}`);
 
     if (rows.length) {

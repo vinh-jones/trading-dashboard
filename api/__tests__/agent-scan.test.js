@@ -117,18 +117,19 @@ describe("buildScanPayload — Prime Setup filter wiring", () => {
 
   it("excludes a ticker with earnings inside 30 days", () => {
     const soon = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
-    const marketContext = { positions: [{ ticker: "AAA", nextEarnings: { date: soon } }] };
-    const payload = buildScanPayload({ rows: [strongRow()], marketContext, preset: primeSetup });
+    const payload = buildScanPayload({
+      rows: [strongRow({ earnings_date: soon })],
+      preset: primeSetup,
+    });
     expect(tickersIn(payload)).toEqual([]);
   });
 
   it("keeps a ticker whose earnings date is UNKNOWN — null is not 'too soon'", () => {
-    // Documents live behaviour: market_context only carries earnings for names
-    // it tracks, so most non-held candidates have null here. If this ever flips
-    // to exclude-on-null, Prime Setup would silently collapse to a few names.
+    // Documents live behaviour: quotes.earnings_date is null for names with no
+    // upcoming report. If this ever flips to exclude-on-null, Prime Setup would
+    // silently collapse to a few names.
     const payload = buildScanPayload({
-      rows: [strongRow()],
-      marketContext: { positions: [] },
+      rows: [strongRow({ earnings_date: null })],
       preset: primeSetup,
     });
     expect(tickersIn(payload)).toEqual(["AAA"]);
