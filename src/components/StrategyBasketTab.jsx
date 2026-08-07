@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useData } from "../hooks/useData";
 import { useQuotes } from "../hooks/useQuotes";
 import { theme } from "../lib/theme";
@@ -7,7 +7,7 @@ import { getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads } from "../lib/po
 import {
   resolveBasket, basketTarget, capitalDeployed,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
-  shareCoverageWarnings, tupleMatch,
+  shareCoverageWarnings, tupleMatch, groupMembersByType,
 } from "../lib/strategyBasket";
 import { createJournalEntry } from "../lib/journalApi";
 
@@ -673,6 +673,68 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               </div>
             );
 
+            // Per-type subtotal inside an Open/Closed group. G/L means
+            // mark-to-market for open rows and realized for closed ones, which
+            // is why the Open/Closed split stays the OUTER grouping — a
+            // subtotal spanning both would be meaningless.
+            // Recessed (bg.base) rather than raised: it sits UNDER the elevated
+            // Open/Closed header, so it must not compete with it.
+            const TypeLabel = (type, count, subtotal) => (
+              <div style={{
+                display: "flex", gap: theme.space[2], alignItems: "center",
+                padding: `${theme.space[1]}px ${theme.space[3]}px`,
+                background: theme.bg.base, fontSize: theme.size.xs, letterSpacing: "0.4px",
+              }}>
+                <span style={{ color: TYPE_COLORS[type]?.text ?? theme.text.secondary }}>{type}</span>
+                <span style={{ color: theme.text.subtle }}>· {count}</span>
+                <span style={{
+                  marginLeft: "auto", fontFamily: theme.font.mono,
+                  color: subtotal == null ? theme.text.muted : subtotal >= 0 ? theme.green : theme.red,
+                }}>{fmtMoney(subtotal)}</span>
+              </div>
+            );
+
+            // A member's G/L as a NUMBER, or null when there is nothing to sum.
+            // Same coerce-then-check guard as fmtMoney, and for the same reason:
+            // the unattributed path leaves DB values un-coerced, so `realized`
+            // can be the string "61548" — `s + "61548"` in a reduce would
+            // CONCATENATE, and two such rows would total a garbage magnitude.
+            // The null check comes first because Number(null) is 0, not NaN,
+            // which would book an unmarked open leg as a real $0.
+            const glOf = (m) => {
+              const raw = derive(m).gl;
+              if (raw == null) return null;
+              const v = Number(raw);
+              return Number.isFinite(v) ? v : null;
+            };
+            // null (→ "—"), not 0, when nothing in the group is marked: "$0"
+            // would read as "this group is flat" rather than "no marks yet".
+            // A partially-marked group still sums only what it can see; the
+            // Unrealized-cushion card above carries the unmarked count.
+            const subtotal = (ms) => ms.reduce((s, m) => {
+              const v = glOf(m);
+              return v == null ? s : (s ?? 0) + v;
+            }, null);
+
+            // One Open/Closed section: its label, then a labelled subtotal per
+            // type. A section holding a single type needs no per-type header —
+            // it would just restate the section's own count and total.
+            const Section = (label, list) => {
+              if (list.length === 0) return null;
+              const groups = groupMembersByType(list);
+              return (
+                <>
+                  {showGroupLabels && GroupLabel(label, list.length)}
+                  {groups.map(({ type, members: ms }) => (
+                    <Fragment key={`${label}-${type}`}>
+                      {groups.length > 1 && TypeLabel(type, ms.length, subtotal(ms))}
+                      {ms.map(Row)}
+                    </Fragment>
+                  ))}
+                </>
+              );
+            };
+
             const Row = (m, i) => {
               const { open, gl, days, kept } = derive(m);
               const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
@@ -684,9 +746,14 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
                 : "";
               const strikeLabel = m.strike == null ? null
                 : (m.type === "Spread" && m.longStrike != null ? `$${m.strike}/${m.longStrike}` : `$${m.strike}`);
+              // "3 of 8 ct · " when this member owns only a slice of a blended
+              // trade; empty when it owns the whole thing (attribution === null).
+              const sliceLabel = m.attribution
+                ? `${fmtCount(m.attribution.owned)} of ${fmtCount(m.attribution.total)} ${m.type === "Shares" ? "sh" : "ct"} · `
+                : "";
               const detail = m.role === "baseline"
                 ? "Baseline loss"
-                : `${strikeLabel != null ? `${strikeLabel} · ` : ""}${open ? "open" : "closed"}${pctOfTarget}`;
+                : `${strikeLabel != null ? `${strikeLabel} · ` : ""}${sliceLabel}${open ? "open" : "closed"}${pctOfTarget}`;
 
               return (
                 <div key={`${m.status}-${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
@@ -722,10 +789,8 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
                 {baseline.length > 0 && recovery.length > 0 && (
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
-                {showGroupLabels && openRecovery.length > 0 && GroupLabel("Open", openRecovery.length)}
-                {openRecovery.map(Row)}
-                {showGroupLabels && closedRecovery.length > 0 && GroupLabel("Closed", closedRecovery.length)}
-                {closedRecovery.map(Row)}
+                {Section("Open", openRecovery)}
+                {Section("Closed", closedRecovery)}
                 {showFooter && (
                   <div style={{
                     display: "flex", gap: theme.space[2], alignItems: "center", flexWrap: "wrap",
