@@ -458,14 +458,15 @@ describe("reducers under fractional attribution", () => {
   });
 
   it("basketTarget scales an attributed BASELINE loss, shrinking the target", () => {
-    // Documents today's behavior, which is NOT obviously desirable: fromTrade
-    // scales `realized` by weight for every role, and basketTarget is the
-    // denominator of the whole basket progress display. So declaring
-    // metadata.contracts on a baseline entry silently shrinks the goalpost
-    // rather than just re-slicing a recovery leg. 1200 of a 3300-share loss:
-    // -26400 * 1200/3300 = -9600, and the target drops 26400 → 9600.
-    // Whether an attributed baseline SHOULD scale is a design call, not a bug
-    // this test asserts either way — it just pins what ships today.
+    // DECIDED, not incidental: scaling an attributed baseline is intended.
+    // fromTrade scales `realized` by weight for every role, and basketTarget is
+    // the denominator of the whole basket progress display — so declaring
+    // metadata.contracts on a baseline entry moves the goalpost. That is the
+    // right behavior: attributing a baseline means the basket owns only that
+    // share of the loss, so it should only be trying to earn back its share.
+    // A basket that claims 1200 of a 3300-share loss but still has to recover
+    // all $26,400 would be permanently and wrongly behind.
+    // 1200 of a 3300-share loss: -26400 * 1200/3300 = -9600, target 26400 → 9600.
     const t = [{ id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry_date: null, contracts: 3300, close_date: "2026-06-01", premium_collected: -26400, capital_fronted: 85800 }];
     const whole = [{ tags: ["strategy:b1", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null }];
     const sliced = [{ tags: ["strategy:b2", "role:makeup-baseline"], trade_id: "base", ticker: "SOFI", type: "Shares", strike: null, expiry: null, metadata: { contracts: 1200 } }];

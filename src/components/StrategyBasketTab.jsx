@@ -17,11 +17,21 @@ const STRATEGY_PREFIX = "strategy:";
 // disclosed in the form's hint line rather than silently dropped.
 const ATTR_TRADE_CAP = 40;
 
-// Coerce-then-check, rather than Number.isFinite(n) on the raw argument: the
-// unattributed path in strategyBasket.js deliberately passes DB values through
-// un-coerced (see its rule 2), so a numeric string like "61548" reaches here and
-// must still render. Anything that isn't a finite number after coercion — null,
-// undefined, "abc", NaN, Infinity — renders as an em dash instead of "$NaN".
+// Coerce-then-check, rather than Number.isFinite(n) on the raw argument.
+//
+// No caller can hand this a string today, and none can hand it a NaN either:
+// every dollar value it renders traces back to `premium_collected` or
+// `capital_fronted`, both `integer` columns, and PostgREST serializes integers
+// as JSON numbers (it is `numeric` that comes over as a string). So the coercion
+// is not load-bearing — do not read this comment as documenting a live hazard.
+//
+// It stays because this is the display boundary and a total function here costs
+// nothing. The sibling money-ish columns `strike`, `entry_cost`, `exit_cost`,
+// `roi` and `kept_pct` ARE `numeric` and do arrive as strings ("157.5"), so a
+// future caller passing entryCost or strike is entirely plausible, and
+// Number.isFinite is strictly stronger than a null check at zero cost. Anything
+// not finite after coercion — null, undefined, "abc", NaN, Infinity — renders
+// as an em dash instead of "$NaN".
 function fmtMoney(n) {
   const v = Number(n);
   if (n == null || !Number.isFinite(v)) return "—";
@@ -37,7 +47,9 @@ function fmtMoney(n) {
 
 // Attributed counts can be fractional after scaling (25 of a 100-share lot);
 // show a decimal only when there is one. 4 → "4", 4.5 → "4.5".
-// Same coerce-then-check guard as fmtMoney — .toFixed() would throw on a string.
+// Same coerce-then-check guard as fmtMoney, and for the same reason: no caller
+// hands this a string today either (`contracts` is an `integer` column, so it
+// arrives as a JSON number), but a total function at a display boundary is free.
 function fmtCount(n) {
   const v = Number(n);
   if (n == null || !Number.isFinite(v)) return "—";
@@ -233,11 +245,20 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
   // exists to catch. tupleMatch(entry, normalizedTrade) is the same call
   // resolveBasket makes at its closedMatch step, so the shapes line up.
   //
-  // Deliberately conservative: a null-strike/null-expiry Shares entry tuple-matches
-  // EVERY Shares trade on that ticker, so a ticker with several share lots can
-  // over-count and understate what's left. That direction fails closed (it blocks
-  // an attribution rather than allowing a double one) and mirrors the same
-  // ambiguity resolveBasket already has when it picks the first tuple match.
+  // An entry with no usable metadata.contracts counts as the WHOLE trade, not as
+  // zero. That is the same test resolveAttribution applies (non-finite or <= 0 →
+  // null → the member owns the trade outright), so a legacy whole-claim consumes
+  // the trade here exactly as it does there. Reading only metadata.contracts is
+  // what fails OPEN: the pre-attribution rows this form inherits carry
+  // `metadata: null` by construction, so every one of them would report 0 claimed
+  // and wave through a second full attribution of an already-spoken-for trade.
+  //
+  // Everything left over is deliberately conservative — it over-counts rather
+  // than under-counts, blocking an attribution instead of permitting a double
+  // one. Two ways it does: a null-strike/null-expiry Shares entry tuple-matches
+  // EVERY Shares trade on that ticker (the same ambiguity resolveBasket has when
+  // it picks the first tuple match), and an over-large declared count is summed
+  // raw here while resolveAttribution clamps it to the trade's total.
   const attrAlready = attrTrade
     ? entries
         .filter(e => {
@@ -246,7 +267,10 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
             ? eTradeId === attrTrade.id
             : tupleMatch(e, attrTrade);
         })
-        .reduce((s, e) => s + (Number(e.metadata?.contracts) || 0), 0)
+        .reduce((s, e) => {
+          const c = Number(e.metadata?.contracts);
+          return s + (Number.isFinite(c) && c > 0 ? c : attrTotal);
+        }, 0)
     : 0;
   const attrRemaining = attrTotal - attrAlready;
 
@@ -695,10 +719,15 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
             );
 
             // A member's G/L as a NUMBER, or null when there is nothing to sum.
-            // Same coerce-then-check guard as fmtMoney, and for the same reason:
-            // the unattributed path leaves DB values un-coerced, so `realized`
-            // can be the string "61548" — `s + "61548"` in a reduce would
-            // CONCATENATE, and two such rows would total a garbage magnitude.
+            // Same coerce-then-check guard as fmtMoney, and — again — not a live
+            // hazard: `realized` cannot be a string, because it comes from
+            // `premium_collected`, an `integer` column PostgREST sends as a JSON
+            // number. It is kept because this value feeds a `+` reduce, where a
+            // string would CONCATENATE rather than add and produce a silently
+            // garbage magnitude instead of an obvious NaN — and the neighbouring
+            // `numeric` columns (`strike`, `entry_cost`, `roi`, `kept_pct`) DO
+            // arrive as strings, so a future G/L source plausibly could. The
+            // "avg kept" line in the footer below is that exact bug, for real.
             // The null check comes first because Number(null) is 0, not NaN,
             // which would book an unmarked open leg as a real $0.
             const glOf = (m) => {
@@ -776,10 +805,14 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
             // Totals footer — elapsed time since the swap + blended closed-leg stats.
             const pivotDate   = baseline[0]?.closeDate ?? baseline[0]?.openDate ?? null;
             const daysIn      = daysSince(pivotDate);
-            const closedRec   = recovery.filter(m => m.status === "closed");
+            const closedRec   = recovery.filter(m => m.status !== "open");
             const realizedTot = closedRec.reduce((s, m) => s + (m.realized ?? 0), 0);
+            // Number(v): keptPct comes from `kept_pct`, a `numeric` column, which
+            // PostgREST sends as a STRING — an un-coerced `s + v` concatenates, and
+            // with two or more closed legs the average comes out NaN and renders "—".
+            // (One leg hid it: Number("0" + "0.5263") / 1 is 0.5263.)
             const kepts       = closedRec.map(m => m.keptPct).filter(v => v != null);
-            const avgKept     = kepts.length ? kepts.reduce((s, v) => s + v, 0) / kepts.length : null;
+            const avgKept     = kepts.length ? kepts.reduce((s, v) => s + Number(v), 0) / kepts.length : null;
             const pctTgt      = target > 0 ? (realizedTot / target) * 100 : null;
             const showFooter  = daysIn != null || closedRec.length > 0;
 

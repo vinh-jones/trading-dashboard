@@ -50,9 +50,12 @@ function toIsoDate(v) {
 //     total ≤ 400 dust upward.
 //
 //  2. Multiply only on the attributed path — `(v) => (attr ? v * attr.weight : v)`,
-//     never `v * (attr?.weight ?? 1)`. The unattributed path must pass values
-//     through untouched, so nothing is silently coerced (a string "61548" would
-//     become a number, a non-numeric one NaN) on rows the user never asked to split.
+//     never `v * (attr?.weight ?? 1)`. Both forms are arithmetically identical on
+//     today's data; the point is provability, not correctness of the multiply. An
+//     unattributed member must come out of here as the SAME value pre-branch code
+//     produced, byte for byte, with no arithmetic in the path at all — which is
+//     what makes it checkable by inspection that this feature cannot perturb any
+//     existing basket, only the ones someone deliberately slices.
 //
 // Per-unit and metadata fields (entryCost, strike, expiry, dates) never scale.
 function resolveAttribution(entry, source) {
@@ -91,9 +94,13 @@ function fromOpenPosition(pos, role, attr = null) {
 }
 
 // Accepts both the raw DB trade row and the app's normalizeTrade() output, which
-// renames premium_collected→premium, capital_fronted→fronted, and drops the ISO
-// close_date (keeping `close` as MM/DD). The app only ever passes the normalized
-// shape, so read those first with the raw names as fallback.
+// renames premium_collected→premium (keeping the raw name as an alias) and
+// capital_fronted→fronted (dropping the raw name). It emits three close-date
+// shapes at once (trading.js): `close` as MM/DD, `closeDate` as a Date, and
+// `close_date` as the raw ISO string — the ISO one is NOT dropped, and is
+// load-bearing both here and upstream, where the attribution form's trade picker
+// sorts and labels on it. The app only ever passes the normalized shape, so read
+// those first with the raw names as fallback.
 function fromTrade(trade, role, attr = null) {
   // Attribution rules 1 and 2 live on resolveAttribution — read them before editing.
   const scale = (v) => (attr ? v * attr.weight : v);
