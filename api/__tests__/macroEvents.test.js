@@ -37,6 +37,25 @@ describe("classifyEvent", () => {
     expect(classifyEvent("")).toBeNull();
     expect(classifyEvent(123)).toBeNull();
   });
+
+  it("matches the speculative PCE and FOMC spellings", () => {
+    // UW had neither event in the captured window, so these names are unverified
+    // against real data — that risk is accepted. What IS testable is that the
+    // alternations we wrote actually work.
+    expect(classifyEvent("PCE index")).toBe("PCE");
+    expect(classifyEvent("Personal consumption expenditures")).toBe("PCE");
+    expect(classifyEvent("Personal consumption expenditure price index")).toBe("PCE");
+    expect(classifyEvent("FOMC announcement")).toBe("FOMC");
+    expect(classifyEvent("FOMC rate decision")).toBe("FOMC");
+    expect(classifyEvent("Fed interest-rate decision")).toBe("FOMC");
+    expect(classifyEvent("Fed interest rate decision")).toBe("FOMC");
+  });
+
+  it("rejects near-misses of the speculative spellings", () => {
+    expect(classifyEvent("Core PCE")).toBeNull();
+    expect(classifyEvent("FOMC minutes")).toBeNull();
+    expect(classifyEvent("FOMC meeting begins")).toBeNull();
+  });
 });
 
 describe("normalizeEvents", () => {
@@ -107,10 +126,16 @@ describe("normalizeEvents", () => {
 describe("against the captured UW fixture", () => {
   const rows = normalizeEvents(fixture, "2026-08-07T12:00:00.000Z");
 
-  it("classifies at least one real event", () => {
-    // If UW renames its headline events, every type silently vanishes and the
-    // Focus calendar goes blank with no error. This is the tripwire.
-    expect(rows.length).toBeGreaterThan(0);
+  it("classifies exactly the four headline events in the captured window", () => {
+    // Frozen fixture — pinning the exact result is deliberate. A weaker
+    // "length > 0" check only fires when every type vanishes at once, so a
+    // single UW rename would slip through silently.
+    expect(rows.map(r => `${r.event_date}|${r.event_type}`)).toEqual([
+      "2026-08-07|NFP",
+      "2026-08-12|CPI",
+      "2026-08-13|PPI",
+      "2026-08-14|RETAIL_SALES",
+    ]);
   });
 
   it("emits only whitelisted types", () => {

@@ -12,8 +12,6 @@
  * substring, precisely so the core/YoY variants fall through.
  */
 
-export const MACRO_EVENT_TYPES = ["CPI", "PPI", "NFP", "FOMC", "PCE", "RETAIL_SALES"];
-
 // Order matters only for readability — the names are mutually exclusive.
 const TYPE_MATCHERS = [
   { type: "CPI",          re: /^consumer price index$/ },
@@ -26,6 +24,11 @@ const TYPE_MATCHERS = [
   { type: "PCE",          re: /^(pce index|personal consumption expenditures?( price index)?)$/ },
   { type: "FOMC",         re: /^(fomc announcement|fomc rate decision|fed interest[- ]rate decision)$/ },
 ];
+
+// Derived from TYPE_MATCHERS so the whitelist and the matchers can never drift
+// apart — a type could otherwise be listed here with no matcher backing it.
+// Frozen because four downstream tasks import this constant.
+export const MACRO_EVENT_TYPES = Object.freeze(TYPE_MATCHERS.map((m) => m.type));
 
 /** Whitelisted event type for a UW event name, or null. */
 export function classifyEvent(name) {
@@ -52,8 +55,9 @@ function etDate(iso) {
 }
 
 function str(v) {
-  if (v === null || v === undefined || v === "") return null;
-  return String(v);
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
 }
 
 /**
@@ -68,12 +72,12 @@ export function normalizeEvents(rows, refreshedAt) {
     const type = classifyEvent(r?.event);
     if (!type) continue;
     const time = r?.time;
-    const date = time ? etDate(time) : null;
+    const date = typeof time === "string" ? etDate(time) : null;
     if (!date) continue;
 
     const key = `${date}|${type}`;
     const prev = byKey.get(key);
-    if (prev && String(prev.event_time) <= String(time)) continue;
+    if (prev && Date.parse(prev.event_time) <= Date.parse(time)) continue;
 
     byKey.set(key, {
       event_date:   date,
