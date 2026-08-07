@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType } from "../strategyBasket";
 import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
@@ -545,5 +545,33 @@ describe("reducers under fractional attribution", () => {
     ];
     const [w] = shareCoverageWarnings(resolveBasket("strategy:c2", { openPositions: open, trades: [], entries: e }));
     expect(w).toMatchObject({ ticker: "GLW", declaredShares: 300, ccContracts: 4, coveredShares: 400 });
+  });
+});
+
+describe("groupMembersByType", () => {
+  const mk = (type, ticker = "X") => ({ type, ticker, status: "closed", role: "recovery" });
+
+  it("groups members by type in a fixed display order", () => {
+    const groups = groupMembersByType([mk("Shares"), mk("CSP"), mk("CC"), mk("CSP")]);
+    expect(groups.map(g => g.type)).toEqual(["CC", "CSP", "Shares"]);
+    expect(groups.find(g => g.type === "CSP").members).toHaveLength(2);
+  });
+
+  it("preserves the incoming order within a group", () => {
+    const a = mk("CSP", "AAA"), b = mk("CSP", "BBB");
+    expect(groupMembersByType([b, a]).find(g => g.type === "CSP").members).toEqual([b, a]);
+  });
+
+  it("sorts unknown types after the known ones, alphabetically", () => {
+    const groups = groupMembersByType([mk("Zebra"), mk("CC"), mk("Apple")]);
+    expect(groups.map(g => g.type)).toEqual(["CC", "Apple", "Zebra"]);
+  });
+
+  it("buckets a null type as Other", () => {
+    expect(groupMembersByType([mk(null)]).map(g => g.type)).toEqual(["Other"]);
+  });
+
+  it("returns an empty array for no members", () => {
+    expect(groupMembersByType([])).toEqual([]);
   });
 });

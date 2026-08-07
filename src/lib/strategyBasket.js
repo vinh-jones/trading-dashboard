@@ -335,3 +335,29 @@ export function shareCoverageWarnings(members) {
   }
   return warnings;
 }
+
+// Display order for type groups in the transactions table. Anything not listed
+// (a future type, or a null) sorts after these, alphabetically.
+const TYPE_DISPLAY_ORDER = ["CC", "CSP", "Shares", "LEAPS", "Spread"];
+
+/**
+ * Bucket members by type for the transactions table, in a stable display order.
+ * Order WITHIN each bucket is the order they arrived in, so an active column
+ * sort upstream is preserved.
+ * @returns {Array<{type: string, members: Array}>}
+ */
+export function groupMembersByType(members) {
+  const byType = new Map();
+  for (const m of members) {
+    const key = m.type ?? "Other";
+    if (!byType.has(key)) byType.set(key, []);
+    byType.get(key).push(m);
+  }
+  const rank = (t) => {
+    const i = TYPE_DISPLAY_ORDER.indexOf(t);
+    return i === -1 ? TYPE_DISPLAY_ORDER.length : i;
+  };
+  return [...byType.entries()]
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || String(a[0]).localeCompare(String(b[0])))
+    .map(([type, ms]) => ({ type, members: ms }));
+}
