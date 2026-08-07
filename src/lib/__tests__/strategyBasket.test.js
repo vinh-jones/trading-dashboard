@@ -196,6 +196,32 @@ describe("resolveBasket", () => {
     expect(m.contracts).toBe(4);
     expect(m.attribution).toEqual({ owned: 4, total: 12 });
   });
+
+  it("scales an open member, and its unrealized P/L follows the scaled contract count", () => {
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 8, capital_fronted: 29600, entry_cost: 0.70, open_date: "2026-07-27" }];
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: open, trades: [], entries: e });
+    expect(m).toMatchObject({ status: "open", entryCost: 0.70 });
+    expect(m.contracts).toBe(4);
+    expect(m.capitalFronted).toBeCloseTo(14800, 6);
+    expect(m.attribution).toEqual({ owned: 4, total: 8 });
+
+    // Short CC: (entry - mark) * contracts * 100 → (0.70 - 0.20) * 4 * 100 = 200
+    const sym = buildOccSymbol("IREN", "2026-08-21", true, 50);
+    const quoteMap = new Map([[sym, { mid: 0.20 }]]);
+    expect(memberUnrealized(m, quoteMap)).toBeCloseTo(200, 6);
+  });
+
+  it("takes an open member's contract count from the declared integer, not total x weight", () => {
+    // 8/4 above is a power-of-2 pair, so total × weight lands exactly and cannot
+    // catch the dust. 29 × (15/29) = 15.000000000000002 — and that upward dust is
+    // what fires a spurious shareCoverageWarnings over-allocation on a basket
+    // whose CCs exactly cover its shares. toBe, not toBeCloseTo.
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 29, capital_fronted: 29000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 15 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: open, trades: [], entries: e });
+    expect(m.contracts).toBe(15);
+  });
 });
 
 describe("reducers", () => {

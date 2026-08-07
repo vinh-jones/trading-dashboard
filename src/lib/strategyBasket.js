@@ -44,7 +44,10 @@ function resolveAttribution(entry, source) {
   return { weight: capped / total, owned: capped, total };
 }
 
-function fromOpenPosition(pos, role) {
+function fromOpenPosition(pos, role, attr = null) {
+  // Only the attributed path multiplies — an unattributed position passes through
+  // untouched, so no value is silently coerced on rows the user never asked to split.
+  const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "open",
     role,
@@ -54,8 +57,12 @@ function fromOpenPosition(pos, role) {
     expiry: pos.expiry_date ?? null,
     openDate: pos.open_date ?? null,
     closeDate: null,
-    contracts: pos.contracts ?? null,
-    capitalFronted: pos.capital_fronted ?? 0,
+    // The declared count verbatim — never total × weight, which does not
+    // round-trip to an integer (29 × (15/29) = 15.000000000000002). Upward dust
+    // here would fire a spurious shareCoverageWarnings over-allocation on a
+    // basket whose CCs exactly cover its shares.
+    contracts: attr ? attr.owned : (pos.contracts ?? null),
+    capitalFronted: scale(pos.capital_fronted ?? 0),
     // Spreads carry the per-share price in `credit`, not `entry_cost`.
     entryCost: pos.entry_cost ?? pos.credit ?? null,
     realized: null,
@@ -63,7 +70,8 @@ function fromOpenPosition(pos, role) {
     longStrike: pos.long_strike ?? null,
     right: pos.right ?? null,
     isCredit: pos.is_credit ?? null,
-    attribution: null,
+    // {owned, total} when this member is a slice; null when it owns the position whole.
+    attribution: attr ? { owned: attr.owned, total: attr.total } : null,
   };
 }
 
@@ -160,7 +168,7 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
       if (t) { members.push(fromTrade(t, role, resolveAttribution(entry, t))); continue; }
     }
     const openMatch = openPositions.find(p => tupleMatch(entry, p));
-    if (openMatch) { members.push(fromOpenPosition(openMatch, role)); continue; }
+    if (openMatch) { members.push(fromOpenPosition(openMatch, role, resolveAttribution(entry, openMatch))); continue; }
     const closedMatch = trades.find(tr => tupleMatch(entry, tr));
     if (closedMatch) { members.push(fromTrade(closedMatch, role, resolveAttribution(entry, closedMatch))); continue; }
     // Unresolved entry (tag points at nothing in current data) — skip silently.
