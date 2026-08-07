@@ -51,7 +51,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-import { fetchRadarRows, getEarningsDaysAway } from "../src/lib/radarData.js";
+import { fetchRadarRows, getEarningsDaysAway, buildEarningsMap } from "../src/lib/radarData.js";
 import { fetchIvTrends } from "../src/lib/ivTrend.js";
 import { rowMatchesFilters } from "../src/lib/radarFilter.js";
 import { compositeIv, getTrendState, entryScore, scoreLabel } from "../src/lib/entryScore.js";
@@ -72,7 +72,7 @@ export const METHODOLOGY_VERSION = "1.0.0";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  // market_context is RLS-locked (no anon policy) — must use the service role
+  // positions is RLS-locked (no anon policy) — must use the service role
   // server-side. Anon fallback is for local dev only.
   const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars not configured");
@@ -150,7 +150,6 @@ export function buildScanPayload({
   rows,
   ivTrendsByTicker = new Map(),
   positions = null,
-  marketContext = null,
   preset = null,
   wantExposure = false,
   limit = null,
@@ -159,10 +158,11 @@ export function buildScanPayload({
   marketOpen = null,
 }) {
   const filters = preset ? { ...DEFAULT_FILTERS, ...preset.filters } : { ...DEFAULT_FILTERS };
+  const earningsByTicker = buildEarningsMap(rows);
   // Identical ctx construction to RadarTab's.
   const ctx = {
     isHeld:           (ticker) => isTickerHeld(positions, ticker),
-    earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, marketContext),
+    earningsDaysAway: (ticker) => getEarningsDaysAway(ticker, earningsByTicker),
     ivTrend:          (ticker) => ivTrendsByTicker.get(ticker) ?? null,
     includeSectors:   expandGroupsToSectors(filters.sectors_include),
     excludeSectors:   expandGroupsToSectors(filters.sectors_exclude),
@@ -199,7 +199,7 @@ export function buildScanPayload({
       pe:          r.pe_ttm,
       beta:        r.beta,
       earningsDate:     r.earnings_date,
-      earningsDaysAway: getEarningsDaysAway(r.ticker, marketContext),
+      earningsDaysAway: getEarningsDaysAway(r.ticker, earningsByTicker),
       held:        isTickerHeld(positions, r.ticker),
     };
   });
@@ -262,7 +262,6 @@ export function buildScanPayload({
     ok: true,
     asOf: {
       bbRefreshedAt,
-      marketContextAsOf: marketContext?.asOf ?? null,
     },
     freshness: {
       bbAgeMinutes,
@@ -335,30 +334,21 @@ export default async function handler(req, res) {
     const { rows, bbRefreshedAt } = await fetchRadarRows(supabase);
     const tickers = rows.map(r => r.ticker);
 
-    // Positions and market_context fail soft — without them `ownership` and
-    // `earnings_days_min` degrade to "unknown", which the filter treats as a
-    // pass rather than silently emptying the list.
-    const [ivTrendsByTicker, positionsResult, contextResult] = await Promise.all([
+    // Positions fail soft — without them `ownership` degrades to "unknown",
+    // which the filter treats as a pass rather than silently emptying the list.
+    const [ivTrendsByTicker, positionsResult] = await Promise.all([
       fetchIvTrends(supabase, tickers),
       supabase.from("positions").select("*").order("ticker"),
-      supabase.from("market_context").select("*").order("as_of", { ascending: false }).limit(1).single(),
     ]);
 
     if (positionsResult.error) {
       console.warn("[agent-scan] positions fetch failed:", positionsResult.error.message);
     }
-    // PGRST116 = no rows found — not an error for us.
-    if (contextResult.error && contextResult.error.code !== "PGRST116") {
-      console.warn("[agent-scan] market_context fetch failed:", contextResult.error.message);
-    }
 
-    const positions     = positionsResult.data ? reshapePositions(positionsResult.data) : null;
-    const marketContext = contextResult.data
-      ? { asOf: contextResult.data.as_of, positions: contextResult.data.positions }
-      : null;
+    const positions = positionsResult.data ? reshapePositions(positionsResult.data) : null;
 
     const payload = buildScanPayload({
-      rows, ivTrendsByTicker, positions, marketContext,
+      rows, ivTrendsByTicker, positions,
       preset, wantExposure, limit, bbRefreshedAt,
       refresh, marketOpen: isMarketOpen(),
     });
