@@ -101,6 +101,71 @@ describe("resolveBasket", () => {
     const baseline = members.find(m => m.role === "baseline");
     expect(baseline).toMatchObject({ status: "closed", ticker: "SOFI", realized: -26400 });
   });
+
+  it("scales a closed member's realized P/L by metadata.contracts / trade.contracts", () => {
+    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBeCloseTo(580, 6);
+    expect(m.capitalFronted).toBeCloseTo(20516, 6);
+    expect(m.contracts).toBeCloseTo(4, 6);
+    expect(m.attribution).toEqual({ owned: 4, total: 12 });
+  });
+
+  it("leaves per-unit values unscaled when attributed", () => {
+    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m).toMatchObject({ entryCost: 1.45, roi: 2.8, keptPct: 0.5, daysHeld: 7, strike: 63 });
+  });
+
+  it("resolves whole (weight 1) when the entry declares no contracts", () => {
+    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28" }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1740);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("resolves whole when the trade carries no usable contract count", () => {
+    // Older Shares rows have a null contracts column — there is no denominator.
+    const t = [{ id: "old", ticker: "IREN", type: "Shares", strike: null, expiry_date: null, contracts: null, premium_collected: 4548, capital_fronted: 26000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "old", ticker: "IREN", type: "Shares", strike: null, expiry: null, metadata: { contracts: 50 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(4548);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("clamps an over-declared count to the whole trade", () => {
+    const t = [{ id: "c", ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 4, premium_collected: 1028, capital_fronted: 64668 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "c", ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 9 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1028);
+    expect(m.attribution).toEqual({ owned: 4, total: 4 });
+  });
+
+  it("ignores a zero or negative declared count", () => {
+    const t = [{ id: "c", ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 4, premium_collected: 1028, capital_fronted: 64668 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "c", ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 0 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBe(1028);
+    expect(m.attribution).toBeNull();
+  });
+
+  it("scales a fractional share lot (25 of a 100-share lot)", () => {
+    const t = [{ id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, premium_collected: 1650, capital_fronted: 14100 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { contracts: 25 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.realized).toBeCloseTo(412.5, 6);
+    expect(m.contracts).toBeCloseTo(25, 6);
+  });
+
+  it("still takes the declared-open-shares path when shares AND basis are present", () => {
+    // metadata.contracts must not hijack an open declared lot.
+    const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, entry_date: "2026-06-17", metadata: { shares: 100, basis: 190, contracts: 25 } }];
+    const [m] = resolveBasket("strategy:w", { openPositions: [], trades: [], entries: e });
+    expect(m).toMatchObject({ status: "open", contracts: 100, entryCost: 190, capitalFronted: 19000 });
+  });
 });
 
 describe("reducers", () => {

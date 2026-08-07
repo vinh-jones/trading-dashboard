@@ -29,6 +29,21 @@ function toIsoDate(v) {
   return String(v);
 }
 
+// The slice of a shared trade a basket owns, asserted on the tagged journal
+// entry as metadata.contracts. The denominator is the resolved trade's own
+// contracts column — never stored, so the two can't drift apart. Returns null
+// (meaning "the whole thing", today's behavior) when the entry declares
+// nothing, when the declared count is not a positive number, or when the
+// source carries no usable count to divide by.
+function attributionWeight(entry, source) {
+  const owned = Number(entry?.metadata?.contracts);
+  const total = Number(source?.contracts);
+  if (!Number.isFinite(owned) || owned <= 0) return null;
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const capped = Math.min(owned, total);
+  return { weight: capped / total, owned: capped, total };
+}
+
 function fromOpenPosition(pos, role) {
   return {
     status: "open",
@@ -48,6 +63,7 @@ function fromOpenPosition(pos, role) {
     longStrike: pos.long_strike ?? null,
     right: pos.right ?? null,
     isCredit: pos.is_credit ?? null,
+    attribution: null,
   };
 }
 
@@ -55,7 +71,9 @@ function fromOpenPosition(pos, role) {
 // renames premium_collected→premium, capital_fronted→fronted, and drops the ISO
 // close_date (keeping `close` as MM/DD). The app only ever passes the normalized
 // shape, so read those first with the raw names as fallback.
-function fromTrade(trade, role) {
+function fromTrade(trade, role, attr = null) {
+  const w = attr ? attr.weight : 1;
+  const contracts = trade.contracts ?? null;
   return {
     status: "closed",
     role,
@@ -65,14 +83,16 @@ function fromTrade(trade, role) {
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
     closeDate: toIsoDate(trade.close_date ?? trade.closeDate) ?? trade.close ?? null,
-    contracts: trade.contracts ?? null,
-    capitalFronted: trade.capital_fronted ?? trade.fronted ?? 0,
+    contracts: contracts == null ? null : contracts * w,
+    capitalFronted: (trade.capital_fronted ?? trade.fronted ?? 0) * w,
     entryCost: trade.entry_cost ?? null,
     exitCost: trade.exit_cost ?? null,
     daysHeld: trade.days_held ?? trade.days ?? null,
     roi: trade.roi ?? null,
     keptPct: trade.kept_pct ?? null,
-    realized: trade.premium_collected ?? trade.premium ?? 0,
+    realized: (trade.premium_collected ?? trade.premium ?? 0) * w,
+    // {owned, total} when this member is a slice; null when it owns the trade whole.
+    attribution: attr ? { owned: attr.owned, total: attr.total } : null,
   };
 }
 
@@ -96,6 +116,7 @@ function fromDeclaredShares(entry, role, meta) {
     capitalFronted: shares * basis,
     entryCost: basis,
     realized: null,
+    attribution: null,
   };
 }
 
@@ -123,12 +144,12 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
     const tradeId = entry.trade_id ?? entry.metadata?.trade_id;
     if (tradeId) {
       const t = trades.find(tr => tr.id === tradeId);
-      if (t) { members.push(fromTrade(t, role)); continue; }
+      if (t) { members.push(fromTrade(t, role, attributionWeight(entry, t))); continue; }
     }
     const openMatch = openPositions.find(p => tupleMatch(entry, p));
     if (openMatch) { members.push(fromOpenPosition(openMatch, role)); continue; }
     const closedMatch = trades.find(tr => tupleMatch(entry, tr));
-    if (closedMatch) { members.push(fromTrade(closedMatch, role)); continue; }
+    if (closedMatch) { members.push(fromTrade(closedMatch, role, attributionWeight(entry, closedMatch))); continue; }
     // Unresolved entry (tag points at nothing in current data) — skip silently.
   }
   return members;
