@@ -960,6 +960,20 @@ order by j.ticker, t.close_date;
 
 Expected: 9 rows, every `credited` matching the spec's table — GLW -187.50 / -250.00 / +237.50 / +412.50 / +257.00 / +502.00, DRAM +580.00, IREN +280.00 / +256.00. Sum: **+$2,087.50**. No null `total` (that would mean the resolver takes the trade whole).
 
+Then check for over-attribution. `resolveAttribution` clamps each entry to the trade's total individually, but nothing caps the SUM across entries — two entries claiming 8 of the same 12-contract trade would credit 133% silently. The Task 5 form guards this, but these rows are being inserted by hand and bypass it:
+
+```sql
+select j.trade_id, t.ticker, t.type, t.contracts as total,
+       sum((j.metadata->>'contracts')::numeric) as claimed
+from journal_entries j
+join trades t on t.id = j.trade_id
+where j.metadata ? 'contracts'
+group by j.trade_id, t.ticker, t.type, t.contracts
+having sum((j.metadata->>'contracts')::numeric) > t.contracts;
+```
+
+Expected: **zero rows**. Any row here is a double-count — resolve it before moving on.
+
 - [ ] **Step 5: Verify on the dashboard**
 
 Open the Strategy Basket tab on `strategy:sofi-makeup`:
