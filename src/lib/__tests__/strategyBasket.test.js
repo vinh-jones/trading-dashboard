@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings } from "../strategyBasket";
-import { buildOccSymbol } from "../trading";
+import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
   { ticker: "SOFI", type: "LEAPS", strike: 15,  expiry_date: "2027-01-21", contracts: 20, capital_fronted: 8000, entry_cost: 4.0, open_date: "2026-06-01" },
@@ -102,10 +102,12 @@ describe("resolveBasket", () => {
     expect(baseline).toMatchObject({ status: "closed", ticker: "SOFI", realized: -26400 });
   });
 
+  // A blended 12-contract CC of which the basket owns 4.
+  const dramTrades = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
+  const dramEntries = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+
   it("scales a closed member's realized P/L by metadata.contracts / trade.contracts", () => {
-    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
-    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
-    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    const [m] = resolveBasket("strategy:w", { trades: dramTrades, entries: dramEntries });
     expect(m.realized).toBeCloseTo(580, 6);
     expect(m.capitalFronted).toBeCloseTo(20516, 6);
     expect(m.contracts).toBeCloseTo(4, 6);
@@ -113,10 +115,18 @@ describe("resolveBasket", () => {
   });
 
   it("leaves per-unit values unscaled when attributed", () => {
-    const t = [{ id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45, roi: 2.8, kept_pct: 0.5, days_held: 7 }];
-    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
-    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    const [m] = resolveBasket("strategy:w", { trades: dramTrades, entries: dramEntries });
     expect(m).toMatchObject({ entryCost: 1.45, roi: 2.8, keptPct: 0.5, daysHeld: 7, strike: 63 });
+  });
+
+  it("reports an exact integer contract count where total x weight would not round-trip", () => {
+    // 22 * (15/22) === 14.999999999999998 — the count must come from the
+    // declared value, not from re-multiplying the weight.
+    const t = [{ id: "odd", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 22, premium_collected: 2200, capital_fronted: 44000 }];
+    const e = [{ tags: ["strategy:w"], trade_id: "odd", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 15 } }];
+    const [m] = resolveBasket("strategy:w", { trades: t, entries: e });
+    expect(m.contracts).toBe(15);
+    expect(m.attribution).toEqual({ owned: 15, total: 22 });
   });
 
   it("resolves whole (weight 1) when the entry declares no contracts", () => {
@@ -161,10 +171,30 @@ describe("resolveBasket", () => {
   });
 
   it("still takes the declared-open-shares path when shares AND basis are present", () => {
-    // metadata.contracts must not hijack an open declared lot.
+    // metadata.contracts must not hijack an open declared lot. The tuple-matching
+    // closed trade below is the hijacker: drop the declared-shares branch and this
+    // resolves to a scaled `status: "closed"` member instead.
+    const t = [{ id: "glw-closed", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, premium_collected: 4000, capital_fronted: 18000 }];
     const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, entry_date: "2026-06-17", metadata: { shares: 100, basis: 190, contracts: 25 } }];
-    const [m] = resolveBasket("strategy:w", { openPositions: [], trades: [], entries: e });
+    const [m] = resolveBasket("strategy:w", { openPositions: [], trades: t, entries: e });
     expect(m).toMatchObject({ status: "open", contracts: 100, entryCost: 190, capitalFronted: 19000 });
+    expect(m.attribution).toBeNull();
+  });
+
+  it("scales a trade in the normalized shape the app actually passes", () => {
+    // App.jsx feeds normalizeTrade() output, not raw DB rows — premium_collected
+    // becomes `premium`, capital_fronted becomes `fronted`. Build the fixture by
+    // running the real normalizer so dropping `contracts` from it fails here
+    // instead of silently reverting every attributed member to the whole trade.
+    const raw = { id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry_date: "2026-08-28", contracts: 12, open_date: "2026-08-01", close_date: "2026-08-08", premium_collected: 1740, capital_fronted: 61548, entry_cost: 1.45 };
+    const normalized = normalizeTrade(raw);
+    expect(normalized.contracts).toBe(12); // guards the denominator's existence
+    const e = [{ tags: ["strategy:w"], trade_id: "dram-cc", ticker: "DRAM", type: "CC", strike: 63, expiry: "2026-08-28", metadata: { contracts: 4 } }];
+    const [m] = resolveBasket("strategy:w", { trades: [normalized], entries: e });
+    expect(m.realized).toBeCloseTo(580, 6);
+    expect(m.capitalFronted).toBeCloseTo(20516, 6);
+    expect(m.contracts).toBe(4);
+    expect(m.attribution).toEqual({ owned: 4, total: 12 });
   });
 });
 

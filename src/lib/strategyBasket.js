@@ -35,7 +35,7 @@ function toIsoDate(v) {
 // (meaning "the whole thing", today's behavior) when the entry declares
 // nothing, when the declared count is not a positive number, or when the
 // source carries no usable count to divide by.
-function attributionWeight(entry, source) {
+function resolveAttribution(entry, source) {
   const owned = Number(entry?.metadata?.contracts);
   const total = Number(source?.contracts);
   if (!Number.isFinite(owned) || owned <= 0) return null;
@@ -72,8 +72,10 @@ function fromOpenPosition(pos, role) {
 // close_date (keeping `close` as MM/DD). The app only ever passes the normalized
 // shape, so read those first with the raw names as fallback.
 function fromTrade(trade, role, attr = null) {
-  const w = attr ? attr.weight : 1;
-  const contracts = trade.contracts ?? null;
+  // Only the attributed path multiplies — an unattributed trade passes through
+  // untouched, so no value is silently coerced (a string "61548" would become a
+  // number, a non-numeric one NaN) on rows the user never asked to split.
+  const scale = (v) => (attr ? v * attr.weight : v);
   return {
     status: "closed",
     role,
@@ -83,14 +85,16 @@ function fromTrade(trade, role, attr = null) {
     expiry: trade.expiry_date ?? null,
     openDate: trade.open_date ?? null,
     closeDate: toIsoDate(trade.close_date ?? trade.closeDate) ?? trade.close ?? null,
-    contracts: contracts == null ? null : contracts * w,
-    capitalFronted: (trade.capital_fronted ?? trade.fronted ?? 0) * w,
+    // The declared count verbatim — never total × weight, which does not
+    // round-trip to an integer (22 × (15/22) = 14.999999999999998).
+    contracts: attr ? attr.owned : (trade.contracts ?? null),
+    capitalFronted: scale(trade.capital_fronted ?? trade.fronted ?? 0),
     entryCost: trade.entry_cost ?? null,
     exitCost: trade.exit_cost ?? null,
     daysHeld: trade.days_held ?? trade.days ?? null,
     roi: trade.roi ?? null,
     keptPct: trade.kept_pct ?? null,
-    realized: (trade.premium_collected ?? trade.premium ?? 0) * w,
+    realized: scale(trade.premium_collected ?? trade.premium ?? 0),
     // {owned, total} when this member is a slice; null when it owns the trade whole.
     attribution: attr ? { owned: attr.owned, total: attr.total } : null,
   };
@@ -135,6 +139,15 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
     // Declared shares lot: a tagged Shares entry carrying its own share-count +
     // basis in metadata resolves directly. Baseline Shares carry no
     // metadata.shares and fall through to the trade_id path below.
+    //
+    // LANDMINE — two different metadata keys mean "part of a lot", and this
+    // branch decides which one is read. `shares` + `basis` declares an OPEN lot
+    // (asserted outright, no trade behind it); `contracts` scales a CLOSED
+    // trade fractionally. Declaring a partial slice of a CLOSED shares lot as
+    // `{shares: 50}` matches neither: `basis` is absent so this branch is
+    // skipped, and the trade path reads `contracts`, which is unset — so the
+    // basket is silently credited the ENTIRE lot. Use `{contracts: 50}` for a
+    // closed lot; `shares` + `basis` only for an open one.
     const meta = entry.metadata ?? {};
     if (entry.type === "Shares" && meta.shares != null && meta.basis != null) {
       members.push(fromDeclaredShares(entry, role, meta));
@@ -144,12 +157,12 @@ export function resolveBasket(tag, { openPositions = [], trades = [], entries = 
     const tradeId = entry.trade_id ?? entry.metadata?.trade_id;
     if (tradeId) {
       const t = trades.find(tr => tr.id === tradeId);
-      if (t) { members.push(fromTrade(t, role, attributionWeight(entry, t))); continue; }
+      if (t) { members.push(fromTrade(t, role, resolveAttribution(entry, t))); continue; }
     }
     const openMatch = openPositions.find(p => tupleMatch(entry, p));
     if (openMatch) { members.push(fromOpenPosition(openMatch, role)); continue; }
     const closedMatch = trades.find(tr => tupleMatch(entry, tr));
-    if (closedMatch) { members.push(fromTrade(closedMatch, role, attributionWeight(entry, closedMatch))); continue; }
+    if (closedMatch) { members.push(fromTrade(closedMatch, role, resolveAttribution(entry, closedMatch))); continue; }
     // Unresolved entry (tag points at nothing in current data) — skip silently.
   }
   return members;
