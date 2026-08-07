@@ -5,7 +5,7 @@
  * the intraday alert-check cron (`api/alert-check.js`).
  *
  * Responsibilities:
- *   1. Load quotes / market_context / roll_analysis (fail-soft).
+ *   1. Load quotes / macro_events / roll_analysis (fail-soft).
  *   2. Reshape flat positions and call generateFocusItems().
  *   3. Keep only items whose `rule` is push-worthy in NOTIFY_RULES.
  *   4. Apply transition-based dedup via the `alert_state` table:
@@ -25,14 +25,14 @@
 import { generateFocusItems, NOTIFY_RULES } from "../../src/lib/focusEngine.js";
 import { reshapePositions } from "./reshapePositions.js";
 import { sendPushover } from "./notify.js";
-import { loadQuoteMap, loadMarketContext, loadRollAnalysisMap, loadAssignedShareIncome } from "./loadFocusData.js";
+import { loadQuoteMap, loadMacroEvents, loadRollAnalysisMap, loadAssignedShareIncome } from "./loadFocusData.js";
 
 export async function evaluateAlerts({ supabase, accountSnap, positionRows, liveVix }) {
   const reshapedPositions = reshapePositions(positionRows);
 
-  const [quoteMap, marketContext, rollAnalysisMap, assignedShareIncome] = await Promise.all([
+  const [quoteMap, macroEvents, rollAnalysisMap, assignedShareIncome] = await Promise.all([
     loadQuoteMap(supabase),
-    loadMarketContext(supabase),
+    loadMacroEvents(supabase),
     loadRollAnalysisMap(supabase),
     loadAssignedShareIncome(supabase),
   ]);
@@ -40,7 +40,7 @@ export async function evaluateAlerts({ supabase, accountSnap, positionRows, live
   const items = generateFocusItems(
     reshapedPositions,
     accountSnap,
-    marketContext,
+    macroEvents,
     liveVix,
     quoteMap,
     rollAnalysisMap,

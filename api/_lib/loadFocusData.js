@@ -7,7 +7,7 @@
  *
  * Shapes match what src/lib/focusEngine.js expects:
  *   - quoteMap        : Map<symbol, quoteRow>   — ticker or OCC symbol keyed
- *   - marketContext   : { asOf, positions, macroEvents } | null
+ *   - macroEvents     : array of macro_events rows (possibly empty)
  *   - rollAnalysisMap : { [ticker]: rollRow }
  */
 
@@ -22,26 +22,20 @@ export async function loadQuoteMap(supabase) {
   }
 }
 
-export async function loadMarketContext(supabase) {
+export async function loadMacroEvents(supabase) {
   try {
+    const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase
-      .from("market_context")
-      .select("*")
-      .order("as_of", { ascending: false })
-      .limit(1)
-      .single();
+      .from("macro_events")
+      .select("event_date, event_type, event_time, title, forecast, previous, refreshed_at")
+      .gte("event_date", today)
+      .order("event_date", { ascending: true });
 
-    if (error && error.code !== "PGRST116") throw error;
-    if (!data) return null;
-
-    return {
-      asOf:        data.as_of,
-      positions:   data.positions,
-      macroEvents: data.macro_events,
-    };
+    if (error) throw error;
+    return data ?? [];
   } catch (err) {
-    console.warn("[loadFocusData] market_context load failed:", err.message);
-    return null;
+    console.warn("[loadFocusData] macro_events load failed:", err.message);
+    return [];
   }
 }
 
