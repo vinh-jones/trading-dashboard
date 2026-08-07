@@ -173,9 +173,15 @@ describe("resolveBasket", () => {
   });
 
   it("still takes the declared-open-shares path when shares AND basis are present", () => {
-    // metadata.contracts must not hijack an open declared lot. The tuple-matching
-    // closed trade below is the hijacker: drop the declared-shares branch and this
-    // resolves to a scaled `status: "closed"` member instead.
+    // metadata.contracts must not hijack an open declared lot: the entry carries
+    // both {shares, basis} and {contracts}, and the declared-shares branch has to
+    // win. Verified by stubbing that branch to `if (false)` — the member comes back
+    // UNDEFINED, not as a scaled closed one. The closed GLW trade below never takes
+    // over, because trade_id is null and tupleMatch can't reach it either: the entry
+    // sets `expiry: null` → String(null) = "null", while the trade's
+    // `expiry_date ?? expiry` is `null ?? undefined` = undefined → "undefined".
+    // So this test pins the branch's EXISTENCE (no branch, no member), not a
+    // contest between two candidate resolutions.
     const t = [{ id: "glw-closed", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, premium_collected: 4000, capital_fronted: 18000 }];
     const e = [{ tags: ["strategy:w"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, entry_date: "2026-06-17", metadata: { shares: 100, basis: 190, contracts: 25 } }];
     const [m] = resolveBasket("strategy:w", { openPositions: [], trades: t, entries: e });
@@ -432,5 +438,78 @@ describe("vertical spreads", () => {
     const members = resolveBasket("strategy:x", { openPositions: [], trades: [closedSpreadTrade], entries: e });
     expect(members[0]).toMatchObject({ status: "closed", role: "recovery", realized: 1056 });
     expect(realizedRecovery(members)).toBe(1056);
+  });
+});
+
+describe("reducers under fractional attribution", () => {
+  const trades = [
+    { id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry_date: null, contracts: 100, close_date: "2026-08-07", premium_collected: 1650, capital_fronted: 14100 },
+    { id: "glw-cc",  ticker: "GLW", type: "CC", strike: 157.5, expiry_date: "2026-08-07", contracts: 4, close_date: "2026-08-07", premium_collected: 2008, capital_fronted: 63512 },
+  ];
+  const entries = [
+    { tags: ["strategy:f"], trade_id: "glw-lot", ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { contracts: 25 } },
+    { tags: ["strategy:f"], trade_id: "glw-cc",  ticker: "GLW", type: "CC", strike: 157.5, expiry: "2026-08-07", metadata: { contracts: 1 } },
+  ];
+  const members = resolveBasket("strategy:f", { openPositions: [], trades, entries });
+
+  it("realizedRecovery sums the scaled slices", () => {
+    // 1650 * 25/100 = 412.50 ; 2008 * 1/4 = 502.00
+    expect(realizedRecovery(members)).toBeCloseTo(914.5, 6);
+  });
+
+  it("capitalDeployed counts open members only, so attributed closed legs add nothing", () => {
+    expect(capitalDeployed(members)).toBe(0);
+  });
+
+  it("capitalDeployed scales an attributed OPEN member", () => {
+    const open = [{ ticker: "IREN", type: "CC", strike: 50, expiry_date: "2026-08-21", contracts: 8, capital_fronted: 29600, entry_cost: 0.70 }];
+    const e = [{ tags: ["strategy:d"], trade_id: null, ticker: "IREN", type: "CC", strike: 50, expiry: "2026-08-21", metadata: { contracts: 2 } }];
+    expect(capitalDeployed(resolveBasket("strategy:d", { openPositions: open, trades: [], entries: e }))).toBeCloseTo(7400, 6);
+  });
+
+  it("shareCoverageWarnings does NOT fire on an exactly-covered basket built from a dust-producing pair", () => {
+    // The user-visible symptom the attr.owned fix exists to prevent. 15 of a
+    // 29-contract lot: 29 * (15/29) = 15.000000000000002, so a scaled count
+    // would compute 1500.0000000000002 > 1500 and cry over-allocation at a
+    // basket whose CCs cover its shares EXACTLY — the deliberate steady state
+    // for a wheel trader. 2,981 such pairs exist under total <= 400.
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 29, capital_fronted: 232000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 15 } },
+      { tags: ["strategy:x"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 1500, basis: 150 } },
+    ];
+    const members = resolveBasket("strategy:x", { openPositions: open, trades: [], entries: e });
+    expect(members.find(m => m.type === "CC").contracts).toBe(15);
+    expect(shareCoverageWarnings(members)).toEqual([]);
+  });
+
+  it("marks an attributed vertical spread from both legs", () => {
+    // This is a DOUBLE-SCALING GUARD, not a math check. spreadUnrealized
+    // multiplies by `contracts` exactly once, so the attributed path is
+    // provably linear — there is no arithmetic error here to catch. What this
+    // pins is the natural future mistake: someone "completing" attribution by
+    // multiplying spreadUnrealized's result by attr.weight a second time, or
+    // dropping the leg fields on the attributed path.
+    const spread = { ticker: "XSP", type: "Spread", strike: 708, long_strike: 703, right: "put", is_credit: true, expiry_date: "2026-07-31", contracts: 4, capital_fronted: 2000, credit: 1.20 };
+    const e = (n) => [{ tags: [`strategy:s${n}`], trade_id: null, ticker: "XSP", type: "Spread", strike: 708, expiry: "2026-07-31", metadata: { contracts: n } }];
+    const quoteMap = new Map([
+      [buildOccSymbol("XSP", "2026-07-31", false, 708), { mid: 0.50 }],
+      [buildOccSymbol("XSP", "2026-07-31", false, 703), { mid: 0.20 }],
+    ]);
+    const whole = resolveBasket("strategy:s4", { openPositions: [spread], trades: [], entries: e(4) })[0];
+    const half  = resolveBasket("strategy:s2", { openPositions: [spread], trades: [], entries: e(2) })[0];
+    expect(half.entryCost).toBe(1.20);          // per-unit credit unscaled
+    expect(half.contracts).toBe(2);
+    expect(memberUnrealized(half, quoteMap)).toBeCloseTo(memberUnrealized(whole, quoteMap) / 2, 6);
+  });
+
+  it("shareCoverageWarnings still fires when the scaled CCs exceed declared shares", () => {
+    const open = [{ ticker: "GLW", type: "CC", strike: 160, expiry_date: "2026-08-07", contracts: 8, capital_fronted: 64000, entry_cost: 1.0 }];
+    const e = [
+      { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "CC", strike: 160, expiry: "2026-08-07", metadata: { contracts: 4 } },
+      { tags: ["strategy:c2"], trade_id: null, ticker: "GLW", type: "Shares", strike: null, expiry: null, metadata: { shares: 300, basis: 150 } },
+    ];
+    const [w] = shareCoverageWarnings(resolveBasket("strategy:c2", { openPositions: open, trades: [], entries: e }));
+    expect(w).toMatchObject({ ticker: "GLW", declaredShares: 300, ccContracts: 4, coveredShares: 400 });
   });
 });
