@@ -604,11 +604,21 @@ export default async function handler(req, res) {
     const resp = await fetchMarketEvents(today, maxDate);
     const rows = normalizeEvents(resp, now);
 
-    // Replace the whole forward window so passed events clear.
+    // Replace the ENTIRE table, not just >= today. This table only ever holds
+    // UW's forward window, so there is nothing worth keeping behind us.
+    //
+    // Deleting >= today instead would leave a permanent orphan every single
+    // day: a row written today for today sits below tomorrow's floor and is
+    // never revisited, so the table grows without bound — the exact thing this
+    // replace-per-run is supposed to prevent. Consumers all filter >= today, so
+    // the strays would be invisible while accumulating.
+    //
+    // The 1900 bound is a "match everything" filter: PostgREST refuses an
+    // unfiltered DELETE, so a tautological predicate is the idiom.
     const { error: delErr } = await supabase
       .from("macro_events")
       .delete()
-      .gte("event_date", today);
+      .gte("event_date", "1900-01-01");
     if (delErr) throw new Error(`macro_events delete failed: ${delErr.message}`);
 
     if (rows.length) {
