@@ -7,7 +7,7 @@ import { getOpenCSPs, getOpenCCs, getOpenLEAPs, getOpenSpreads } from "../lib/po
 import {
   resolveBasket, basketTarget, capitalDeployed, basketCapitalBudget,
   realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual,
-  shareCoverageWarnings, attributedCount, groupMembersByType,
+  shareCoverageWarnings, attributedCount, groupMembersByType, clusterMembers, summarizeCluster,
 } from "../lib/strategyBasket";
 import { createJournalEntry } from "../lib/journalApi";
 
@@ -323,6 +323,14 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
   // Transaction-table sort. col=null → natural order (baseline pinned, recovery as resolved).
   // Clicking a header cycles that column asc → desc → back to natural.
   const [sort, setSort] = useState({ col: null, dir: "asc" });
+
+  // Which collapsed tax-lot clusters the user has expanded, by cluster key.
+  const [expandedClusters, setExpandedClusters] = useState(() => new Set());
+  const toggleCluster = (key) => setExpandedClusters(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   const toggleSort = (col) => setSort(s =>
     s.col !== col      ? { col, dir: "asc" }
     : s.dir === "asc"  ? { col, dir: "desc" }
@@ -753,14 +761,85 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
                   {groups.map(({ type, members: ms }) => (
                     <Fragment key={`${label}-${type}`}>
                       {groups.length > 1 && TypeLabel(type, ms.length, subtotal(ms))}
-                      {ms.map(Row)}
+                      {clusterMembers(ms).map(({ key, members: cluster }, ci) => (
+                        cluster.length === 1
+                          ? Row(cluster[0], ci)
+                          : (
+                            <Fragment key={`${label}-${key}`}>
+                              {ClusterRow(key, cluster)}
+                              {expandedClusters.has(key) && cluster.map((m, i) => Row(m, i, true))}
+                            </Fragment>
+                          )
+                      ))}
                     </Fragment>
                   ))}
                 </>
               );
             };
 
-            const Row = (m, i) => {
+            // One line standing in for several broker tax lots of the same
+            // event — a 400-share assignment is four `trades` rows, so a
+            // pro-rata slice of it resolves to four members. Click to expand.
+            const ClusterRow = (key, cluster) => {
+              const isOpen = expandedClusters.has(key);
+              const first = cluster[0];
+              const open = first.status === "open";
+              const gl = subtotal(cluster);
+              const { count, owned, total, unit, realizedSum, capitalSum } = summarizeCluster(cluster);
+              const collateral = open ? capitalSum : null;
+
+              // Every lot attributed → the slice sums into one honest figure
+              // ("100 of 400 sh"). Mixed attribution has no such summary.
+              const sliceLabel = owned != null
+                ? `${fmtCount(owned)} of ${fmtCount(total)} ${unit} · `
+                : "";
+
+              const dayVals = cluster.map(m => derive(m).days).filter(d => d != null);
+              const lo = dayVals.length ? Math.min(...dayVals) : null;
+              const hi = dayVals.length ? Math.max(...dayVals) : null;
+              const daysLabel = lo == null ? "—" : lo === hi ? `${lo}d` : `${lo}–${hi}d`;
+
+              const pctOfTarget = (!open && first.role === "recovery" && target > 0)
+                ? ` · ${((realizedSum / target) * 100).toFixed(1)}% of target`
+                : "";
+              const strikeLabel = first.strike == null ? null : `$${first.strike}`;
+              const detail = `${strikeLabel != null ? `${strikeLabel} · ` : ""}${sliceLabel}` +
+                `${open ? "open" : "closed"} · ${count} lots${pctOfTarget}`;
+
+              return (
+                <div
+                  key={`cluster-${key}`}
+                  onClick={() => toggleCluster(key)}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isOpen}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCluster(key); } }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: theme.space[3],
+                    padding: `${theme.space[2]}px ${theme.space[3]}px`,
+                    background: theme.bg.surface, fontSize: theme.size.sm, cursor: "pointer",
+                  }}
+                >
+                  <span style={{ ...COL.date, fontFamily: theme.font.mono, color: theme.text.muted }}>
+                    {fmtDate(first.closeDate ?? first.openDate)}
+                  </span>
+                  <span style={{ ...COL.ticker, fontWeight: 600 }}>{first.ticker}</span>
+                  <span style={{ ...COL.type, color: TYPE_COLORS[first.type]?.text ?? theme.text.secondary }}>{first.type}</span>
+                  <span style={{ ...COL.detail, color: theme.text.subtle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ color: theme.text.muted, marginRight: theme.space[1] }}>{isOpen ? "▾" : "▸"}</span>
+                    {detail}
+                  </span>
+                  <span style={{ ...COL.days, color: theme.text.muted }}>{daysLabel}</span>
+                  <span style={{ ...COL.kept, color: theme.text.muted }}>—</span>
+                  <span style={{ ...COL.num, color: theme.text.subtle }}>{open ? fmtMoney(collateral) : "—"}</span>
+                  <span style={{ ...COL.num, color: gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red }}>
+                    {gl == null ? "—" : fmtMoney(gl)}
+                  </span>
+                </div>
+              );
+            };
+
+            const Row = (m, i, indent = false) => {
               const { open, gl, days, kept } = derive(m);
               const glColor = gl == null ? theme.text.muted : gl >= 0 ? theme.green : theme.red;
               const keptColor = kept == null ? theme.text.muted : kept >= 0 ? theme.green : theme.red;
@@ -784,7 +863,9 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
                 <div key={`${m.status}-${m.ticker}-${m.type}-${m.strike}-${m.closeDate ?? m.openDate}-${i}`} style={{
                   display: "flex", alignItems: "center", gap: theme.space[3],
                   padding: `${theme.space[2]}px ${theme.space[3]}px`,
-                  background: theme.bg.surface, fontSize: theme.size.sm,
+                  // Expanded tax lots sit under their cluster line, recessed.
+                  paddingLeft: indent ? theme.space[5] : theme.space[3],
+                  background: indent ? theme.bg.base : theme.bg.surface, fontSize: theme.size.sm,
                 }}>
                   <span style={{ ...COL.date, fontFamily: theme.font.mono, color: theme.text.muted }}>{fmtDate(m.closeDate ?? m.openDate)}</span>
                   <span style={{ ...COL.ticker, fontWeight: 600 }}>{m.ticker}</span>
@@ -814,7 +895,9 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
 
             return (
               <>
-                {baseline.map(Row)}
+                {/* NOT .map(Row) — map passes the array as the 3rd arg, which
+                    Row reads as `indent` and would recess every baseline row. */}
+                {baseline.map((m, i) => Row(m, i))}
                 {baseline.length > 0 && recovery.length > 0 && (
                   <div style={{ height: 2, background: theme.border.strong }} />
                 )}
