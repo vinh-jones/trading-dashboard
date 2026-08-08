@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount, basketCapitalBudget } from "../strategyBasket";
+import { resolveBasket, basketTarget, capitalDeployed, realizedRecovery, unrealizedCushion, memberUnrealized, holdCounterfactual, shareCoverageWarnings, groupMembersByType, attributedCount, basketCapitalBudget, clusterMembers, summarizeCluster } from "../strategyBasket";
 import { buildOccSymbol, normalizeTrade } from "../trading";
 
 const openPositions = [
@@ -692,5 +692,99 @@ describe("basketCapitalBudget", () => {
     const members = resolveBasket("strategy:b", { openPositions: [], trades: [baselineTrade], entries: e });
     expect(basketCapitalBudget(members)).toBeCloseTo(85800 * 1200 / 3300, 6);
     expect(basketTarget(members)).toBeCloseTo(26400 * 1200 / 3300, 6);
+  });
+});
+
+describe("clusterMembers", () => {
+  const lot = (basis, gl, days) => ({
+    ticker: "GLW", type: "Shares", strike: null, status: "closed", role: "recovery",
+    closeDate: "2026-08-07", openDate: `2026-07-${days}`, realized: gl,
+    contracts: 25, attribution: { owned: 25, total: 100 }, entryCost: basis,
+  });
+
+  it("collapses tax lots of one assignment into a single cluster", () => {
+    // The real case: 400 GLW shares called away 8/07 out of four 100-share
+    // lots, the basket owning 25 of each.
+    const clusters = clusterMembers([lot(165, -187.5, 29), lot(167.5, -250, 30), lot(148, 237.5, 31), lot(141, 412.5, 29)]);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].members).toHaveLength(4);
+  });
+
+  it("keeps different strikes apart even on the same close date", () => {
+    const cc = (strike) => ({ ticker: "GLW", type: "CC", strike, status: "closed", closeDate: "2026-08-07", realized: 100 });
+    expect(clusterMembers([cc(160), cc(157.5)])).toHaveLength(2);
+  });
+
+  it("keeps a rolled leg apart from its replacement (different close dates)", () => {
+    const cc = (closeDate) => ({ ticker: "IREN", type: "CC", strike: 50, status: "closed", closeDate, realized: 100 });
+    expect(clusterMembers([cc("2026-07-28"), cc("2026-08-07")])).toHaveLength(2);
+  });
+
+  it("keeps open and closed apart", () => {
+    const m = (status) => ({ ticker: "GLW", type: "Shares", strike: null, status, closeDate: null, openDate: "2026-08-03" });
+    expect(clusterMembers([m("open"), m("closed")])).toHaveLength(2);
+  });
+
+  it("preserves incoming order — a cluster sits where its first member sat", () => {
+    const a = { ticker: "AAA", type: "CSP", strike: 1, status: "closed", closeDate: "2026-01-01" };
+    const b = { ticker: "BBB", type: "CSP", strike: 2, status: "closed", closeDate: "2026-01-02" };
+    const b2 = { ...b };
+    expect(clusterMembers([b, a, b2]).map(c => c.members[0].ticker)).toEqual(["BBB", "AAA"]);
+    expect(clusterMembers([b, a, b2])[0].members).toHaveLength(2);
+  });
+
+  it("returns one single-member cluster per member when nothing shares a key", () => {
+    const a = { ticker: "AAA", type: "CSP", strike: 1, status: "closed", closeDate: "2026-01-01" };
+    const b = { ticker: "BBB", type: "CC", strike: 2, status: "closed", closeDate: "2026-01-02" };
+    expect(clusterMembers([a, b]).every(c => c.members.length === 1)).toBe(true);
+  });
+
+  it("returns an empty array for no members", () => {
+    expect(clusterMembers([])).toEqual([]);
+  });
+});
+
+describe("summarizeCluster", () => {
+  // The real GLW case: 400 shares called away 8/07 out of four 100-share lots,
+  // the basket owning 25 of each. The summary line must read "100 of 400 sh"
+  // and +$212.50 — a quarter of the +$850 blended appreciation.
+  const glwLots = [
+    { type: "Shares", realized: -187.5, capitalFronted: 4125,  attribution: { owned: 25, total: 100 } },
+    { type: "Shares", realized: -250,   capitalFronted: 4187.5, attribution: { owned: 25, total: 100 } },
+    { type: "Shares", realized: 237.5,  capitalFronted: 3700,  attribution: { owned: 25, total: 100 } },
+    { type: "Shares", realized: 412.5,  capitalFronted: 3525,  attribution: { owned: 25, total: 100 } },
+  ];
+
+  it("sums the slice and the P/L across tax lots", () => {
+    const s = summarizeCluster(glwLots);
+    expect(s).toMatchObject({ count: 4, owned: 100, total: 400, unit: "sh" });
+    expect(s.realizedSum).toBeCloseTo(212.5, 6);
+  });
+
+  it("reports no slice when only some members are attributed", () => {
+    const mixed = [glwLots[0], { type: "Shares", realized: 100, attribution: null }];
+    const s = summarizeCluster(mixed);
+    expect(s.owned).toBeNull();
+    expect(s.total).toBeNull();
+    expect(s.realizedSum).toBeCloseTo(-87.5, 6);
+  });
+
+  it("labels non-Shares clusters in contracts", () => {
+    expect(summarizeCluster([{ type: "CC", realized: 1, attribution: { owned: 1, total: 4 } }]).unit).toBe("ct");
+  });
+
+  it("coerces numeric-string money fields rather than concatenating them", () => {
+    // strike/entry_cost/roi/kept_pct are `numeric` columns and arrive as
+    // STRINGS from PostgREST; a bare `s + v` would build "0100200".
+    const s = summarizeCluster([
+      { type: "CC", realized: "100", capitalFronted: "1000", attribution: { owned: 1, total: 2 } },
+      { type: "CC", realized: "200", capitalFronted: "2000", attribution: { owned: 1, total: 2 } },
+    ]);
+    expect(s.realizedSum).toBe(300);
+    expect(s.capitalSum).toBe(3000);
+  });
+
+  it("handles an empty cluster without throwing", () => {
+    expect(summarizeCluster([])).toMatchObject({ count: 0, owned: null, total: null, realizedSum: 0, capitalSum: 0 });
   });
 });

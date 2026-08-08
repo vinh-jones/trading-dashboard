@@ -414,6 +414,55 @@ export function shareCoverageWarnings(members) {
   return warnings;
 }
 
+/**
+ * Group members that are one economic event split across broker tax lots —
+ * same ticker, type, strike, date and status.
+ *
+ * The broker holds a blended share position as separate lots, and the sync
+ * writes one `trades` row per lot. So a pro-rata slice of a 400-share
+ * assignment resolves to FOUR members (25 of each 100-share lot), which is
+ * faithful but noisy: the table collapses them into one line that expands.
+ *
+ * Strike is part of the key, so two CCs at different strikes closing the same
+ * day stay separate; so is the date, so a rolled leg doesn't merge with its
+ * replacement. Insertion order is preserved, so a cluster sits where its first
+ * member sat and an upstream column sort still holds.
+ *
+ * @returns {Array<{key: string, members: Array}>}
+ */
+export function clusterMembers(members) {
+  const byKey = new Map();
+  for (const m of members) {
+    const key = [m.ticker, m.type, m.strike ?? "", m.closeDate ?? m.openDate ?? "", m.status].join("|");
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(m);
+  }
+  return [...byKey.entries()].map(([key, ms]) => ({ key, members: ms }));
+}
+
+/**
+ * Aggregate one cluster into the figures its summary line shows. Pure so the
+ * arithmetic is testable — the row itself is JSX and this repo has no DOM
+ * harness, so anything left inline there ships unverified.
+ *
+ * `owned`/`total` are null unless EVERY member is attributed: a half-attributed
+ * cluster has no honest "100 of 400" to state.
+ *
+ * @returns {{count:number, owned:number|null, total:number|null, unit:string,
+ *            realizedSum:number, capitalSum:number}}
+ */
+export function summarizeCluster(cluster) {
+  const allAttributed = cluster.length > 0 && cluster.every(m => m.attribution);
+  return {
+    count: cluster.length,
+    owned: allAttributed ? cluster.reduce((s, m) => s + m.attribution.owned, 0) : null,
+    total: allAttributed ? cluster.reduce((s, m) => s + m.attribution.total, 0) : null,
+    unit: cluster[0]?.type === "Shares" ? "sh" : "ct",
+    realizedSum: cluster.reduce((s, m) => s + (Number(m.realized) || 0), 0),
+    capitalSum: cluster.reduce((s, m) => s + (Number(m.capitalFronted) || 0), 0),
+  };
+}
+
 // Display order for type groups in the transactions table. Anything not listed
 // (a future type, or a null) sorts after these, alphabetically.
 const TYPE_DISPLAY_ORDER = ["CC", "CSP", "Shares", "LEAPS", "Spread"];
