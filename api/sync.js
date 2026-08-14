@@ -42,7 +42,7 @@ export function isSyntheticShareAcquisition(trade) {
   return trade.type === "Shares" && trade.subtype === "Assigned";
 }
 
-function buildTitle(trade) {
+export function buildTitle(trade) {
   const strikeStr = trade.strike ? ` $${trade.strike}` : "";
   const keptStr   = trade.kept_pct != null ? ` (${Math.round(trade.kept_pct * 100)}%)` : "";
   if (trade.close_date) {
@@ -50,6 +50,87 @@ function buildTitle(trade) {
     return `${trade.type}${strikeStr} — Closed ${closeFmt}${keptStr}`;
   }
   return `${trade.type}${strikeStr} — Opened`;
+}
+
+/**
+ * Plan the trades→journal pass: which trades still need a journal entry, and
+ * which existing entries drifted (e.g. an early exit recorded after the fact).
+ *
+ * Dedup is by trade_id, which is stable across close_date changes. Entries that
+ * pre-date trade_id fall back to a natural key (ticker|date|title-without-%).
+ * That fallback is COUNTED, not a plain set: two share lots of the same ticker
+ * closed on the same day produce the identical key, so one legacy entry may only
+ * cover one of them. Treating the key as a set let the first lot's entry mask
+ * every other lot behind it, and those lots were then never journaled at all.
+ *
+ * Returns `seenKeys` so the open-position and share-lot passes — which have no
+ * trade_id to dedup on — don't re-journal a trade this pass already covered.
+ */
+export function planTradeJournalEntries({ trades, existing, now }) {
+  const stripPct = s => (s ?? "").replace(/\s*\(\d+%\)$/, "");
+  const naturalKey = (ticker, entryDate, title) => `${ticker}|${entryDate}|${stripPct(title)}`;
+
+  const existingByTradeId = new Map(
+    (existing || []).filter(e => e.trade_id).map(e => [e.trade_id, e])
+  );
+  const legacyKeyCounts = new Map();
+  for (const e of existing || []) {
+    if (e.trade_id) continue;
+    const k = naturalKey(e.ticker, e.entry_date, e.title);
+    legacyKeyCounts.set(k, (legacyKeyCounts.get(k) ?? 0) + 1);
+  }
+  const seenKeys = new Set(legacyKeyCounts.keys());
+
+  const toInsert = [];
+  const toUpdate = [];
+
+  for (const t of trades || []) {
+    // Share acquisitions carry close_date = open_date but aren't closes; the
+    // assigned_shares lots loop already journals them as "Shares — Opened".
+    if (isSyntheticShareAcquisition(t)) continue;
+
+    const entryDate = t.close_date || t.open_date;
+    const title = buildTitle(t);
+
+    const existingEntry = existingByTradeId.get(t.id);
+    if (existingEntry) {
+      // Trade already has a journal entry. If close_date changed (early exit recorded
+      // after the fact) and the entry hasn't been annotated yet, correct the date + title.
+      if (existingEntry.body === "" &&
+          (existingEntry.entry_date !== entryDate || existingEntry.title !== title)) {
+        toUpdate.push({ id: existingEntry.id, entry_date: entryDate, title });
+      }
+      continue;
+    }
+
+    // Consume one legacy entry per matching trade, so trades sharing a key each
+    // get covered exactly once instead of all collapsing into the first.
+    const key = naturalKey(t.ticker, entryDate, title);
+    const legacyCount = legacyKeyCounts.get(key) ?? 0;
+    if (legacyCount > 0) {
+      legacyKeyCounts.set(key, legacyCount - 1);
+      continue;
+    }
+
+    // Only guards the position/lot passes below — trades dedup on trade_id, so a
+    // second trade sharing this key still gets its own entry.
+    seenKeys.add(key);
+    toInsert.push({
+      entry_type:  "trade_note",
+      trade_id:    t.id,
+      position_id: null,
+      entry_date:  entryDate,
+      ticker:      t.ticker,
+      title,
+      body:        "",
+      tags:        [],
+      source:      t.source || null,
+      created_at:  now,
+      updated_at:  now,
+    });
+  }
+
+  return { toInsert, toUpdate, seenKeys };
 }
 
 export default async function handler(req, res) {
@@ -90,57 +171,10 @@ export default async function handler(req, res) {
         .eq("entry_type", "trade_note"),
     ]);
 
-    // Primary dedup: by trade_id (stable across close_date changes).
-    // Fallback: key-based dedup for legacy entries that pre-date this fix (trade_id = null).
-    const existingByTradeId = new Map(
-      (existing || []).filter(e => e.trade_id).map(e => [e.trade_id, e])
-    );
-    const stripPct = s => s.replace(/\s*\(\d+%\)$/, "");
-    const existingKeys = new Set(
-      (existing || []).filter(e => !e.trade_id).map(e => `${e.ticker}|${e.entry_date}|${stripPct(e.title)}`)
-    );
     const now = new Date().toISOString();
-
-    const toInsert = [];
-    const toUpdate = []; // entries whose entry_date/title drifted (e.g. early exit filled in later)
-
-    for (const t of trades || []) {
-      // Share acquisitions carry close_date = open_date but aren't closes; the
-      // assigned_shares lots loop already journals them as "Shares — Opened".
-      if (isSyntheticShareAcquisition(t)) continue;
-
-      const entryDate = t.close_date || t.open_date;
-      const title = buildTitle(t);
-
-      const existingEntry = existingByTradeId.get(t.id);
-      if (existingEntry) {
-        // Trade already has a journal entry. If close_date changed (early exit recorded
-        // after the fact) and the entry hasn't been annotated yet, correct the date + title.
-        if (existingEntry.body === "" &&
-            (existingEntry.entry_date !== entryDate || existingEntry.title !== title)) {
-          toUpdate.push({ id: existingEntry.id, entry_date: entryDate, title });
-        }
-        continue;
-      }
-
-      // Legacy fallback for entries without a trade_id (created before this fix)
-      const key = `${t.ticker}|${entryDate}|${stripPct(title)}`;
-      if (existingKeys.has(key)) continue;
-      existingKeys.add(key); // prevent same-sync dupes from duplicate trade rows
-      toInsert.push({
-        entry_type:  "trade_note",
-        trade_id:    t.id,
-        position_id: null,
-        entry_date:  entryDate,
-        ticker:      t.ticker,
-        title,
-        body:        "",
-        tags:        [],
-        source:      t.source || null,
-        created_at:  now,
-        updated_at:  now,
-      });
-    }
+    // toUpdate: entries whose entry_date/title drifted (e.g. early exit filled in later)
+    const { toInsert, toUpdate, seenKeys: existingKeys } =
+      planTradeJournalEntries({ trades, existing, now });
 
     // ── Auto-journal: also cover open positions (LEAPS, CSPs, CCs) ──
     // Positions only exist in the positions table (not trades), so they'd
