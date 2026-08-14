@@ -4,7 +4,7 @@ import { normalizeTrade } from "../../lib/trading";
 import { formatDollars } from "../../lib/format";
 import { formatExpiry } from "../../lib/format";
 import { JOURNAL_BADGE } from "./journalConstants";
-import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate } from "./journalHelpers";
+import { getTradeEmoji, eodFloorLabel, eodActivityLabel, fmtEntryDate, findLinkedTrade } from "./journalHelpers";
 import { theme } from "../../lib/theme";
 import { useWindowWidth } from "../../hooks/useWindowWidth";
 import { TagChip } from "./TagChip";
@@ -33,42 +33,12 @@ export function JournalEntryCard({ entry, onEdit, onDelete, defaultExpanded = fa
     return open.map(normalizeTrade);
   }, [positions]);
 
-  // Look up the matching trade for emoji + metadata.
-  // When the title explicitly says "— Opened" or "— Closed", route to the
-  // correct set directly. This handles same-day rolls where both a close and
-  // an open share the same ticker/type/strike — without disambiguation the
-  // "Opened" entry would accidentally match the closed trade.
-  const linkedTrade = useMemo(() => {
-    if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
-    const typeMatch   = entry.title?.match(/^(\w+)/);
-    // Only match a strike if it appears directly after the type word (e.g. "LEAPS $230 —")
-    // This prevents entry costs like "LEAPS — Opened @ $56.20" from being misread as strikes.
-    const strikeMatch = entry.title?.match(/^\w+ \$(\d+(?:\.\d+)?)/);
-    const titleType   = typeMatch?.[1];
-    const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
-    const matches = (t) =>
-      t.ticker === entry.ticker &&
-      (!titleType   || t.type   === titleType) &&
-      (!titleStrike || t.strike === titleStrike);
-
-    const isOpenTitle   = /—\s*Opened\b/i.test(entry.title ?? "");
-    const isClosedTitle = /—\s*Closed\b/i.test(entry.title ?? "");
-
-    // Closed trades: entry_date = close_date (skip if title says Opened)
-    if (!isOpenTitle) {
-      const closed = trades.find(t =>
-        matches(t) && t.closeDate?.toISOString().slice(0, 10) === entry.entry_date
-      );
-      if (closed) return closed;
-    }
-    // Open positions: entry_date = open_date (skip if title says Closed)
-    if (!isClosedTitle) {
-      return openTrades.find(t =>
-        matches(t) && t.open_date === entry.entry_date
-      ) ?? null;
-    }
-    return null;
-  }, [trades, entry.ticker, entry.entry_date, entry.title, entry.entry_type]);
+  // Look up the matching trade for emoji + metadata. Prefers the entry's
+  // trade_id; see findLinkedTrade for why the title heuristic isn't enough.
+  const linkedTrade = useMemo(
+    () => findLinkedTrade({ entry, trades, openTrades }),
+    [trades, openTrades, entry.trade_id, entry.ticker, entry.entry_date, entry.title, entry.entry_type]
+  );
 
   // Emoji for context line: computed for trade notes, fixed for position notes, none for EOD
   const cardEmoji =

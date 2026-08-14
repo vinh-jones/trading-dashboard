@@ -25,6 +25,60 @@ export function getTradeEmoji(trade) {
   return "📋";
 }
 
+/**
+ * Resolve the trade a journal entry describes.
+ *
+ * Auto-journaled close entries carry the trade's `trade_id` — always trust it.
+ * The title heuristic below can't tell two same-day lots apart (two share lots
+ * of the same ticker closed on the same date produce the identical title
+ * "Shares — Closed MM/DD"), so without the id it renders whichever lot happens
+ * to sort first — the wrong basis and the wrong P&L.
+ *
+ * Entries with no trade_id (opens, hand-written notes) fall back to matching on
+ * ticker + type + strike + date.
+ */
+export function findLinkedTrade({ entry, trades = [], openTrades = [] }) {
+  if (entry.entry_type !== "trade_note" || !entry.ticker) return null;
+
+  if (entry.trade_id) {
+    const byId = trades.find(t => t.id === entry.trade_id);
+    if (byId) return byId;
+  }
+
+  const typeMatch   = entry.title?.match(/^(\w+)/);
+  // Only match a strike if it appears directly after the type word (e.g. "LEAPS $230 —")
+  // This prevents entry costs like "LEAPS — Opened @ $56.20" from being misread as strikes.
+  const strikeMatch = entry.title?.match(/^\w+ \$(\d+(?:\.\d+)?)/);
+  const titleType   = typeMatch?.[1];
+  const titleStrike = strikeMatch ? parseFloat(strikeMatch[1]) : null;
+  const matches = (t) =>
+    t.ticker === entry.ticker &&
+    (!titleType   || t.type   === titleType) &&
+    (!titleStrike || t.strike === titleStrike);
+
+  // When the title explicitly says "— Opened" or "— Closed", route to the
+  // correct set directly. This handles same-day rolls where both a close and
+  // an open share the same ticker/type/strike — without disambiguation the
+  // "Opened" entry would accidentally match the closed trade.
+  const isOpenTitle   = /—\s*Opened\b/i.test(entry.title ?? "");
+  const isClosedTitle = /—\s*Closed\b/i.test(entry.title ?? "");
+
+  // Closed trades: entry_date = close_date (skip if title says Opened)
+  if (!isOpenTitle) {
+    const closed = trades.find(t =>
+      matches(t) && t.closeDate?.toISOString().slice(0, 10) === entry.entry_date
+    );
+    if (closed) return closed;
+  }
+  // Open positions: entry_date = open_date (skip if title says Closed)
+  if (!isClosedTitle) {
+    return openTrades.find(t =>
+      matches(t) && t.open_date === entry.entry_date
+    ) ?? null;
+  }
+  return null;
+}
+
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
