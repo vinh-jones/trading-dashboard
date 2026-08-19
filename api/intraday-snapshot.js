@@ -30,6 +30,7 @@ import { buildOccSymbol } from "./_lib/occ.js";
 import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
+import { buildMacroPayload } from "./macro.js";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -558,12 +559,8 @@ export default async function handler(req, res) {
       : null;
   } else {
     try {
-      const protocol = req.headers["x-forwarded-proto"] || "http";
-      const host = req.headers.host;
-      const macroRes = await fetch(`${protocol}://${host}/api/macro`, {
-        headers: { "User-Agent": "internal-intraday-snapshot" },
-      });
-      const macroData = await macroRes.json();
+      // In-process — see the note in api/eod-snapshot.js and buildMacroPayload().
+      const macroData = await buildMacroPayload();
       if (macroData.ok) {
         macroAiContext = macroData.ai_context ?? null;
         macroPosture = macroData.posture ?? null;
