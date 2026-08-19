@@ -9,28 +9,28 @@ export const SECTOR_GROUPS = {
       'Technology', 'Tech / Data', 'Tech Infra', 'Ecommerce',
       'Networking', 'Cybersecurity', 'Advertising/Social Media/Ai',
       'Search / Cloud', 'Consumer Cloud', 'Enterprise Software / CRM',
-      'Tech/Cloud Infrastructure', 'AI Infrastructure / Cloud Technology',
+      'Tech/Cloud Infrastructure', 'AI Infrastructure / Cloud Technology', 'Tech',
     ],
-    tickers: ['MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'PLTR', 'SHOP', 'DELL', 'CSCO', 'FTNT', 'ANET', 'INOD', 'VRT', 'NBIS'],
+    tickers: ['MSFT', 'AAPL', 'GOOGL', 'AMZN', 'META', 'PLTR', 'SHOP', 'DELL', 'APP', 'CSCO', 'FTNT', 'ANET', 'INOD', 'VRT', 'NBIS'],
   },
   'Semiconductors': {
     sectors: [
       'Semiconductors', 'AI / Semiconductors', 'Computer Technology',
       'Electronic Components - Semi', 'Photonics - Semiconductor',
-      'Industrial Machinery', 'AI - Memory',
+      'Materials - Glass & Fiberoptics', 'AI - Memory',
     ],
-    tickers: ['AMD', 'NVDA', 'AVGO', 'MU', 'ADI', 'AMAT', 'LRCX', 'APH', 'CRDO', 'COHR', 'TSM', 'WDC', 'STX', 'DRAM', 'SMH', 'INTC'],
+    tickers: ['AMD', 'NVDA', 'AVGO', 'MU', 'ADI', 'AMAT', 'LRCX', 'KLAC', 'TER', 'APH', 'CRDO', 'COHR', 'LYTE', 'GLW', 'TSM', 'WDC', 'STX', 'DRAM', 'SMH', 'INTC'],
   },
   'Financials': {
     sectors: [
       'Financials', 'Financials/Crypto Exchange',
       'Financials/Credit Services', 'Banking',
     ],
-    tickers: ['HOOD', 'SOFI', 'NU', 'FUTU', 'TIGR', 'AXP', 'JPM'],
+    tickers: ['HOOD', 'SOFI', 'FUTU', 'AXP', 'JPM'],
   },
   'Energy': {
     sectors: ['Energy / Oil & Gas', 'Natural Gas', 'Energy'],
-    tickers: ['XOM', 'EQT', 'CEG'],
+    tickers: ['EQT', 'CEG', 'BE'],
   },
   'Materials/Mining': {
     sectors: [
@@ -41,19 +41,19 @@ export const SECTOR_GROUPS = {
     tickers: ['AA', 'HL', 'FCX', 'NEM', 'CDE', 'CCJ'],
   },
   'Industrials': {
-    sectors: ['Industrials', 'Electronics Mfg', 'Technology & Transportation'],
-    tickers: ['GE', 'CLS', 'UBER'],
+    sectors: ['Industrials', 'Electronics Mfg', 'Industrial Machinery'],
+    tickers: ['GE', 'CLS', 'CAT'],
   },
   'Defense': {
     sectors: ['Aerospace & Defense', 'Industrials / Defense'],
-    tickers: ['KTOS', 'RTX', 'LMT'],
+    tickers: ['KTOS', 'RTX'],
   },
   'Consumer': {
     sectors: [
       'Consumer Discretionary / Restaurants',
-      'Consumer Staples / Household Products', 'Cruise Lines',
+      'Consumer Staples / Household Products', 'Cruise Lines', 'EV / Energy',
     ],
-    tickers: ['MCD', 'PG', 'CCL'],
+    tickers: ['CCL', 'TSLA'],
   },
   'Crypto': {
     sectors: ['Crypto Currency', 'Bitcoin Mining/AI Cloud'],

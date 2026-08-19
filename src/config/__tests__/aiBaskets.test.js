@@ -2,17 +2,17 @@ import { describe, it, expect } from "vitest";
 import { AI_BASKETS, ALL_BASKET_TICKERS } from "../aiBaskets.js";
 
 // Contract: the approved wheel universe (wheel_universe.list_type = 'approved')
-// as of migration-024 (2026-06). When Ryan changes the approved list, update the
+// as of the 2026-08-18 migration. When Ryan changes the approved list, update the
 // DB migration, this list, AND aiBaskets.js together. This guard fails CI if the
 // basket config drifts from the universe so a new name can't silently vanish from
 // the exposure math.
 const APPROVED_UNIVERSE = [
   "AA", "AAPL", "ADI", "AMAT", "AMD", "AMZN", "ANET", "APH", "APP", "AVGO",
-  "AXP", "CAT", "CCJ", "CCL", "CDE", "CEG", "CLS", "COHR", "CRDO", "CSCO",
-  "DELL", "DRAM", "EQT", "ETHA", "FCX", "FTNT", "FUTU", "GE", "GLW", "GOOGL",
-  "HL", "HOOD", "IBIT", "INOD", "INTC", "IREN", "JPM", "KTOS", "LRCX", "META",
-  "MSFT", "MU", "NBIS", "NEM", "NVDA", "PLTR", "RTX", "SHOP", "SMH", "SOFI",
-  "STX", "TSLA", "TSM", "VRT", "WDC",
+  "AXP", "BE", "CAT", "CCJ", "CCL", "CDE", "CEG", "CLS", "COHR", "CRDO",
+  "CSCO", "DELL", "DRAM", "EQT", "ETHA", "FCX", "FTNT", "FUTU", "GE", "GLW",
+  "GOOGL", "HL", "HOOD", "IBIT", "INOD", "INTC", "IREN", "JPM", "KLAC", "KTOS",
+  "LRCX", "LYTE", "META", "MSFT", "MU", "NBIS", "NEM", "NVDA", "PLTR", "RTX",
+  "SHOP", "SMH", "SOFI", "STX", "TER", "TSLA", "TSM", "VRT", "WDC",
 ];
 
 describe("AI_BASKETS config", () => {
@@ -42,7 +42,7 @@ describe("AI_BASKETS config", () => {
     }
   });
 
-  it("renders exactly 10 on-thesis detail cards", () => {
-    expect(AI_BASKETS.filter(b => b.display === "on-thesis")).toHaveLength(10);
+  it("renders exactly 11 on-thesis detail cards", () => {
+    expect(AI_BASKETS.filter(b => b.display === "on-thesis")).toHaveLength(11);
   });
 });
