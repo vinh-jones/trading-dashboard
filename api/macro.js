@@ -20,6 +20,28 @@ function getSupabase() {
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+// ─── Cache freshness ────────────────────────────────────────────────
+//
+// S5FI and FedWatch are read cache-first from Supabase because their upstreams
+// (Finviz, rateprobability) Cloudflare-403 Vercel's datacenter IPs. Both reads
+// were unbounded — `ORDER BY as_of DESC LIMIT 1` with no age check — so when the
+// OpenClaw pusher died on 2026-07-01 the S5FI signal silently kept serving that
+// day's reading as if it were current, for seven weeks. A stale signal is worse
+// than a missing one: it looks like data.
+//
+// 4 days, not 1: the pushers run once daily, so a Tuesday read after a Monday
+// holiday is legitimately 4 calendar days old. The gate exists to catch a dead
+// feed, not to enforce same-session freshness.
+export const MACRO_CACHE_MAX_AGE_MS = 4 * 24 * 60 * 60 * 1000;
+
+// Pure — exported for test. A null/unparseable timestamp is never fresh.
+export function isCacheFresh(asOf, now = Date.now()) {
+  if (!asOf) return false;
+  const t = new Date(asOf).getTime();
+  if (!Number.isFinite(t)) return false;
+  return now - t <= MACRO_CACHE_MAX_AGE_MS;
+}
+
 // ─── Explanation maps ────────────────────────────────────────────────
 
 const VIX_EXPLANATIONS = {
@@ -459,13 +481,18 @@ async function fetchS5fi() {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from("s5fi")
-      .select("pct, above, total")
+      .select("pct, above, total, as_of")
       .order("as_of", { ascending: false })
       .limit(1)
       .single();
     if (error && error.code !== "PGRST116") throw new Error(error.message);
     if (data && data.pct != null) {
-      return { pct: Number(data.pct), above: data.above, total: data.total };
+      // Stale rows fall through to the direct scrape rather than being served.
+      // In prod that scrape 403s, so the signal reports Unavailable — correct.
+      if (isCacheFresh(data.as_of)) {
+        return { pct: Number(data.pct), above: data.above, total: data.total };
+      }
+      console.warn(`[macro fetchS5fi] cached row is stale (as_of ${data.as_of}) — ignoring`);
     }
   } catch (err) {
     console.warn("[macro fetchS5fi] Supabase read failed, falling back to direct scrape:", err.message);
@@ -583,12 +610,14 @@ async function fetchFedWatch() {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from("fedwatch")
-      .select("midpoint, today_rows, week_ago_rows")
+      .select("midpoint, today_rows, week_ago_rows, as_of")
       .order("as_of", { ascending: false })
       .limit(1)
       .single();
     if (error && error.code !== "PGRST116") throw new Error(error.message);
-    if (data && data.today_rows) {
+    if (data && data.today_rows && !isCacheFresh(data.as_of)) {
+      console.warn(`[macro fetchFedWatch] cached row is stale (as_of ${data.as_of}) — ignoring`);
+    } else if (data && data.today_rows) {
       return computeFedWatch({
         currentRate: Number(data.midpoint),
         todayRows: data.today_rows,
@@ -675,13 +704,35 @@ const POSTURE_MAP = [
   },
 ];
 
-function computePosture(scores) {
-  const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+// `scores` may contain nulls — an unavailable signal scores null, not 3. Averaging
+// a fallback 3 in was indistinguishable from a genuine neutral reading, which is
+// exactly the ambiguity that makes a stored posture_score unanalysable later. The
+// composite is computed over available signals only, and reports how many it had.
+export function computePosture(scores) {
+  const available = scores.filter((s) => s != null);
+  const signalsAvailable = available.length;
+  const signalsTotal = scores.length;
+
+  if (signalsAvailable === 0) {
+    return {
+      posture: "UNAVAILABLE",
+      avg: null,
+      scores,
+      signalsAvailable,
+      signalsTotal,
+      description: "No macro signals available.",
+      deploymentGuidance: "No macro read — do not infer a posture from this response.",
+    };
+  }
+
+  const avg = Math.round((available.reduce((a, b) => a + b, 0) / signalsAvailable) * 10) / 10;
   const entry = POSTURE_MAP.find((p) => avg >= p.min);
   return {
     posture: entry.posture,
     avg,
     scores,
+    signalsAvailable,
+    signalsTotal,
     description: entry.description,
     deploymentGuidance: entry.deploymentGuidance,
   };
@@ -699,7 +750,9 @@ function buildAiContext(posture, signals, asOf) {
   const lines = [
     `MACRO MARKET CONTEXT — ${date}`,
     "",
-    `OVERALL POSTURE: ${posture.posture} (avg score ${posture.avg}/5)`,
+    posture.avg != null
+      ? `OVERALL POSTURE: ${posture.posture} (avg score ${posture.avg}/5, from ${posture.signalsAvailable} of ${posture.signalsTotal} signals)`
+      : `OVERALL POSTURE: UNAVAILABLE (0 of ${posture.signalsTotal} signals)`,
     posture.description,
     `Deployment guidance: ${posture.deploymentGuidance}`,
     "",
@@ -709,7 +762,8 @@ function buildAiContext(posture, signals, asOf) {
 
   const { vix, s5fi, fearGreed, fedWatch, spyVsAth, crudeOil, tenYearYield } = signals;
 
-  lines.push(`VIX: ${vix.value} (${vix.label}, score ${vix.score}/5)`);
+  if (vix.value == null) lines.push(`VIX: Unavailable — excluded from the composite`);
+  else lines.push(`VIX: ${vix.value} (${vix.label}, score ${vix.score}/5)`);
   if (vix.change != null) lines.push(`  Change: ${vix.change > 0 ? "+" : ""}${vix.change} today`);
   if (vix.vixTrend) {
     const t = vix.vixTrend;
@@ -719,12 +773,15 @@ function buildAiContext(posture, signals, asOf) {
   lines.push(`  ${vix.explanation}`);
   lines.push("");
 
-  lines.push(`S5FI (% above 50-day MA): ${s5fi.value}% (${s5fi.label}, score ${s5fi.score}/5)`);
+  if (s5fi.value == null) lines.push(`S5FI (% above 50-day MA): Unavailable — excluded from the composite`);
+  else lines.push(`S5FI (% above 50-day MA): ${s5fi.value}% (${s5fi.label}, score ${s5fi.score}/5)`);
   lines.push(`  ${s5fi.explanation}`);
   lines.push("");
 
   lines.push(
-    `Fear & Greed Index: ${fearGreed.value} (${fearGreed.label}, score ${fearGreed.score}/5)`
+    fearGreed.value == null
+      ? `Fear & Greed Index: Unavailable — excluded from the composite`
+      : `Fear & Greed Index: ${fearGreed.value} (${fearGreed.label}, score ${fearGreed.score}/5)`
   );
   if (fearGreed.prev1w != null)
     lines.push(
@@ -733,19 +790,23 @@ function buildAiContext(posture, signals, asOf) {
   lines.push(`  ${fearGreed.explanation}`);
   lines.push("");
 
-  lines.push(
-    `Fed Rate Expectations: ${fedWatch.label} (score ${fedWatch.score}/5)`
-  );
-  lines.push(`  Cuts priced in (12m): ${fedWatch.cutsPricedIn}`);
-  if (fedWatch.endOfYearImplied != null)
-    lines.push(`  End-of-year implied rate: ${fedWatch.endOfYearImplied}%`);
-  lines.push(`  Current rate: ${fedWatch.currentRate}%`);
-  if (fedWatch.direction) lines.push(`  Direction: ${fedWatch.direction}`);
+  if (fedWatch.score == null) {
+    lines.push(`Fed Rate Expectations: Unavailable — excluded from the composite`);
+  } else {
+    lines.push(`Fed Rate Expectations: ${fedWatch.label} (score ${fedWatch.score}/5)`);
+    lines.push(`  Cuts priced in (12m): ${fedWatch.cutsPricedIn}`);
+    if (fedWatch.endOfYearImplied != null)
+      lines.push(`  End-of-year implied rate: ${fedWatch.endOfYearImplied}%`);
+    lines.push(`  Current rate: ${fedWatch.currentRate}%`);
+    if (fedWatch.direction) lines.push(`  Direction: ${fedWatch.direction}`);
+  }
   lines.push(`  ${fedWatch.explanation}`);
   lines.push("");
 
   lines.push(
-    `SPY vs ATH: ${spyVsAth.value} (${spyVsAth.label}, score ${spyVsAth.score}/5)`
+    spyVsAth.value == null
+      ? `SPY vs ATH: Unavailable — excluded from the composite`
+      : `SPY vs ATH: ${spyVsAth.value} (${spyVsAth.label}, score ${spyVsAth.score}/5)`
   );
   if (spyVsAth.pctFromHigh != null)
     lines.push(
@@ -785,12 +846,18 @@ function buildAiContext(posture, signals, asOf) {
 
 // ─── Main handler ───────────────────────────────────────────────────
 
-export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.status(405).json({ ok: false, error: "Method not allowed" });
-    return;
-  }
-
+/**
+ * Compute the full macro payload — the same object GET /api/macro serves.
+ *
+ * Exported so in-process callers (snapshot, eod-snapshot, intraday-snapshot) can
+ * call it directly instead of self-fetching `https://${req.headers.host}/api/macro`.
+ * That self-fetch was silently broken: Vercel Cron invokes the *deployment* URL,
+ * which sits behind Deployment Protection, so the request 302'd to a Vercel SSO
+ * page and `.json()` threw inside a try/catch that only console.error'd. The
+ * macro_snapshots write in api/snapshot.js has failed every weekday since it
+ * shipped 2026-04-15 for exactly that reason. An in-process call cannot 302.
+ */
+export async function buildMacroPayload() {
   const asOf = new Date().toISOString();
 
   // Fetch all signals in parallel — one failure doesn't break others
@@ -819,7 +886,7 @@ export default async function handler(req, res) {
     vixSignal = {
       value: null,
       change: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `VIX data unavailable: ${vixResult.reason?.message || "fetch failed"}`,
@@ -844,7 +911,7 @@ export default async function handler(req, res) {
       value: null,
       high: null,
       pctFromHigh: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `SPY data unavailable: ${spyResult.reason?.message || "fetch failed"}`,
@@ -860,7 +927,7 @@ export default async function handler(req, res) {
   } else {
     s5fiSignal = {
       value: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `S5FI data unavailable: ${s5fiResult.reason?.message || "fetch failed"}`,
@@ -887,7 +954,7 @@ export default async function handler(req, res) {
       prev1m: null,
       prev1y: null,
       previousClose: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `Fear & Greed data unavailable: ${fgResult.reason?.message || "fetch failed"}`,
@@ -926,7 +993,7 @@ export default async function handler(req, res) {
       daysToNextMeeting: null,
       isWithinWeek: false,
       threshold55Met: false,
-      score: 2,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       directionLabel: null,
@@ -949,7 +1016,7 @@ export default async function handler(req, res) {
       changePct: null,
       fiftyTwoWeekHigh: null,
       fiftyTwoWeekLow: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `Crude Oil data unavailable: ${crudeOilResult.reason?.message || "fetch failed"}`,
@@ -970,7 +1037,7 @@ export default async function handler(req, res) {
       changePct: null,
       fiftyTwoWeekHigh: null,
       fiftyTwoWeekLow: null,
-      score: 3,
+      score: null,   // unavailable ≠ neutral — excluded from the composite
       label: "Unavailable",
       color: "amber",
       explanation: `10-Year Yield data unavailable: ${tenYearYieldResult.reason?.message || "fetch failed"}`,
@@ -1001,15 +1068,26 @@ export default async function handler(req, res) {
 
   const aiContext = buildAiContext(posture, signals, asOf);
 
-  res.setHeader(
-    "Cache-Control",
-    "s-maxage=1800, stale-while-revalidate=300"
-  );
-  res.status(200).json({
+  return {
     ok: true,
     as_of: asOf,
     posture,
     signals,
     ai_context: aiContext,
-  });
+  };
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "Method not allowed" });
+    return;
+  }
+
+  const payload = await buildMacroPayload();
+
+  res.setHeader(
+    "Cache-Control",
+    "s-maxage=1800, stale-while-revalidate=300"
+  );
+  res.status(200).json(payload);
 }

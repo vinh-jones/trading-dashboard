@@ -29,6 +29,7 @@ import {
   buildPositionStateRows,
 } from "./_lib/computeForecastV2.js";
 import { computeAssignedShareIncome } from "./_lib/computeAssignedShareIncome.js";
+import { buildMacroPayload } from "./macro.js";
 
 const ASSIGNED_INCOME_CACHE_KEY    = "assigned_share_income_latest";
 const ASSIGNED_INCOME_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -360,12 +361,11 @@ export default async function handler(req, res) {
   // 10. Fetch macro signals and write to macro_snapshots
   // Wrapped in try/catch — a macro failure must NOT fail the portfolio snapshot.
   try {
-    const protocol = req.headers["x-forwarded-proto"] || "https";
-    const host = req.headers.host;
-    const macroRes = await fetch(`${protocol}://${host}/api/macro`, {
-      headers: { "User-Agent": "internal-snapshot-cron" },
-    });
-    const macroData = await macroRes.json();
+    // In-process, not a self-fetch over HTTP: Vercel Cron hits the deployment
+    // URL, which Deployment Protection 302s to a Vercel SSO page, so `.json()`
+    // threw here every weekday from 2026-04-15 to 2026-08-19 and the write below
+    // never ran. See buildMacroPayload().
+    const macroData = await buildMacroPayload();
 
     if (macroData.ok) {
       const macroSnapshot = {

@@ -23,6 +23,7 @@ import { computeForecastV2, pipelineSnapshotFields } from "./_lib/computeForecas
 import { getVixBand } from "../src/lib/vixBand.js";
 import { computeCushion } from "../src/lib/cushionBreach.js";
 import { buildSnapshotRisk } from "./_lib/snapshotRisk.js";
+import { buildMacroPayload } from "./macro.js";
 import {
   detectLifespans,
   buildLifespan,
@@ -524,12 +525,10 @@ export default async function handler(req, res) {
       : null;
   } else {
     try {
-      const protocol = req.headers["x-forwarded-proto"] || "http";
-      const host = req.headers.host;
-      const macroRes = await fetch(`${protocol}://${host}/api/macro`, {
-        headers: { "User-Agent": "internal-eod-snapshot" },
-      });
-      const macroData = await macroRes.json();
+      // In-process — a self-fetch to `https://${req.headers.host}/api/macro`
+      // 302s to Vercel SSO whenever this is reached via a deployment URL rather
+      // than the production alias. See buildMacroPayload().
+      const macroData = await buildMacroPayload();
       if (macroData.ok) {
         macroAiContext = macroData.ai_context ?? null;
         macroPosture   = macroData.posture     ?? null;

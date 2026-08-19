@@ -38,6 +38,9 @@ const BYPASS = new Set([
   "/api/ingest",
   "/api/ingest-iv",
   "/api/ingest-s5fi",
+  // Missing here until 2026-08-19: the gate 401'd every OpenClaw POST before the
+  // handler's own x-ingest-secret check ran, so `fedwatch` never wrote a row.
+  "/api/ingest-fedwatch",
   "/api/ingest-wheel-earnings",
   "/api/macro",
   "/api/quotes",
