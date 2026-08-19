@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { ALL_BASKET_TICKERS } from "../../../config/aiBaskets.js";
 import {
+  SECTOR_GROUPS,
   DEFAULT_FILTERS,
   countActiveFilters,
   filterSummaryLines,
@@ -57,5 +59,17 @@ describe("filter option lists", () => {
     expect(SCORE_FILTER_OPTIONS.map(o => o[0])).toEqual(["Strong", "Moderate", "Neutral", "Weak"]);
     expect(GEX_FILTER_OPTIONS.map(o => o[0])).toEqual(["stabilized", "choppy", "neutral"]);
     expect(IV_TREND_FILTER_OPTIONS.map(o => o[0])).toEqual(["rising", "spiking", "falling", "collapsing", "stable"]);
+  });
+});
+
+// The sector-group ticker lists are the hover-tooltip contents on the Radar filter
+// chips, and Radar only ever renders approved names. They drifted once already
+// (UBER/NU/TIGR lingered for two list updates after their rows were deleted), so
+// hold them to the same universe the AI baskets are held to.
+describe("SECTOR_GROUPS ticker lists vs. the approved universe", () => {
+  const grouped = Object.values(SECTOR_GROUPS).flatMap(g => g.tickers);
+
+  it("lists every approved ticker exactly once across all groups", () => {
+    expect([...grouped].sort()).toEqual([...ALL_BASKET_TICKERS].sort());
   });
 });
