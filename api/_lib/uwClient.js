@@ -118,6 +118,37 @@ export function fetchStockScreener(tickers) {
   return uwGet(`/screener/stocks${qs}`);
 }
 
+// S&P 500 constituents, via the stock screener's is_s_p_500 filter. The screener
+// caps a page at 50 rows, so the full membership takes ~10 sequential pages.
+//
+// `offset` is a PAGE INDEX on this endpoint, not a row offset — verified against
+// the live screener (limit=2&offset=1 returns rows 2-3, not 1-2). This still
+// pages defensively: it dedupes by ticker and stops on a short page or a page
+// that adds nothing, so a change in that semantics degrades to a short universe
+// (which the caller rejects) rather than a silently biased one.
+//
+// order=ticker is required, not cosmetic: the screener defaults to volume desc,
+// which reshuffles intraday, so paging without a stable sort would duplicate
+// some members and skip others.
+//
+// Returns bare ticker strings. Callers should sanity-check the count: a partial
+// membership yields a biased breadth reading, not a noisy one.
+export async function fetchSp500Tickers({ maxPages = 15 } = {}) {
+  const seen = new Set();
+  for (let page = 0; page < maxPages; page++) {
+    const rows = await uwGet(`/screener/stocks?is_s_p_500=true&order=ticker&order_direction=asc&limit=50&offset=${page}`);
+    if (!Array.isArray(rows) || rows.length === 0) break;
+    const before = seen.size;
+    for (const r of rows) {
+      const t = typeof r?.ticker === "string" ? r.ticker.trim().toUpperCase() : null;
+      if (t) seen.add(t);
+    }
+    if (seen.size === before) break;   // page repeated — pagination exhausted
+    if (rows.length < 50) break;       // short page — last one
+  }
+  return [...seen];
+}
+
 // Economic calendar — upcoming US macro releases. UW only publishes ~8 days
 // forward; a wider max_date returns nothing extra, it does not error.
 export function fetchMarketEvents(minDate, maxDate) {
