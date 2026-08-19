@@ -30,6 +30,7 @@ import {
 } from "./_lib/computeForecastV2.js";
 import { computeAssignedShareIncome } from "./_lib/computeAssignedShareIncome.js";
 import { buildMacroPayload } from "./macro.js";
+import { buildMacroSnapshotRow } from "./_lib/macroSnapshotRow.js";
 
 const ASSIGNED_INCOME_CACHE_KEY    = "assigned_share_income_latest";
 const ASSIGNED_INCOME_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -368,17 +369,11 @@ export default async function handler(req, res) {
     const macroData = await buildMacroPayload();
 
     if (macroData.ok) {
-      const macroSnapshot = {
-        snapshot_date: today,
-        vix: macroData.signals.vix.value,
-        s5fi_pct: macroData.signals.s5fi.value,
-        fear_greed_score: macroData.signals.fearGreed.value,
-        fed_cuts_priced_in: macroData.signals.fedWatch.cutsPricedIn,
-        spy_pct_from_ath: macroData.signals.spyVsAth.pctFromHigh,
-        posture: macroData.posture.posture,
-        posture_score: macroData.posture.avg,
-        ai_context: macroData.ai_context,
-      };
+      // All seven signals plus per-signal attribution — see buildMacroSnapshotRow.
+      // Crude oil and the 10-year had no columns at all before 2026-08-19, and the
+      // seven per-signal scores were collapsed into one average with no way to tell
+      // which signal moved the composite.
+      const macroSnapshot = buildMacroSnapshotRow(macroData, today);
 
       const { error: macroError } = await supabase
         .from("macro_snapshots")

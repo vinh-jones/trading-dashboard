@@ -147,7 +147,10 @@ const YIELD_EXPLANATIONS = {
 
 // ─── Labeling functions ──────────────────────────────────────────────
 
-function labelVix(value) {
+// labelVix / labelS5fi are exported so the 2026-08-19 backfill derives its
+// per-signal scores from these thresholds rather than restating them in SQL —
+// one source of truth for the bucket boundaries.
+export function labelVix(value) {
   let score, label, cashTarget, investedTarget;
   if (value <= 12) {
     score = 2; label = "Extreme Greed"; cashTarget = "40–50%"; investedTarget = "50–60%";
@@ -168,7 +171,7 @@ function labelVix(value) {
   return { score, label, cashTarget, investedTarget, color, explanation: VIX_EXPLANATIONS[label] };
 }
 
-function labelS5fi(value) {
+export function labelS5fi(value) {
   let score, label;
   if (value > 80) {
     score = 5;
