@@ -7,7 +7,8 @@
     "api/uw-macro-events.js": { "maxDuration": 60 },
     "api/uw-iv.js": { "maxDuration": 60 },
     "api/uw-gex.js": { "maxDuration": 120 },
-    "api/agent-scan.js": { "maxDuration": 300 }
+    "api/agent-scan.js": { "maxDuration": 300 },
+    "api/uw-breadth.js": { "maxDuration": 800 }
   },
   "crons": [
     {
@@ -45,6 +46,10 @@
     {
       "path": "/api/alert-check",
       "schedule": "5,35 12-20 * * 1-5"
+    },
+    {
+      "path": "/api/uw-breadth",
+      "schedule": "0 21 * * 1-5"
     },
     {
       "path": "/api/snapshot",

@@ -30,6 +30,7 @@ const BYPASS = new Set([
   "/api/uw-macro-events",
   "/api/uw-iv",
   "/api/uw-gex",
+  "/api/uw-breadth",
   // ORB cron handlers — self-authenticate against CRON_SECRET/APP_SECRET.
   // Not /api/orb-day: that is the UI read endpoint and goes through the gate.
   "/api/orb-open",
