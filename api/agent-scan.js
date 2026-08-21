@@ -68,7 +68,23 @@ import { isMarketOpen } from "./_marketHours.js";
 
 // Bump when the payload shape or a signal definition changes, so a polling
 // agent can detect that its cached understanding is stale.
-export const METHODOLOGY_VERSION = "1.0.0";
+//
+// THIS IS A CONTRACT, NOT DECORATION. It sat at 1.0.0 through two changes that
+// should each have moved it, which is how a downstream consumer's cached
+// understanding of this payload was able to drift for a month with no signal.
+// If you change the response shape or re-source a field, bump it in the SAME
+// commit.
+//
+// Changelog:
+//   1.1.0 — market_context deprecated (3276957, v1.176.0):
+//           • REMOVED  asOf.marketContextAsOf from the response.
+//           • RE-SOURCED earningsDaysAway — was market_context.positions[]
+//             .nextEarnings.date, now quotes.earnings_date (written daily by
+//             /api/uw-earnings-dates). Same field name, different provenance
+//             and different refresh cadence.
+//           Both landed at 1.0.0 without a bump; the version is corrected here.
+//   1.0.0 — initial (c736955, v1.170.0).
+export const METHODOLOGY_VERSION = "1.1.0";
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
