@@ -2,7 +2,7 @@
  * api/bb.js — Vercel serverless function
  *
  * GET /api/bb
- * GET /api/bb?force=1   — bypass the 15m stale gate (manual refresh escape hatch)
+ * GET /api/bb?force=1   — bypass the 13m stale gate (manual refresh escape hatch)
  *
  * Fetches 20-day Bollinger Band data from Yahoo Finance for all approved
  * tickers and stores results in the quotes table. No market hours gate —
@@ -12,7 +12,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { computeRSI } from "../src/lib/rsi.js";
 
-const STALE_MS = 15 * 60 * 1000; // 15 minutes — keeps `last`/`prev_close` fresh enough for intraday DAY% on the Radar / AI Thesis pages (BB's 20-day SMA itself only changes daily, but these columns drive live day-change).
+// 13 min, not 15 — same reasoning as api/quotes.js (see its STALE_MS comment).
+// The cron fires */15 and `now` below is stamped at the START of the run, so at
+// the next cron boundary the age lands within sub-minute dispatch jitter of the
+// threshold. At exactly 15 min that coin-flips: some cycles refresh, some return
+// cached and write nothing, stretching the effective cadence toward ~30 min.
+// 13 min leaves headroom so every cron cycle actually refreshes.
+//
+// This matters more here than anywhere else: bb_position is half the scanner
+// score ((1 - bb) * 0.50 in entryScore), so it is both the most load-bearing
+// field in /api/agent-scan and — until /api/bb was scheduled at all in v1.171.2
+// — historically the stalest.
+//
+// Also keeps `last`/`prev_close` fresh enough for intraday DAY% on the Radar /
+// AI Thesis pages (BB's 20-day SMA itself only changes daily, but these columns
+// drive live day-change).
+const STALE_MS = 13 * 60 * 1000;
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
