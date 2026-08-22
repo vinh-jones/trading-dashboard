@@ -99,7 +99,13 @@ export default async function handler(req, res) {
     for (const ticker of tickers) {
       try {
         const bars = normalizeDailyBars(await fetchDailyOhlc(ticker, CANDLE_LOOKBACK));
-        verdicts.push(evaluateTicker(bars, SMA_PERIOD));
+        const v = evaluateTicker(bars, SMA_PERIOD);
+        // `ticker` and `bars` ride along for the dry-run detail below; summarize
+        // ignores extra keys. Without per-ticker output the only observable is the
+        // aggregate, which makes a level disagreement with an external S5FI print
+        // impossible to localise — that is exactly the position we were in on
+        // 2026-08-22 when our census read ~10pts below TradingView's.
+        verdicts.push(v ? { ...v, ticker, barCount: bars.length } : null);
       } catch (err) {
         verdicts.push(null);
         failures.push(`${ticker}: ${err.message}`);
@@ -114,7 +120,34 @@ export default async function handler(req, res) {
     }
 
     if (dryRun) {
-      return res.status(200).json({ ...summary, wrote: false, dryRun: true, failures: failures.slice(0, 10) });
+      // Per-ticker detail, sorted by how close the name sits to its own mean, so a
+      // systematic bias in the SMA shows up as a cluster straddling zero rather
+      // than having to be inferred from one aggregate number.
+      const detail = verdicts
+        .filter(Boolean)
+        .map((v) => ({
+          ticker: v.ticker,
+          sessionDate: v.sessionDate,
+          bars: v.barCount,
+          close: v.close,
+          sma: Math.round(v.sma * 10000) / 10000,
+          pctFromSma: Math.round(((v.close - v.sma) / v.sma) * 1e6) / 1e4,
+          above: v.above,
+        }))
+        .sort((a, b) => Math.abs(a.pctFromSma) - Math.abs(b.pctFromSma));
+
+      // How many names a small SMA error would flip — the sensitivity that decides
+      // whether a level disagreement is a real regime read or a data artefact.
+      const within = (pct) => detail.filter((d) => Math.abs(d.pctFromSma) <= pct).length;
+      return res.status(200).json({
+        ...summary,
+        wrote: false,
+        dryRun: true,
+        sensitivity: { within_0_25pct: within(0.25), within_0_5pct: within(0.5), within_1pct: within(1) },
+        unresolved: verdicts.filter((v) => !v).length,
+        detail: scoped ? detail : detail.slice(0, 60),
+        failures: failures.slice(0, 10),
+      });
     }
 
     const supabase = getSupabase();
