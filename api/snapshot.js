@@ -29,11 +29,18 @@ import {
   buildPositionStateRows,
 } from "./_lib/computeForecastV2.js";
 import { computeAssignedShareIncome } from "./_lib/computeAssignedShareIncome.js";
+import {
+  computeCcWritability,
+  writeCcWritabilityShadowLog,
+} from "./_lib/computeCcWritability.js";
+import { sendCcWritabilityDigest } from "./_lib/ccWritabilityDigest.js";
 import { buildMacroPayload } from "./macro.js";
 import { buildMacroSnapshotRow } from "./_lib/macroSnapshotRow.js";
 
 const ASSIGNED_INCOME_CACHE_KEY    = "assigned_share_income_latest";
 const ASSIGNED_INCOME_CACHE_TTL_MS = 60 * 60 * 1000;
+const CC_WRITABILITY_CACHE_KEY     = "cc_writability_latest";
+const CC_WRITABILITY_CACHE_TTL_MS  = 60 * 60 * 1000;
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -194,6 +201,24 @@ export default async function handler(req, res) {
     });
   } catch (incomeErr) {
     console.error("[api/snapshot] assigned-share income failed (non-blocking):", incomeErr);
+  }
+
+  // 6b-ii. Covered-call writability (docs/spec_cc_writability_alert_v1.md).
+  // The intraday cron owns the pushes; this EOD pass exists for the §5 floor —
+  // a digest of everything currently AMBER or RED, so an intraday push that was
+  // missed (or suppressed) is still recoverable that evening. Non-blocking.
+  let ccWritability = null;
+  try {
+    ccWritability = await computeCcWritability({ supabase, positions, todayISO: today });
+    await supabase.from("app_cache").upsert({
+      key:        CC_WRITABILITY_CACHE_KEY,
+      value:      JSON.stringify(ccWritability),
+      expires_at: new Date(Date.now() + CC_WRITABILITY_CACHE_TTL_MS).toISOString(),
+    });
+    await writeCcWritabilityShadowLog({ supabase, payload: ccWritability, todayISO: today });
+    await sendCcWritabilityDigest({ supabase, payload: ccWritability, todayISO: today });
+  } catch (ccErr) {
+    console.error("[api/snapshot] cc-writability failed (non-blocking):", ccErr);
   }
 
   // 6c. Append assigned-share breach history — one row per assigned-share
@@ -397,6 +422,9 @@ export default async function handler(req, res) {
       accountSnap,
       positionRows: positions,
       liveVix: vix,
+      // Pushes for this rule are the intraday cron's job (§5); at EOD the
+      // digest above covers it, so nothing is passed here.
+      ccWritability: null,
     });
   } catch (notifyError) {
     console.error("[api/snapshot] Notification step failed:", notifyError);
@@ -416,6 +444,11 @@ export default async function handler(req, res) {
       forward:       forecastV2.forward_pipeline_premium,
       phase:         forecastV2.pipeline_phase,
       positions:     forecastV2.per_position.length,
+    } : null,
+    cc_writability: ccWritability ? {
+      in_scope: ccWritability.in_scope,
+      red:      ccWritability.per_position.filter(p => p.tier === "RED").map(p => p.ticker),
+      amber:    ccWritability.per_position.filter(p => p.tier === "AMBER").map(p => p.ticker),
     } : null,
     assigned_share_income: assignedShareIncome ? {
       total:       assignedShareIncome.aggregate.total_monthly_income,

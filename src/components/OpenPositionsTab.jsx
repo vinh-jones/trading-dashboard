@@ -32,6 +32,7 @@ import { PositionHistoryPanel } from "./PositionHistoryPanel";
 import { slugifyCohortName } from "../lib/cohorts";
 import { targetProfitPctForDtePct } from "../lib/positionAttention";
 import { AssignedShareIncome } from "./AssignedShareIncome";
+import { CcWritability } from "./CcWritability";
 import { theme } from "../lib/theme";
 import { listJournalEntries } from "../lib/journalApi";
 import { groupStrategicTagsByPosition, positionKey, STRATEGIC_TAG_PREFIXES } from "../lib/tags";
@@ -1752,6 +1753,9 @@ export function OpenPositionsTab({ positionIntent, onPositionIntentConsumed, onO
 
       {/* ── Assigned Shares — Income & Health ── */}
       <AssignedShareIncome />
+
+      {/* ── Covered-Call Writability — AMBER lives here and nowhere else ── */}
+      <CcWritability />
     </div>
   );
 }
