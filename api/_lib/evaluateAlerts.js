@@ -16,6 +16,10 @@
  *      episode — no day-turnover re-push, no cooldown barrages.
  *   5. Send the push (single `sendPushover` call per new item).
  *
+ * `ccWritability` is passed in rather than computed here: it needs live option
+ * data and its own suppression state, so the caller (api/alert-check.js) owns
+ * the fetch and hands over a decided payload. See computeCcWritability.js.
+ *
  * Fails soft from the caller's perspective: any thrown error is the caller's
  * to handle (snapshot wraps in try/catch; alert-check surfaces as non-500
  * in the JSON body). But internal best-effort: a push failure logs + skips
@@ -27,7 +31,7 @@ import { reshapePositions } from "./reshapePositions.js";
 import { sendPushover } from "./notify.js";
 import { loadQuoteMap, loadMacroEvents, loadRollAnalysisMap, loadAssignedShareIncome } from "./loadFocusData.js";
 
-export async function evaluateAlerts({ supabase, accountSnap, positionRows, liveVix }) {
+export async function evaluateAlerts({ supabase, accountSnap, positionRows, liveVix, ccWritability = null }) {
   const reshapedPositions = reshapePositions(positionRows);
 
   const [quoteMap, macroEvents, rollAnalysisMap, assignedShareIncome] = await Promise.all([
@@ -45,6 +49,7 @@ export async function evaluateAlerts({ supabase, accountSnap, positionRows, live
     quoteMap,
     rollAnalysisMap,
     assignedShareIncome,
+    ccWritability,
   );
 
   const pushItems   = items.filter(i => NOTIFY_RULES[i.rule] === true);
