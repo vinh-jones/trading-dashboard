@@ -8,7 +8,9 @@
     "api/uw-iv.js": { "maxDuration": 60 },
     "api/uw-gex.js": { "maxDuration": 120 },
     "api/agent-scan.js": { "maxDuration": 300 },
-    "api/uw-breadth.js": { "maxDuration": 800 }
+    "api/uw-breadth.js": { "maxDuration": 800 },
+    "api/alert-check.js": { "maxDuration": 120 },
+    "api/cc-writability.js": { "maxDuration": 60 }
   },
   "crons": [
     {

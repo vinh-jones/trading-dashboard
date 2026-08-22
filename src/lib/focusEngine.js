@@ -27,6 +27,7 @@ export const NOTIFY_RULES = {
   roll_opportunity:       true,
   assigned_cc_breach_imminent: true,
   cushion_breach:              true,
+  cc_writable:                 true,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -678,9 +679,49 @@ function ruleAssignedCcBreachImminent(assignedShareIncome) {
   return items;
 }
 
+// Uncovered assigned shares that have become writable at or above gross basis
+// at a rate worth doing (docs/spec_cc_writability_alert_v1.md). The covered-call
+// counterpart to ruleCushionBreach: that rule watches CSPs approaching a strike,
+// this one watches share capital sitting idle when the premium is finally there.
+//
+// All of the judgement — the 30% annualized gate at K_basis, liquidity fencing,
+// earnings suppression, the 5-trading-day re-arm — happens upstream in
+// api/_lib/computeCcWritability.js, which is where the market data lives. This
+// rule only lifts an already-decided payload into a focus item, so it must NOT
+// re-derive or second-guess `pushable`.
+function ruleCcWritable(ccWritability) {
+  const items = [];
+  for (const p of ccWritability?.per_position ?? []) {
+    if (p.tier !== "RED" || !p.pushable) continue;
+
+    const rung = (p.rungs ?? []).find(r => r.target_dte === p.push_rung);
+    if (!rung) continue;
+
+    const premium = Math.round(rung.premium ?? 0).toLocaleString();
+    const context = [
+      p.iv_rank != null    ? `IV rank ${p.iv_rank.toFixed(0)}` : null,
+      p.bb_position != null ? `bb ${p.bb_position.toFixed(2)}` : null,
+    ].filter(Boolean).join(" · ");
+
+    items.push({
+      id:          `cc-writable-${p.ticker}`,
+      priority:    "P1",
+      rule:        "cc_writable",
+      ticker:      p.ticker,
+      strike:      rung.strike,
+      expiry_date: rung.expiry,
+      dte:         rung.dte,
+      urgency:     -(rung.ror_annualized ?? 0),   // richest rate first within P1
+      title:       `${p.ticker} writable — ${rung.dte}d $${rung.strike}, $${premium}, ${(rung.ror_annualized ?? 0).toFixed(1)}% ann`,
+      detail:      [p.push_copy, context].filter(Boolean).join(" · "),
+    });
+  }
+  return items;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function generateFocusItems(positions, account, macroEvents, liveVix, quoteMap = new Map(), rollAnalysisMap = {}, assignedShareIncome = null) {
+export function generateFocusItems(positions, account, macroEvents, liveVix, quoteMap = new Map(), rollAnalysisMap = {}, assignedShareIncome = null, ccWritability = null) {
   if (!positions) return [];
 
   // Allow caller to pass a fresher VIX (e.g. from useLiveVix) to override the snapshot value
@@ -711,6 +752,7 @@ export function generateFocusItems(positions, account, macroEvents, liveVix, quo
     ...ruleLeapsProfitTarget(positions, quoteMap),
     ...ruleRollOpportunity(positions, rollAnalysisMap),
     ...ruleAssignedCcBreachImminent(assignedShareIncome),
+    ...ruleCcWritable(ccWritability),
   ];
 
   const priorityOrder = { P1: 0, P2: 1, P3: 2 };

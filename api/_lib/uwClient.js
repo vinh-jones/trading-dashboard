@@ -149,6 +149,20 @@ export async function fetchSp500Tickers({ maxPages = 15 } = {}) {
   return [...seen];
 }
 
+// ATM implied volatility per option expiry — the term structure.
+// GET /api/stock/{ticker}/volatility/term-structure returns one row per listed
+// expiry: { ticker, date, expiry, volatility, implied_move, implied_move_perc },
+// where `volatility` is the average of the ATM call and put IVs as a decimal.
+//
+// This is the cheap per-expiry IV source behind the CC-writability modeled
+// screen (see api/_lib/computeCcWritability.js). One call per ticker per DAY —
+// the alternative, a single stored 30d IV spread across the ladder, mispriced
+// IREN's 7d rung by 45 annualized points on the acceptance fixture.
+export function fetchIvTermStructure(ticker, date) {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/volatility/term-structure${qs}`);
+}
+
 // Economic calendar — upcoming US macro releases. UW only publishes ~8 days
 // forward; a wider max_date returns nothing extra, it does not error.
 export function fetchMarketEvents(minDate, maxDate) {
