@@ -205,9 +205,19 @@ function StrikeLadder({ rung, grossBasis }) {
 
 function PositionCard({ position }) {
   const [open, setOpen] = useState(position.tier === "RED");
-  const ladderRung = (position.rungs ?? []).find(
-    r => r.target_dte === (position.push_rung ?? position.best_rate_rung)
-  ) ?? (position.rungs ?? []).find(r => (r.strike_ladder ?? []).length);
+
+  // Prefer the rung being pushed (or the best rate), but fall back to ANY rung
+  // that actually carries a ladder. Matching on target_dte alone is not enough:
+  // a rung exists whether or not its chain fetch succeeded, and modeled rungs
+  // carry no ladder at all by design. Without the length check the §3.2 ladder
+  // vanishes from the panel whenever the preferred rung happens to be the one
+  // that came back bare — which is exactly when the appreciation trade it is
+  // meant to expose would go unseen.
+  const rungs      = position.rungs ?? [];
+  const preferred  = rungs.find(r => r.target_dte === (position.push_rung ?? position.best_rate_rung));
+  const ladderRung = (preferred?.strike_ladder?.length ? preferred : null)
+    ?? rungs.find(r => (r.strike_ladder ?? []).length)
+    ?? null;
 
   const blocked = position.push_blocked_reason
     ? BLOCK_REASON_LABEL[position.push_blocked_reason] ?? position.push_blocked_reason
