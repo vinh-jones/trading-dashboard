@@ -76,8 +76,17 @@ export default async function handler(req, res) {
   const scoped = typeof req.query?.tickers === "string" && req.query.tickers.trim()
     ? req.query.tickers.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean)
     : null;
+  // ?date=YYYY-MM-DD recomputes the census as of a past session. This exists to
+  // check the method against a known-good S5FI print: the `s5fi` table holds 28
+  // days of Finviz readings from 2026-05-19 to 2026-07-01, which are ground truth
+  // for the same definition. Always dry — a historical run must never overwrite
+  // the live series, and `as_of` is derived from the session so a stray write
+  // would silently land on a real date.
+  const asOfDate = typeof req.query?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+    ? req.query.date
+    : null;
   // A scoped run is a smoke test over a handful of names — never a universe.
-  const dryRun = scoped != null || req.query?.dry === "1";
+  const dryRun = scoped != null || asOfDate != null || req.query?.dry === "1";
 
   try {
     const tickers = scoped ?? (await fetchSp500Tickers());
@@ -98,7 +107,7 @@ export default async function handler(req, res) {
     const failures = [];
     for (const ticker of tickers) {
       try {
-        const bars = normalizeDailyBars(await fetchDailyOhlc(ticker, CANDLE_LOOKBACK));
+        const bars = normalizeDailyBars(await fetchDailyOhlc(ticker, CANDLE_LOOKBACK, asOfDate));
         const v = evaluateTicker(bars, SMA_PERIOD);
         // `ticker` and `bars` ride along for the dry-run detail below; summarize
         // ignores extra keys. Without per-ticker output the only observable is the
@@ -151,6 +160,10 @@ export default async function handler(req, res) {
         ...summary,
         wrote: false,
         dryRun: true,
+        // If these disagree the run did not measure the session it was asked for,
+        // and the number must not be compared against that date's known value.
+        requestedDate: asOfDate,
+        sessionMatchesRequest: asOfDate ? summary.sessionDate === asOfDate : null,
         sensitivity: { within_0_25pct: within(0.25), within_0_5pct: within(0.5), within_1pct: within(1) },
         corporateActions: {
           contaminated: contaminated.length,
