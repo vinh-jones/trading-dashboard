@@ -187,8 +187,17 @@ export function fetchMarketEvents(minDate, maxDate) {
 // `?debug=1` path, which is how we confirm the real REST field names instead
 // of guessing again.
 
-export function fetchDailyOhlcRaw(ticker, limit = 150) {
-  return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/1d?limit=${limit}`);
+// `endDate` (YYYY-MM-DD) walks the window back in time — UW returns history
+// ending at that session, which is what lets the breadth census be recomputed for
+// a past date and checked against a known-good S5FI print.
+//
+// Note `limit` is NOT honoured on this endpoint: the docs give `timeframe` a
+// default of 1Y and a live call for 70 returns 518-755 bars. Callers must slice
+// what they need rather than trust the count.
+export function fetchDailyOhlcRaw(ticker, limit = 150, endDate = null) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (endDate) q.set("end_date", endDate);
+  return uwGet(`/stock/${encodeURIComponent(ticker)}/ohlc/1d?${q}`);
 }
 
 export function fetchIntradayOhlcRaw(ticker, sessionDate, { candleSize = "5m", limit = 500 } = {}) {
@@ -205,8 +214,8 @@ export function fetchIntradayOhlcRaw(ticker, sessionDate, { candleSize = "5m", l
  * normalizeDailyBars (NOT normalizeBars, which requires `start` and would
  * silently drop every row).
  */
-export async function fetchDailyOhlc(ticker, limit = 150) {
-  const raw = await fetchDailyOhlcRaw(ticker, limit);
+export async function fetchDailyOhlc(ticker, limit = 150, endDate = null) {
+  const raw = await fetchDailyOhlcRaw(ticker, limit, endDate);
   return adaptDailyCandles(raw);
 }
 
