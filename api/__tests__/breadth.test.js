@@ -169,3 +169,24 @@ describe("detectPriceGaps — unadjusted corporate actions in the SMA window", (
     expect(detectPriceGaps(mk([100, NaN, 102]))).toEqual([]);
   });
 });
+
+describe("historical window trimming", () => {
+  // Regression for the 2026-08-26 run: end_date=2026-07-01 returned a series whose
+  // last bar was 2026-07-02, built from the 1-2 hours of following-UTC-day tape the
+  // UW docs describe. Comparing that against a known 07-01 value is meaningless,
+  // and the bar's "close" is a partial print rather than a settled one.
+  const bars = [
+    { date: "2026-06-29", c: 10 }, { date: "2026-06-30", c: 11 },
+    { date: "2026-07-01", c: 12 }, { date: "2026-07-02", c: 13 },
+  ];
+
+  it("keeps only sessions at or before the requested date", () => {
+    const trimmed = bars.filter((b) => b.date <= "2026-07-01");
+    expect(trimmed.map((b) => b.date)).toEqual(["2026-06-29", "2026-06-30", "2026-07-01"]);
+    expect(trimmed[trimmed.length - 1].c).toBe(12);
+  });
+
+  it("is a no-op when the series already ends on the requested date", () => {
+    expect(bars.filter((b) => b.date <= "2026-07-02")).toHaveLength(4);
+  });
+});
