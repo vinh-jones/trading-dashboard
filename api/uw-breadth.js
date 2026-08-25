@@ -107,7 +107,13 @@ export default async function handler(req, res) {
     const failures = [];
     for (const ticker of tickers) {
       try {
-        const bars = normalizeDailyBars(await fetchDailyOhlc(ticker, CANDLE_LOOKBACK, asOfDate));
+        let bars = normalizeDailyBars(await fetchDailyOhlc(ticker, CANDLE_LOOKBACK, asOfDate));
+        // UW's end_date is not an inclusive upper bound: the docs note the response
+        // carries 1-2 hours of the FOLLOWING UTC day, which adaptDailyCandles maps
+        // to a whole extra ET session. Asking for 2026-07-01 came back with a
+        // 2026-07-02 bar built from a couple of hours of tape — a partial close
+        // masquerading as a settled one. Trim to the session actually requested.
+        if (asOfDate) bars = bars.filter((b) => b.date <= asOfDate);
         const v = evaluateTicker(bars, SMA_PERIOD);
         // `ticker` and `bars` ride along for the dry-run detail below; summarize
         // ignores extra keys. Without per-ticker output the only observable is the
