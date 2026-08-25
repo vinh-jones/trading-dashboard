@@ -92,6 +92,37 @@ describe("CcWritability panel", () => {
     expect(html).toContain("2026-09-18 (28d)");   // the rung it fell back to
   });
 
+  it("shows each rung's strike and marks the ones that are not at gross basis", () => {
+    // The LRCX shape: front rungs at $325, the 10/16 monthly at $330 because
+    // that expiry lists no $325. Without a strike column the two rows look
+    // identical and a $500-of-appreciation difference is invisible.
+    const shares = 100, contracts = 1, grossBasis = 325;
+    const mk = (dte, strike, mid) => buildRung({
+      target_dte: dte, expiry: `2026-10-${dte}`, dte,
+      basisContract: buildContract({
+        strike, bid: mid - 0.05, ask: mid + 0.05, delta: 0.4, iv: 0.62,
+        open_interest: 900, dte, grossBasis, shares, contracts, priced_from: "chain",
+      }),
+      ladder: [], grossBasis,
+    });
+    const rungs = [mk(10, 325, 8.90), mk(52, 330, 23.00)];
+
+    Object.assign(mockState, {
+      loading: false, error: null,
+      data: { ok: true, per_position: [summarizeTicker({
+        ticker: "LRCX", spot: 313.21, gross_basis: grossBasis, shares, contracts,
+        k_basis: 325, rungs, status: "ok",
+      })] },
+    });
+
+    const html = render();
+    expect(html).toContain("Strike");                 // the column exists
+    expect(html).toContain("$330");                   // the off-basis rung's strike
+    expect(html).toContain("+$500 if assigned");      // what it captures
+    expect(html).toContain("$325–$330");              // header shows the range
+    expect(html).toContain("rates not comparable");   // and says why it matters
+  });
+
   it("renders a message in every empty state rather than nothing at all", () => {
     // The failure mode that reads as "the feature never shipped" is a panel
     // that renders null. It must never do that.

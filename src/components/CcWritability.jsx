@@ -41,6 +41,17 @@ const dollars = v => (v == null ? "—" : `$${Number(v).toFixed(2)}`);
 const pct1    = v => (v == null ? "—" : `${Number(v).toFixed(1)}%`);
 const delta2  = v => (v == null ? "—" : Number(v).toFixed(2));
 
+/**
+ * One strike, or the range the ladder actually priced at. Reading the first
+ * rung's strike as "the" basis strike misdescribes every rung whose expiry
+ * lists a different grid — see k_basis_varies in src/lib/ccWritability.js.
+ */
+function formatKBasis(position) {
+  if (position.k_basis == null) return "—";
+  if (!position.k_basis_varies) return `$${position.k_basis}`;
+  return `$${position.k_basis_min}–$${position.k_basis_max}`;
+}
+
 const cell = { padding: `${theme.space[1]}px ${theme.space[2]}px`, textAlign: "right", whiteSpace: "nowrap" };
 const headCell = {
   ...cell,
@@ -84,6 +95,7 @@ function RungTable({ position }) {
         <tr>
           <th style={{ ...headCell, textAlign: "left" }}>Expiry</th>
           <th style={headCell}>DTE</th>
+          <th style={headCell}>Strike</th>
           <th style={headCell}>Mid</th>
           <th style={headCell}>Premium</th>
           <th style={headCell}>Ann.</th>
@@ -98,10 +110,18 @@ function RungTable({ position }) {
       <tbody>
         {rungs.map(rung => {
           const dim = rung.unpriced || rung.illiquid || rung.suppressed;
+          // A rung whose listed grid has no strike at gross basis prices one
+          // increment up. Its rate is then not comparable to the rest of the
+          // ladder and it no longer returns zero appreciation, so it gets both
+          // a colored strike and the dollars it would capture.
+          const offBasis = rung.strike != null && rung.gain_if_assigned > 0;
           return (
             <tr key={`${rung.target_dte}-${rung.expiry}`} style={{ opacity: dim ? 0.55 : 1 }}>
               <td style={{ ...cell, textAlign: "left", color: theme.text.secondary }}>{rung.expiry ?? "—"}</td>
               <td style={{ ...cell, color: theme.text.secondary }}>{rung.dte ?? "—"}</td>
+              <td style={{ ...cell, color: offBasis ? theme.amber : theme.text.secondary }}>
+                {rung.strike == null ? "—" : `$${rung.strike}`}
+              </td>
               <td style={{ ...cell, color: theme.text.secondary }}>{dollars(rung.mid)}</td>
               <td style={{ ...cell, color: theme.text.primary }}>{money(rung.premium)}</td>
               <td style={{
@@ -124,6 +144,7 @@ function RungTable({ position }) {
               </td>
               <td style={{ ...cell, textAlign: "left", color: theme.text.subtle, fontSize: theme.size.xs }}>
                 {[
+                  offBasis ? `+${money(rung.gain_if_assigned)} if assigned` : null,
                   rung.illiquid ? "illiquid" : null,
                   rung.suppressed ? "earnings" : null,
                   rung.unpriced ? "unpriced" : null,
@@ -240,8 +261,13 @@ function PositionCard({ position }) {
         </span>
         <Badge tier={position.tier} />
         <span style={{ color: theme.text.muted, fontSize: theme.size.sm, fontFamily: theme.font.mono }}>
-          {dollars(position.spot)} vs basis {dollars(position.gross_basis)} · K {position.k_basis != null ? `$${position.k_basis}` : "—"} · {position.contracts ?? 0}c
+          {dollars(position.spot)} vs basis {dollars(position.gross_basis)} · K {formatKBasis(position)} · {position.contracts ?? 0}c
         </span>
+        {position.k_basis_varies && (
+          <span style={{ color: theme.amber, fontSize: theme.size.xs }}>
+            mixed strikes — rates not comparable across rungs
+          </span>
+        )}
         {position.status !== "ok" && (
           <span style={{ color: theme.text.subtle, fontSize: theme.size.xs }}>
             {STATUS_LABEL[position.status] ?? position.status}

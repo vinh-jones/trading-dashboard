@@ -163,6 +163,51 @@ describe("§7 acceptance fixture — IREN 2026-08-21 close reproduces from the c
   });
 });
 
+describe("a ladder that prices at more than one strike", () => {
+  // Live LRCX case: gross basis $325, weeklies quote $2.50 increments so the
+  // front rungs price at $325, but the 10/16 monthly quotes $10 increments with
+  // no $325 — so K_basis there is $330. Both selections are correct per §2.1.
+  // What must not happen is the payload presenting them as one strike: the
+  // rates stop being comparable and the back rung stops returning zero
+  // appreciation.
+  const mkRung = (dte, strike, mid) => buildRung({
+    target_dte: dte, expiry: `exp-${dte}`, dte,
+    basisContract: buildContract({
+      strike, bid: mid - 0.05, ask: mid + 0.05, delta: 0.4, iv: 0.62,
+      open_interest: 900, dte, grossBasis: 325, shares: 100, contracts: 1,
+    }),
+    grossBasis: 325,
+  });
+
+  it("reports the strike range and flags that rates are not comparable", () => {
+    const mixed = summarizeTicker({
+      ticker: "LRCX", spot: 313.21, gross_basis: 325, shares: 100, contracts: 1,
+      k_basis: 325, rungs: [mkRung(10, 325, 8.90), mkRung(52, 330, 23.00)],
+    });
+    expect(mixed.k_basis_varies).toBe(true);
+    expect(mixed.k_basis_min).toBe(325);
+    expect(mixed.k_basis_max).toBe(330);
+  });
+
+  it("gives the off-basis rung a nonzero gain_if_assigned", () => {
+    // §3.2's "exactly zero appreciation" holds only when the strike IS the
+    // basis. At $330 against a $325 basis the rung captures $500, and hiding
+    // that would misstate the trade.
+    expect(mkRung(52, 330, 23.00).gain_if_assigned).toBe(500);
+    expect(mkRung(10, 325, 8.90).gain_if_assigned).toBe(0);
+  });
+
+  it("stays quiet when every rung priced at the same strike", () => {
+    const uniform = summarizeTicker({
+      ticker: "T", spot: 313.21, gross_basis: 325, shares: 100, contracts: 1,
+      k_basis: 325, rungs: [mkRung(10, 325, 8.90), mkRung(52, 325, 25.02)],
+    });
+    expect(uniform.k_basis_varies).toBe(false);
+    expect(uniform.k_basis_min).toBe(325);
+    expect(uniform.k_basis_max).toBe(325);
+  });
+});
+
 describe("§3.2 strike ladder — reported, never gated", () => {
   const payload = irenPayload({ earnings_override: true });
   const rung28 = payload.rungs.find(r => r.dte === 28);

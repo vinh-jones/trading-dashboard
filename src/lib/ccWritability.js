@@ -429,6 +429,16 @@ export function summarizeTicker({
     ? liquidQualifying.reduce((b, r) => (r.dte < b.dte ? r : b))
     : null;
 
+  // A ladder does not always sit at ONE strike. K_basis is "the lowest listed
+  // strike >= gross basis" (§2.1), and listed grids differ by expiry — LRCX
+  // quotes $2.50 increments on its weeklies but $10 on the 10/16 monthly, so
+  // the front rungs price at $325 and the back rung at $330. Selection is
+  // correct in both cases, but the rates are then NOT comparable rung to rung,
+  // and a rung above gross basis no longer returns zero appreciation. Surface
+  // that rather than letting one header strike speak for the whole ladder.
+  const rungStrikes = [...new Set(priced.map(r => r.strike).filter(s => s != null))]
+    .sort((a, b) => a - b);
+
   const near = priced.filter(r =>
     !r.qualifies && r.spot_required != null && spot != null &&
     spot >= r.spot_required * (1 - AMBER_BAND_PCT)
@@ -450,6 +460,12 @@ export function summarizeTicker({
     spot,
     gross_basis,
     k_basis,
+    // The distinct strikes the ladder actually priced at. Equal endpoints mean
+    // one strike throughout; `k_basis_varies` is the flag consumers should read
+    // before comparing rates across rungs.
+    k_basis_min:    rungStrikes.length ? rungStrikes[0] : k_basis,
+    k_basis_max:    rungStrikes.length ? rungStrikes[rungStrikes.length - 1] : k_basis,
+    k_basis_varies: rungStrikes.length > 1,
     shares,
     contracts,
     capital: gross_basis != null && shares != null ? round(gross_basis * shares, 2) : null,
