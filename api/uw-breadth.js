@@ -36,7 +36,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { hasUwKey, fetchSp500Tickers, fetchDailyOhlc } from "./_lib/uwClient.js";
 import { normalizeDailyBars } from "../src/lib/orb/bars.js";
-import { evaluateTicker, summarizeBreadth, asOfForSession, SMA_PERIOD } from "./_lib/breadth.js";
+import { evaluateTicker, summarizeBreadth, asOfForSession, detectPriceGaps, SMA_PERIOD } from "./_lib/breadth.js";
 
 // 70 daily bars to net 50 clean closes — absorbs holidays and any dropped rows.
 const CANDLE_LOOKBACK = 70;
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
         // aggregate, which makes a level disagreement with an external S5FI print
         // impossible to localise — that is exactly the position we were in on
         // 2026-08-22 when our census read ~10pts below TradingView's.
-        verdicts.push(v ? { ...v, ticker, barCount: bars.length } : null);
+        verdicts.push(v ? { ...v, ticker, barCount: bars.length, gaps: detectPriceGaps(bars, SMA_PERIOD) } : null);
       } catch (err) {
         verdicts.push(null);
         failures.push(`${ticker}: ${err.message}`);
@@ -139,11 +139,24 @@ export default async function handler(req, res) {
       // How many names a small SMA error would flip — the sensitivity that decides
       // whether a level disagreement is a real regime read or a data artefact.
       const within = (pct) => detail.filter((d) => Math.abs(d.pctFromSma) <= pct).length;
+
+      // Names carrying an unadjusted split inside the SMA window. These are not
+      // near-the-mean marginal calls — a split-sized gap moves the mean by tens of
+      // percent, so each one is very likely a wrong verdict.
+      const contaminated = verdicts
+        .filter((v) => v && v.gaps.length)
+        .map((v) => ({ ticker: v.ticker, above: v.above, pctFromSma: Math.round(((v.close - v.sma) / v.sma) * 1e6) / 1e4, gaps: v.gaps }));
+
       return res.status(200).json({
         ...summary,
         wrote: false,
         dryRun: true,
         sensitivity: { within_0_25pct: within(0.25), within_0_5pct: within(0.5), within_1pct: within(1) },
+        corporateActions: {
+          contaminated: contaminated.length,
+          countedBelow: contaminated.filter((c) => !c.above).length,
+          worst: contaminated.sort((a, b) => a.pctFromSma - b.pctFromSma).slice(0, 25),
+        },
         unresolved: verdicts.filter((v) => !v).length,
         detail: scoped ? detail : detail.slice(0, 60),
         failures: failures.slice(0, 10),
