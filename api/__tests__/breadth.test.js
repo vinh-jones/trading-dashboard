@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { sma, evaluateTicker, summarizeBreadth, asOfForSession, SMA_PERIOD } from "../_lib/breadth.js";
+import { sma, evaluateTicker, summarizeBreadth, asOfForSession, detectPriceGaps, SMA_PERIOD } from "../_lib/breadth.js";
 
 // Ascending daily bars, oldest first — the shape normalizeDailyBars produces.
 // Real sequential calendar dates so the last bar's date is a date, not a string
@@ -134,5 +134,38 @@ describe("asOfForSession", () => {
 
   it("parses as a real timestamp", () => {
     expect(Number.isFinite(new Date(asOfForSession("2026-08-19")).getTime())).toBe(true);
+  });
+});
+
+describe("detectPriceGaps — unadjusted corporate actions in the SMA window", () => {
+  const mk = (closes) => closes.map((c, i) => ({ date: `2026-08-${String(i + 1).padStart(2, "0")}`, c }));
+
+  // The worked example: IBM 4:3 on 2026-07-14 left it reading 0.66% BELOW its
+  // mean where the adjusted series puts it 6.21% ABOVE.
+  it("flags a 4:3 split", () => {
+    const gaps = detectPriceGaps(mk([290.23, 217.07, 218, 219]));
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].ratio).toBeCloseTo(0.7479, 3);
+  });
+
+  it("flags a reverse split too — the gap is symmetric in log space", () => {
+    expect(detectPriceGaps(mk([10, 100, 101]))).toHaveLength(1);
+  });
+
+  it("ignores ordinary volatility, including a hard earnings gap", () => {
+    expect(detectPriceGaps(mk([100, 108, 95, 102]))).toHaveLength(0);
+    expect(detectPriceGaps(mk([100, 88, 89]))).toHaveLength(0); // -12%, real move
+  });
+
+  it("only looks inside the SMA window, not the whole fetched history", () => {
+    // A split 60 sessions ago no longer affects a 50-day mean.
+    const old = [290, 217, ...Array(60).fill(220)];
+    expect(detectPriceGaps(mk(old), 50)).toHaveLength(0);
+  });
+
+  it("tolerates short, empty, and non-finite input", () => {
+    expect(detectPriceGaps([])).toEqual([]);
+    expect(detectPriceGaps(mk([100]))).toEqual([]);
+    expect(detectPriceGaps(mk([100, NaN, 102]))).toEqual([]);
   });
 });

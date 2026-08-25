@@ -115,6 +115,35 @@ export function summarizeBreadth(verdicts, { requested = null, minCoverage = MIN
 }
 
 /**
+ * Tickers whose SMA window contains a session-over-session gap too large to be a
+ * real price move — the signature of an unadjusted split or reverse split.
+ *
+ * This matters because an unadjusted split leaves pre-split prices in the window
+ * at the old scale, which drags the mean far away from the current price and
+ * flips the ticker's verdict. IBM on 2026-08-25 is the worked example: a 4:3
+ * split on 2026-07-14 left it reading 0.66% BELOW its mean, where the adjusted
+ * series puts it 6.21% ABOVE. Unlike a dividend (tenths of a percent), this is
+ * large enough to flip names nowhere near their mean.
+ *
+ * @param {Array<{date:string,c:number}>} bars ascending, as normalizeDailyBars gives
+ * @param {number} threshold fractional gap, default 0.15
+ */
+export function detectPriceGaps(bars, period = SMA_PERIOD, threshold = 0.15) {
+  if (!Array.isArray(bars) || bars.length < 2) return [];
+  const w = bars.slice(-period);
+  const out = [];
+  for (let i = 1; i < w.length; i++) {
+    const prev = w[i - 1].c, cur = w[i].c;
+    if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0) continue;
+    const ratio = cur / prev;
+    if (Math.abs(Math.log(ratio)) >= Math.abs(Math.log(1 + threshold))) {
+      out.push({ date: w[i].date, from: prev, to: cur, ratio: Math.round(ratio * 10000) / 10000 });
+    }
+  }
+  return out;
+}
+
+/**
  * The `as_of` stamp for a reading, derived from the session it measures rather
  * than from wall-clock time. Makes the write idempotent (a re-run for the same
  * session produces the same stamp) and keeps the freshness gate in api/macro.js
