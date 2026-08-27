@@ -13,7 +13,13 @@ import { PipelineDetailPanel } from "./PipelineDetailPanel";
 export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, setSelectedType, selectedDay, setSelectedDay, captureRate, setCaptureRate }) {
   const { trades: TRADES, positions, account, deleteTrade } = useData();
   const isMobile = useWindowWidth() < 600;
-  const [calMonth, setCalMonth] = useState(MONTHS.length - 1); // default to latest month
+  // Default to the month we're actually in, so a tab added ahead of time
+  // (e.g. Sep while it's still Aug) doesn't open on an empty calendar.
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    const i = MONTHS.findIndex((m) => m.month === now.getMonth() && m.year === now.getFullYear());
+    return i === -1 ? MONTHS.length - 1 : i;
+  });
   const [selectedWeek, setSelectedWeek] = useState(null); // null or week index (0-4)
   const [expandedWeek, setExpandedWeek] = useState(null); // mobile: which week row is expanded
   const [filtersOpen, setFiltersOpen] = useState(false); // mobile: type filter drawer
