@@ -11,6 +11,20 @@ import { IncomeBreakdown } from "./IncomeBreakdown";
 import { RecognitionLedger } from "./RecognitionLedger";
 import { buildRecognitionLedger } from "../lib/incomeRecognition";
 
+/**
+ * Buckets the tracked MONTHS into calendar quarters, so the per-ticker cards
+ * stay readable as months accumulate through the year (9 monthly bars in a
+ * 160px card collide; 4 quarterly ones don't). Only quarters with at least one
+ * tracked month appear.
+ */
+const QUARTERS = MONTHS.reduce((acc, m) => {
+  const qi = Math.floor(m.month / 3);
+  const existing = acc.find((q) => q.q === qi && q.year === m.year);
+  if (existing) existing.months.push(m);
+  else acc.push({ q: qi, year: m.year, label: `Q${qi + 1}`, months: [m] });
+  return acc;
+}, []);
+
 /** Formats a Date as "Jan 1" etc. for the summary line label. */
 function fmtDate(d) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -259,24 +273,28 @@ export function HistoryTab({ selectedTicker, setSelectedTicker, selectedType, se
                 const source = selectedType
                   ? TRADES.filter((t) => t.type === selectedType && t.ticker === ts.ticker)
                   : TRADES.filter((t) => t.ticker === ts.ticker);
-                const monthData = MONTHS.map(({ month, label }) => {
-                  const mTrades = source.filter(
-                    (t) => t.closeDate && t.closeDate.getFullYear() === 2026 && t.closeDate.getMonth() === month
+                const quarterData = QUARTERS.map(({ label, year, months }) => {
+                  const monthSet = months.map((m) => m.month);
+                  const qTrades = source.filter(
+                    (t) => t.closeDate && t.closeDate.getFullYear() === year && monthSet.includes(t.closeDate.getMonth())
                   );
-                  return { label, premium: mTrades.reduce((s, t) => s + t.premium, 0), count: mTrades.length };
+                  const span = months.length === 1
+                    ? months[0].label
+                    : `${months[0].label}–${months[months.length - 1].label}`;
+                  return { label, span, premium: qTrades.reduce((s, t) => s + t.premium, 0), count: qTrades.length };
                 });
-                const maxP = Math.max(...monthData.map((d) => Math.abs(d.premium)), 1);
+                const maxP = Math.max(...quarterData.map((d) => Math.abs(d.premium)), 1);
                 return (
                   /* Q2: gap 4 → space[1] */
                   <div style={{ width: "100%", display: "flex", gap: theme.space[1], justifyContent: "center", height: 60, alignItems: "flex-end" }}>
-                    {monthData.map((md, mi) => {
+                    {quarterData.map((md, mi) => {
                       const h = Math.max(3, (Math.abs(md.premium) / maxP) * 44);
                       const neg = md.premium < 0;
                       return (
                         /* Q2: gap 3 → space[1]; per-bar $ label dropped, value on hover via title */
                         <div
                           key={mi}
-                          title={md.count > 0 ? `${md.label}: ${formatDollars(md.premium)} · ${md.count} trade${md.count === 1 ? "" : "s"}` : `${md.label}: no trades`}
+                          title={md.count > 0 ? `${md.label} (${md.span}): ${formatDollars(md.premium)} · ${md.count} trade${md.count === 1 ? "" : "s"}` : `${md.label} (${md.span}): no trades`}
                           style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: theme.space[1], justifyContent: "flex-end" }}
                         >
                           <div style={{
