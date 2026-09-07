@@ -12,21 +12,28 @@
 //                             Use for cache warmup / EOD cron routes that want
 //                             one last pass 15 min after close to capture
 //                             settled prices, and a pre-market warmup window.
+//
+// Both gate on isTradingDay(), which covers weekends AND NYSE full closures.
+// The Vercel cron expressions can only express day-of-week (`* * 1-5`), so a
+// holiday that falls on a weekday reaches the handler and has to be rejected
+// here — Labor Day 2026 otherwise ran a full alert evaluation against a frozen
+// book and paged on a position that had not moved.
 
-function nowET() {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-}
+import { isTradingDay, todayET, nowMinutesET } from "../src/lib/orb/calendar.js";
+
+const OPEN_MIN           = 9 * 60 + 30;   // 09:30 ET
+const CLOSE_MIN          = 16 * 60;       // 16:00 ET
+const EXTENDED_OPEN_MIN  = 8 * 60 + 30;   // 08:30 ET
+const EXTENDED_CLOSE_MIN = 16 * 60 + 15;  // 16:15 ET
 
 export function isMarketOpen() {
-  const et   = nowET();
-  const day  = et.getDay();                               // 0=Sun, 6=Sat
-  const time = et.getHours() + et.getMinutes() / 60;
-  return day >= 1 && day <= 5 && time >= 9.5 && time <= 16;
+  if (!isTradingDay(todayET())) return false;
+  const mins = nowMinutesET();
+  return mins >= OPEN_MIN && mins <= CLOSE_MIN;
 }
 
 export function isMarketOpenExtended() {
-  const et   = nowET();
-  const day  = et.getDay();
-  const time = et.getHours() + et.getMinutes() / 60;
-  return day >= 1 && day <= 5 && time >= 8.5 && time <= 16.25;
+  if (!isTradingDay(todayET())) return false;
+  const mins = nowMinutesET();
+  return mins >= EXTENDED_OPEN_MIN && mins <= EXTENDED_CLOSE_MIN;
 }

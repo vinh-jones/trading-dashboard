@@ -451,8 +451,11 @@ export async function computeCcWritability({ supabase, positions, todayISO, budg
       continue;
     }
 
-    let spot = quote.mid != null ? Number(quote.mid)
-             : quote.last != null ? Number(quote.last)
+    // `last` first, not `mid`: mid is derived from the book and inherits every
+    // one of its defects, and this spot feeds both the strike ladder and a
+    // pushable alert. See underlyingPrice() in src/lib/focusEngine.js.
+    let spot = quote.last != null ? Number(quote.last)
+             : quote.mid  != null ? Number(quote.mid)
              : null;
 
     if (spot == null && token) {

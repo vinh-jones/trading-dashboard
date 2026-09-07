@@ -27,6 +27,35 @@ const ACCOUNT_ID       = process.env.PUBLIC_COM_ACCOUNT_ID;
 // each cron cycle actually refreshes.
 export const STALE_MS  = 13 * 60 * 1000;
 
+// Widest equity/index book we will still derive a `mid` from, as a fraction of
+// the bid. A closed or halted book quotes a stale, one-sided ask — on Labor Day
+// 2026 Public.com returned CDE bid 21.20 / ask 33.00 against a $21.24 last, and
+// the resulting $27.10 mid read as 29% ITM to the covered-call rule (real: 1.1%)
+// and paged. 10% is far wider than any real cash-session spread on the names we
+// hold, so this only ever rejects a broken book.
+export const MAX_UNDERLYING_SPREAD_PCT = 0.10;
+
+/**
+ * Midpoint for a quote, or null when the book is too broken to derive one.
+ *
+ * Options are exempt from the width check by design — a $0.10 / $0.20 book is
+ * 100% wide and completely normal, and every option consumer already treats mid
+ * as "what it would cost to close", not as a price discovery input. Underlyings
+ * are the opposite: rules compare them to strikes, so a plausible-looking wrong
+ * number is worse than no number. Returning null makes those rules skip the
+ * position (they all guard on a falsy price) instead of firing on fiction.
+ */
+export function computeMid(bid, ask, instrumentType) {
+  if (bid == null || ask == null) return null;
+  if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null;
+  if (ask < bid) return null;   // crossed book — never a usable price
+  const mid = Math.round((bid + ask) / 2 * 100) / 100;
+  if (instrumentType === "OPTION") return mid;
+  if (bid <= 0) return null;
+  if ((ask - bid) / bid > MAX_UNDERLYING_SPREAD_PCT) return null;
+  return mid;
+}
+
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
 function getSupabase() {
@@ -273,7 +302,7 @@ async function refreshQuotes(supabase) {
     .map(q => {
       const bid  = q.bid  != null ? parseFloat(q.bid)  : null;
       const ask  = q.ask  != null ? parseFloat(q.ask)  : null;
-      const mid  = bid != null && ask != null ? Math.round((bid + ask) / 2 * 100) / 100 : null;
+      const mid  = computeMid(bid, ask, q.instrument.type);
       return {
         symbol:          q.instrument.symbol,
         instrument_type: q.instrument.type,

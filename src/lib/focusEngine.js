@@ -42,6 +42,20 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Spot price of an underlying, for rules that compare it to a strike.
+ *
+ * Prefers `last` — an actual print — over `mid`, which is derived from the book
+ * and goes wrong the moment the book does. api/quotes.js now refuses to store an
+ * implausibly wide underlying mid, but that only covers what it writes; rows
+ * already in the table, and any source that fills mid without the guard, still
+ * reach here. Reading `last` first makes the rule right regardless of which side
+ * is stale, and mid stays as the fallback for instruments that never print.
+ */
+function underlyingPrice(quote) {
+  return quote?.last ?? quote?.mid ?? null;
+}
+
 // Build { TICKER -> { date, time, epsEstimate } } from the quotes map.
 // quotes.earnings_date / earnings_meta are refreshed daily by the
 // uw-earnings-dates cron; earnings_meta carries hour + epsEstimate.
@@ -198,7 +212,7 @@ function ruleCCDeeplyITM(positions, quoteMap) {
     const cc = s.active_cc;
     if (!cc || cc.delta == null) continue;
 
-    const stockPrice = quoteMap.get(s.ticker)?.mid;
+    const stockPrice = underlyingPrice(quoteMap.get(s.ticker));
     if (!stockPrice) continue;
 
     if (stockPrice <= cc.strike) continue;
@@ -234,7 +248,7 @@ function ruleCCDeeplyITM(positions, quoteMap) {
 function ruleCSPITMUrgency(positions, quoteMap) {
   const items = [];
   for (const pos of positions.open_csps ?? []) {
-    const stockPrice = quoteMap.get(pos.ticker)?.mid;
+    const stockPrice = underlyingPrice(quoteMap.get(pos.ticker));
     if (!stockPrice) continue;
 
     if (stockPrice >= pos.strike) continue;
@@ -329,7 +343,7 @@ function ruleCushionBreach(positions, quoteMap) {
     if (dte === 0) continue;
 
     const q          = quoteMap.get(pos.ticker);
-    const underlying = q?.mid ?? q?.last ?? null;
+    const underlying = underlyingPrice(q);
     const iv         = q?.iv ?? null;
     if (underlying == null || iv == null) continue;
 

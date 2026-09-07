@@ -268,6 +268,58 @@ describe("generateFocusItems", () => {
   });
 });
 
+// Regression: the Labor Day 2026 CDE page. Public.com returned a frozen
+// bid 21.20 / ask 33.00 book against a $21.24 last, and cc_deeply_itm read the
+// $27.10 midpoint as spot — 29.0% ITM against a 7% threshold, on a position
+// that was actually 1.1% ITM. Rules that compare spot to a strike read `last`.
+describe("underlying price source", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 7, 12, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const cdePositions = () => ({
+    ...emptyPositions(),
+    assigned_shares: [{
+      ticker:           "CDE",
+      cost_basis_total: 60000,
+      positions:        [{ description: "(3000, $20)", fronted: 60000 }],
+      active_cc: {
+        ticker: "CDE", type: "CC", strike: 21, expiry_date: "2026-09-11",
+        open_date: "2026-08-21", contracts: 30, premium_collected: 2700, delta: 0.61,
+      },
+    }],
+  });
+
+  it("does not fire cc_deeply_itm off a blown-out book midpoint", () => {
+    const quoteMap = new Map([
+      ["CDE", { symbol: "CDE", instrument_type: "EQUITY", last: 21.24, bid: 21.2, ask: 33, mid: 27.1 }],
+    ]);
+    const items = generateFocusItems(cdePositions(), {}, null, null, quoteMap);
+    expect(items.find(i => i.rule === "cc_deeply_itm")).toBeUndefined();
+  });
+
+  it("still fires cc_deeply_itm on a genuine move past the threshold", () => {
+    const quoteMap = new Map([
+      ["CDE", { symbol: "CDE", instrument_type: "EQUITY", last: 24.0, bid: 23.98, ask: 24.02, mid: 24.0 }],
+    ]);
+    const items = generateFocusItems(cdePositions(), {}, null, null, quoteMap);
+    const item  = items.find(i => i.rule === "cc_deeply_itm");
+    expect(item).toBeDefined();
+    expect(item.title).toContain("14.3% ITM");
+    expect(item.detail).toContain("$24.00");
+  });
+
+  it("falls back to mid when the quote never printed a last", () => {
+    const quoteMap = new Map([
+      ["CDE", { symbol: "CDE", instrument_type: "EQUITY", last: null, bid: 23.98, ask: 24.02, mid: 24.0 }],
+    ]);
+    const items = generateFocusItems(cdePositions(), {}, null, null, quoteMap);
+    expect(items.find(i => i.rule === "cc_deeply_itm")).toBeDefined();
+  });
+});
+
 describe("categorizeFocusItems", () => {
   it("splits items into focus / watching / info by priority", () => {
     const items = [
