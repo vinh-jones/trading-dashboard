@@ -310,6 +310,38 @@ contract is never `best_rate_rung`, never the recommended strike, and never driv
 **Push copy names the shortest qualifying rung and the best appreciation-preserving strike:**
 `IREN writable — 28d, $50 $1,744 @ 56.8% ann · or $60 $684 @ Δ0.15 keeping $8,000 upside`
 
+#### 3.4a Quote ceiling — a one-sided market is not a price (added 2026-09-21)
+
+The 10% mark above fences **selection**; qualification stays upstream of liquidity by design. That
+leaves a hole: a contract with **no bid** still produces a mid (half the ask), a mid still produces
+an annualized rate, and that rate still tiers the whole ticker **RED** with nothing selectable
+underneath it.
+
+`(ask − bid) / mid` is bounded above by **2.0**, and reaches 2.0 **exactly when the bid is zero**.
+So a "200% spread" is not a wide market — it is a one-sided one, priced off whatever the market
+maker felt like asking.
+
+**Rule:** a contract with spread > `SPREAD_UNUSABLE_PCT` (**0.50**) is marked `quote_unusable` and
+its rung is treated as **unpriced** — it cannot qualify, cannot reach the AMBER band, and cannot
+tier. Bid, ask, spread and the (fictional) rate stay in the payload so the panel shows *why* it was
+dropped rather than silently omitting the rung.
+
+**Calibration** — shadow log 2026-08-24 → 2026-09-21, 390 RED rows:
+
+| | rows |
+|---|---|
+| RED rows total | 390 |
+| RED with **no liquid qualifying rung** | 154 |
+| RED where **every** qualifying rung had a zero bid | **69** |
+
+All 69 are **KTOS (51 of 51 of its RED history)** and **CCJ (18 of 18)** — up to **83.8% annualized
+read off a zero bid**. No other in-scope ticker had a single one. Any ceiling in **0.50–1.00**
+removes exactly those 69 and nothing else, so the constant is not load-bearing inside that band;
+0.50 is the low end of it, still 5× the illiquid mark.
+
+The §7 IREN fixture is untouched — its widest rung is 20.7% (9/11), well under the ceiling, and
+stays illiquid-but-real.
+
 ---
 
 ## 4. Anti-fatigue

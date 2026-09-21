@@ -36,6 +36,30 @@ export const AMBER_BAND_PCT = 0.05;     // spot within 5% of qualifying → AMBE
 export const SPREAD_ILLIQUID_PCT = 0.10;
 export const OI_ILLIQUID_MIN     = 500;
 
+/**
+ * Quote ceiling. Above this the mid is not a price at all and the rung is
+ * treated as UNPRICED — so it cannot qualify, cannot tier, and cannot fire.
+ *
+ * `(ask - bid) / mid` is bounded above by 2.0, and it reaches 2.0 exactly when
+ * the bid is zero. So a "200% spread" is not a wide market, it is a one-sided
+ * market: the mid is half the ask, and the ask on a no-bid contract is whatever
+ * the market maker feels like quoting. Reading an annualized rate off that is
+ * reading a rate off a number nobody offered.
+ *
+ * The 10% illiquid mark cannot do this job. It fences SELECTION — an illiquid
+ * rung is never best_rate_rung and never pushes — but qualification is
+ * deliberately upstream of liquidity (§3.4), so a fabricated mid still tiers
+ * the whole ticker RED with nothing selectable underneath it.
+ *
+ * Calibrated against the shadow log, 2026-08-24 → 2026-09-21, 390 RED rows:
+ * 69 had NO qualifying rung with a bid, and all 69 were KTOS (51/51 of its RED
+ * history) and CCJ (18/18) — reading up to 83.8% annualized off a zero bid. No
+ * other in-scope ticker had one. Any ceiling in 0.50–1.00 removes exactly those
+ * 69 and nothing else, so the number is not load-bearing inside that band; 0.50
+ * is the low end of it, still 5x the illiquid mark.
+ */
+export const SPREAD_UNUSABLE_PCT = 0.50;
+
 // Strike ladder (§3.2): K_basis plus the next 4 LISTED strikes. Increments
 // vary by name and by price level, so this walks the listed grid rather than
 // adding fixed offsets.
@@ -135,7 +159,11 @@ export function contractLiquidity({ bid, ask, mid, open_interest }) {
   const thin     = oi != null && oi < OI_ILLIQUID_MIN;
   const illiquid = Boolean(wide || thin);
 
-  return { spread_pct: round(spread_pct, 4), open_interest: oi, illiquid };
+  // Past the ceiling the mid stops being a price. Separate from `illiquid`
+  // because it means something stronger: not "hard to trade" but "not quoted".
+  const quote_unusable = Boolean(spread_pct != null && spread_pct > SPREAD_UNUSABLE_PCT);
+
+  return { spread_pct: round(spread_pct, 4), open_interest: oi, illiquid, quote_unusable };
 }
 
 // ── Rate math ───────────────────────────────────────────────────────────────
@@ -198,6 +226,7 @@ export function buildContract({
     spread_pct:            liq.spread_pct,
     open_interest:         liq.open_interest,
     illiquid:              liq.illiquid,
+    quote_unusable:        liq.quote_unusable,
     delta:                 num(delta),
     iv:                    num(iv),
     premium:               round(premium, 2),
@@ -314,7 +343,13 @@ export function buildRung({
 }) {
   const priced   = basisContract?.priced_from ?? "unpriced";
   const rate     = basisContract?.ror_annualized ?? null;
-  const unpriced = priced === "unpriced" || rate == null;
+
+  // A quote past SPREAD_UNUSABLE_PCT is not a quote (see the constant). Its
+  // rate is arithmetic on a fabricated mid, so the rung is unpriced: it cannot
+  // qualify, cannot reach the AMBER band, and cannot tier the ticker. The
+  // numbers stay on the rung so the panel can show WHY it was dropped.
+  const quote_unusable = basisContract?.quote_unusable === true;
+  const unpriced = priced === "unpriced" || rate == null || quote_unusable;
 
   // Forward-looking only: quotes.earnings_date is the NEXT report, but a stale
   // row can leave a past date sitting there, and suppressing rungs against an
@@ -339,6 +374,7 @@ export function buildRung({
     dte,
     priced_from: priced,
     unpriced,
+    quote_unusable,
     qualifies,
     spot_required,
     earnings_date,

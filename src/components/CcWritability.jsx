@@ -136,7 +136,10 @@ function RungTable({ position }) {
               <td style={{ ...cell, color: theme.text.muted }}>
                 {rung.iv == null ? "—" : `${(rung.iv * 100).toFixed(0)}%`}
               </td>
-              <td style={{ ...cell, color: rung.illiquid ? theme.amber : theme.text.muted }}>
+              <td style={{
+                ...cell,
+                color: rung.quote_unusable ? theme.red : rung.illiquid ? theme.amber : theme.text.muted,
+              }}>
                 {rung.spread_pct == null ? "—" : `${(rung.spread_pct * 100).toFixed(1)}%`}
               </td>
               <td style={{ ...cell, color: theme.text.muted }}>
@@ -145,9 +148,12 @@ function RungTable({ position }) {
               <td style={{ ...cell, textAlign: "left", color: theme.text.subtle, fontSize: theme.size.xs }}>
                 {[
                   offBasis ? `+${money(rung.gain_if_assigned)} if assigned` : null,
-                  rung.illiquid ? "illiquid" : null,
+                  // A one-sided market outranks "illiquid": it is why the rate
+                  // in the Ann. column is not a rate, so say that instead.
+                  rung.quote_unusable ? "no bid — mid not a price" : null,
+                  rung.illiquid && !rung.quote_unusable ? "illiquid" : null,
                   rung.suppressed ? "earnings" : null,
-                  rung.unpriced ? "unpriced" : null,
+                  rung.unpriced && !rung.quote_unusable ? "unpriced" : null,
                   rung.priced_from === "model" ? "modeled" : null,
                 ].filter(Boolean).join(" · ") || "—"}
               </td>
@@ -207,7 +213,10 @@ function StrikeLadder({ rung, grossBasis }) {
                 {money(c.gain_if_assigned)}
               </td>
               <td style={{ ...cell, color: theme.text.primary }}>{money(c.total_if_assigned)}</td>
-              <td style={{ ...cell, color: c.illiquid ? theme.amber : theme.text.muted }}>
+              <td style={{
+                ...cell,
+                color: c.quote_unusable ? theme.red : c.illiquid ? theme.amber : theme.text.muted,
+              }}>
                 {c.spread_pct == null ? "—" : `${(c.spread_pct * 100).toFixed(1)}%`}
               </td>
               <td style={{ ...cell, color: theme.text.muted }}>

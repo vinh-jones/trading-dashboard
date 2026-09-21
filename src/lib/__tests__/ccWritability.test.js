@@ -5,6 +5,7 @@ import {
   pickBasisStrike,
   ladderStrikes,
   contractLiquidity,
+  SPREAD_UNUSABLE_PCT,
   buildContract,
   buildRung,
   summarizeTicker,
@@ -333,6 +334,74 @@ describe("liquidity fencing (§3.4)", () => {
     const unknownOi = contractLiquidity({ bid: 2.15, ask: 2.21, open_interest: null });
     expect(unknownOi.illiquid).toBe(false);
     expect(unknownOi.open_interest).toBeNull();
+  });
+});
+
+describe("the quote ceiling — a one-sided market is not a price", () => {
+  // KTOS's whole RED history looked like this: a zero bid, an ask the market
+  // maker picked, and a mid halfway between the two reading 80%+ annualized.
+  const zeroBid = buildRung({
+    target_dte: 7, expiry: "2026-08-28", dte: 7,
+    basisContract: buildContract({
+      strike: 75, bid: 0, ask: 1.20, delta: 0.1, iv: 0.6,
+      open_interest: 900, dte: 7, grossBasis: 75, shares: 400, contracts: 4,
+    }),
+    grossBasis: 75,
+  });
+
+  it("puts a zero bid at exactly the 200% ceiling case", () => {
+    // (ask - bid) / mid is bounded by 2.0 and hits it only when bid is 0.
+    expect(zeroBid.spread_pct).toBeCloseTo(2, 6);
+    expect(zeroBid.quote_unusable).toBe(true);
+  });
+
+  it("refuses to qualify or tier on a fabricated mid", () => {
+    // The arithmetic still clears the gate — that is the whole trap.
+    expect(zeroBid.ror_annualized).toBeGreaterThan(ROR_ANN_MIN);
+    expect(zeroBid.qualifies).toBe(false);
+    expect(zeroBid.unpriced).toBe(true);
+
+    const payload = summarizeTicker({
+      ticker: "KTOS", spot: 70, gross_basis: 75, shares: 400, contracts: 4,
+      k_basis: 75, rungs: [zeroBid],
+    });
+    // Neither RED nor AMBER: an unpriced rung cannot reach the band either.
+    expect(payload.tier).toBeNull();
+    expect(payload.pushable).toBe(false);
+    expect(payload.best_rate_rung).toBeNull();
+  });
+
+  it("leaves the numbers on the rung so the panel can show why", () => {
+    expect(zeroBid.bid).toBe(0);
+    expect(zeroBid.ask).toBe(1.2);
+    expect(zeroBid.ror_annualized).not.toBeNull();
+  });
+
+  it("keeps the ceiling well clear of a merely wide two-sided market", () => {
+    // 0.60/0.90 is 40% wide — illiquid, unpushable, but a real quote that
+    // still tiers. Only the ceiling changes that verdict.
+    const wide = contractLiquidity({ bid: 0.60, ask: 0.90, open_interest: 9000 });
+    expect(wide.illiquid).toBe(true);
+    expect(wide.quote_unusable).toBe(false);
+    expect(wide.spread_pct).toBeLessThan(SPREAD_UNUSABLE_PCT);
+
+    const broken = contractLiquidity({ bid: 0.10, ask: 0.90, open_interest: 9000 });
+    expect(broken.quote_unusable).toBe(true);
+  });
+
+  it("never marks a modeled rung unusable — a model has no bid or ask", () => {
+    const modeled = buildRung({
+      target_dte: 28, expiry: "2026-09-18", dte: 28,
+      basisContract: buildContract({
+        strike: 75, bid: null, ask: null, mid: 2.4, delta: 0.3, iv: 0.6,
+        open_interest: null, dte: 28, grossBasis: 75, shares: 400, contracts: 4,
+        priced_from: "model",
+      }),
+      grossBasis: 75,
+    });
+    expect(modeled.spread_pct).toBeNull();
+    expect(modeled.quote_unusable).toBe(false);
+    expect(modeled.qualifies).toBe(true);
   });
 });
 
