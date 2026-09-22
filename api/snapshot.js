@@ -36,6 +36,7 @@ import {
 import { sendCcWritabilityDigest } from "./_lib/ccWritabilityDigest.js";
 import { buildMacroPayload } from "./macro.js";
 import { buildMacroSnapshotRow } from "./_lib/macroSnapshotRow.js";
+import { writeShareExposure } from "./_lib/shareExposure.js";
 
 const ASSIGNED_INCOME_CACHE_KEY    = "assigned_share_income_latest";
 const ASSIGNED_INCOME_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -384,6 +385,17 @@ export default async function handler(req, res) {
     console.error("[api/snapshot] risk snapshot unexpected error:", riskErr.message);
   }
 
+  // 9d. Assigned-share exposure series (docs/spec_share_exposure_daily_v1.md).
+  // Today's row is 'live'; any calendar days missing since the last row
+  // (weekends — this cron is Mon–Fri — or a missed run) are reconstructed from
+  // the lot ledger by the same algorithm. Non-blocking.
+  let shareExposure = null;
+  try {
+    shareExposure = await writeShareExposure({ supabase, positions, today });
+  } catch (expErr) {
+    console.error("[api/snapshot] share_exposure_daily write failed (non-blocking):", expErr.message);
+  }
+
   // 10. Fetch macro signals and write to macro_snapshots
   // Wrapped in try/catch — a macro failure must NOT fail the portfolio snapshot.
   try {
@@ -455,6 +467,12 @@ export default async function handler(req, res) {
       on_target:   assignedShareIncome.aggregate.total_monthly_income_on_target,
       off_target:  assignedShareIncome.aggregate.delta_off_target_count,
       positions:   assignedShareIncome.per_position.length,
+    } : null,
+    share_exposure: shareExposure ? {
+      written:            shareExposure.written,
+      shares_basis_total: shareExposure.today?.shares_basis_total,
+      shares_basis_pct:   shareExposure.today?.shares_basis_pct,
+      conflicts:          shareExposure.conflicts,
     } : null,
     notifications,
   });
