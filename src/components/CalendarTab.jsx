@@ -677,7 +677,7 @@ export function CalendarTab({ selectedTicker, setSelectedTicker, selectedType, s
                 transition: "all 0.15s",
               }}
             >
-              {m.label} 2026
+              {m.label} {m.year}
             </button>
           ))}
         </div>

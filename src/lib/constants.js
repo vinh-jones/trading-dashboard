@@ -19,20 +19,20 @@ export const SUBTYPE_LABELS = {
   Exit:        "Position Exit",
 };
 
-export const MONTHS = [
-  { label: "Jan", month: 0, year: 2026 },
-  { label: "Feb", month: 1, year: 2026 },
-  { label: "Mar", month: 2, year: 2026 },
-  { label: "Apr", month: 3, year: 2026 },
-  { label: "May", month: 4, year: 2026 },
-  { label: "Jun", month: 5, year: 2026 },
-  { label: "Jul", month: 6, year: 2026 },
-  { label: "Aug", month: 7, year: 2026 },
-  { label: "Sep", month: 8, year: 2026 },
-  { label: "Oct", month: 9, year: 2026 },
-];
+// Every month from Jan 2026 (start of tracked history) through the current
+// month, so a new month's tab appears on its own when the calendar rolls over.
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const MONTHS = (() => {
+  const now = new Date();
+  const out = [];
+  for (let year = 2026, month = 0; year < now.getFullYear() || (year === now.getFullYear() && month <= now.getMonth()); ) {
+    out.push({ label: MONTH_LABELS[month], month, year });
+    if (++month === 12) { month = 0; year++; }
+  }
+  return out;
+})();
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const VERSION = "1.188.0";
+export const VERSION = "1.189.0";
 

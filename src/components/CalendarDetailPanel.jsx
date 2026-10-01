@@ -269,8 +269,8 @@ export function CalendarDetailPanel({
           {selectedDay
             ? new Date(selectedDay + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
             : selectedWeek != null
-              ? `Week ${selectedWeek + 1} — ${MONTHS[calMonth].label} 2026`
-              : `${MONTHS[calMonth].label} 2026 — All Transactions`}
+              ? `Week ${selectedWeek + 1} — ${MONTHS[calMonth].label} ${MONTHS[calMonth].year}`
+              : `${MONTHS[calMonth].label} ${MONTHS[calMonth].year} — All Transactions`}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: theme.space[3] }}>
           {selectedDay && displayClosed.length > 0 && dailyData[selectedDay] && (
