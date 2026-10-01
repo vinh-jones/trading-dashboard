@@ -29,9 +29,10 @@ export const MONTHS = [
   { label: "Jul", month: 6, year: 2026 },
   { label: "Aug", month: 7, year: 2026 },
   { label: "Sep", month: 8, year: 2026 },
+  { label: "Oct", month: 9, year: 2026 },
 ];
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export const VERSION = "1.187.0";
+export const VERSION = "1.188.0";
 
