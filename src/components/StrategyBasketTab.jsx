@@ -442,15 +442,27 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
         const maxAbs = Math.max(Math.abs(basketGain), Math.abs(holdGain), 1);
         const delta  = basketGain - holdGain;
 
-        const CmpRow = (label, value) => (
-          <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], marginBottom: theme.space[1] }}>
-            <span style={{ width: 150, fontSize: theme.size.sm, color: theme.text.secondary }}>{label}</span>
-            <span style={{ width: 80, textAlign: "right", fontFamily: theme.font.mono, fontSize: theme.size.sm, color: value >= 0 ? theme.green : theme.red }}>{fmtMoney(value)}</span>
-            <div style={{ flex: 1, height: 8, background: theme.bg.base, borderRadius: theme.radius.pill, overflow: "hidden" }}>
-              <div style={{ width: `${(Math.abs(value) / maxAbs) * 100}%`, height: "100%", background: value >= 0 ? theme.green : theme.red, transition: "width 0.3s" }} />
+        // Diverging bar around a $0 center line: gains grow right, losses grow
+        // left. A left-anchored bar reads a loss as "progress" toward the gain.
+        const CmpRow = (label, value) => {
+          const pct = `${(Math.abs(value) / maxAbs) * 100}%`;
+          const fill = { width: pct, height: "100%", background: value >= 0 ? theme.green : theme.red, transition: "width 0.3s" };
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], marginBottom: theme.space[1] }}>
+              <span style={{ width: 150, fontSize: theme.size.sm, color: theme.text.secondary }}>{label}</span>
+              <span style={{ width: 80, textAlign: "right", fontFamily: theme.font.mono, fontSize: theme.size.sm, color: value >= 0 ? theme.green : theme.red }}>{fmtMoney(value)}</span>
+              <div style={{ flex: 1, display: "flex", height: 8 }}>
+                <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", background: theme.bg.base, borderRadius: `${theme.radius.pill}px 0 0 ${theme.radius.pill}px`, overflow: "hidden" }}>
+                  {value < 0 && <div style={fill} />}
+                </div>
+                <div style={{ width: 2, height: 14, alignSelf: "center", background: theme.border.strong }} />
+                <div style={{ flex: 1, display: "flex", background: theme.bg.base, borderRadius: `0 ${theme.radius.pill}px ${theme.radius.pill}px 0`, overflow: "hidden" }}>
+                  {value >= 0 && <div style={fill} />}
+                </div>
+              </div>
             </div>
-          </div>
-        );
+          );
+        };
 
         return (
           <div style={{ marginBottom: theme.space[5], padding: theme.space[3], background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md }}>
@@ -459,7 +471,7 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>since {fmtDate(baseline.closeDate ?? baseline.openDate)}</span>
             </div>
             {CmpRow("Makeup basket", basketGain)}
-            {CmpRow(`Hold ${baseline.contracts != null ? baseline.contracts.toLocaleString() : "?"} @ $${baseline.exitCost}`, holdGain)}
+            {CmpRow(`If held ${baseline.contracts != null ? baseline.contracts.toLocaleString() : "?"} @ $${baseline.exitCost}`, holdGain)}
             <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginTop: theme.space[2] }}>
               → {delta >= 0 ? "Makeup" : "Holding"} ahead by {fmtMoney(Math.abs(delta))}
             </div>
