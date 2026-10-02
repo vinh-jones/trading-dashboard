@@ -142,7 +142,6 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
   // strategy. Null budget = no baseline, so there's nothing to measure against.
   const budget    = basketCapitalBudget(members);
   const runway    = budget == null ? null : budget - deployed;
-  const usedPct   = budget > 0 ? Math.min(100, (deployed / budget) * 100) : 0;
   const realized  = realizedRecovery(members);
   const cushion   = unrealizedCushion(members, quoteMap);
 
@@ -350,13 +349,6 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
     );
   };
 
-  // Stacked progress: locked-in realized fill + paper unrealized fill toward target.
-  const clampPct = (v) => Math.max(0, Math.min(100, v));
-  const realizedFill   = target > 0 ? clampPct((Math.max(0, realized) / target) * 100) : 0;
-  const cushionPos     = Math.max(0, cushion.total);
-  const combinedFill   = target > 0 ? clampPct(((Math.max(0, realized) + cushionPos) / target) * 100) : 0;
-  const unrealizedFill = Math.max(0, combinedFill - realizedFill);
-
   if (strategyTags.length === 0) {
     return <div style={{ padding: theme.space[5], color: theme.text.muted }}>No positions tagged with a <code>strategy:</code> tag yet.</div>;
   }
@@ -396,38 +388,9 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
         />
       </div>
 
-      {/* Progress bar: realized (solid) + unrealized cushion (lighter) stacked toward target */}
-      {target > 0 ? (
-        <div style={{ marginBottom: theme.space[5] }}>
-          <div style={{ display: "flex", height: 10, background: theme.bg.surface, borderRadius: theme.radius.pill, overflow: "hidden", border: `1px solid ${theme.border.default}` }}>
-            <div style={{ width: `${realizedFill}%`, height: "100%", background: theme.green, transition: "width 0.3s" }} />
-            <div style={{ width: `${unrealizedFill}%`, height: "100%", background: theme.green, opacity: 0.35, transition: "width 0.3s" }} />
-          </div>
-          <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
-            {fmtMoney(realized)} realized + {fmtMoney(cushion.total)} unrealized of {fmtMoney(target)} ({combinedFill.toFixed(1)}%)
-            {cushion.unmarked > 0 ? ` · ${cushion.unmarked} position${cushion.unmarked > 1 ? "s" : ""} unmarked` : ""}
-          </div>
-        </div>
-      ) : (
+      {!(target > 0) && (
         <div style={{ fontSize: theme.size.xs, color: theme.text.subtle, marginBottom: theme.space[5] }}>
-          No baseline set — tag the loss trade with <code>role:makeup-baseline</code> to enable the progress bar.
-        </div>
-      )}
-
-      {/* Capital runway: how much of the baseline's capital is currently committed.
-          Separate bar from the recovery one above — that measures progress toward
-          earning the loss back, this measures how much is left to deploy. */}
-      {budget > 0 && (
-        <div style={{ marginBottom: theme.space[5] }}>
-          <div style={{ display: "flex", height: 10, background: theme.bg.surface, borderRadius: theme.radius.pill, overflow: "hidden", border: `1px solid ${theme.border.default}` }}>
-            <div style={{ width: `${usedPct}%`, height: "100%", background: runway < 0 ? theme.red : theme.blue, transition: "width 0.3s" }} />
-          </div>
-          <div style={{ fontSize: theme.size.xs, color: theme.text.muted, marginTop: theme.space[1] }}>
-            {fmtMoney(deployed)} deployed of {fmtMoney(budget)} ({usedPct.toFixed(1)}%)
-            {runway < 0
-              ? ` · ${fmtMoney(Math.abs(runway))} over budget`
-              : ` · ${fmtMoney(runway)} left to deploy`}
-          </div>
+          No baseline set — tag the loss trade with <code>role:makeup-baseline</code> to enable the comparison.
         </div>
       )}
 
@@ -439,30 +402,36 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
         const holdGain = holdCounterfactual(baseline, cur);
         if (holdGain == null) return null;
         const basketGain = realized + cushion.total;
-        const maxAbs = Math.max(Math.abs(basketGain), Math.abs(holdGain), 1);
         const delta  = basketGain - holdGain;
+        const toGo   = target > 0 ? target - basketGain : null;
 
-        // Diverging bar around a $0 center line: gains grow right, losses grow
-        // left. A left-anchored bar reads a loss as "progress" toward the gain.
-        const CmpRow = (label, value) => {
-          const pct = `${(Math.abs(value) / maxAbs) * 100}%`;
-          const fill = { width: pct, height: "100%", background: value >= 0 ? theme.green : theme.red, transition: "width 0.3s" };
-          return (
-            <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], marginBottom: theme.space[1] }}>
-              <span style={{ width: 150, fontSize: theme.size.sm, color: theme.text.secondary }}>{label}</span>
-              <span style={{ width: 80, textAlign: "right", fontFamily: theme.font.mono, fontSize: theme.size.sm, color: value >= 0 ? theme.green : theme.red }}>{fmtMoney(value)}</span>
-              <div style={{ flex: 1, display: "flex", height: 8 }}>
-                <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", background: theme.bg.base, borderRadius: `${theme.radius.pill}px 0 0 ${theme.radius.pill}px`, overflow: "hidden" }}>
-                  {value < 0 && <div style={fill} />}
-                </div>
-                <div style={{ width: 2, height: 14, alignSelf: "center", background: theme.border.strong }} />
-                <div style={{ flex: 1, display: "flex", background: theme.bg.base, borderRadius: `0 ${theme.radius.pill}px ${theme.radius.pill}px 0`, overflow: "hidden" }}>
-                  {value >= 0 && <div style={fill} />}
-                </div>
-              </div>
+        // One shared axis from the deepest loss to the recovery target, with a
+        // $0 tick wherever it lands. Losses grow left of $0, gains right; the
+        // left edge is the end of the red bar, so no empty negative space.
+        const lo = Math.min(0, basketGain, holdGain);
+        const hi = Math.max(0, basketGain, holdGain, target > 0 ? target : 0);
+        const span = hi - lo || 1;
+        const x = (v) => ((v - lo) / span) * 100;
+        const bar = (from, to) => ({ position: "absolute", top: 0, bottom: 0, left: `${x(from)}%`, width: `${x(to) - x(from)}%`, transition: "left 0.3s, width 0.3s" });
+
+        // extra: optional segment drawn after the fill (the basket's remaining
+        // distance to target, as an outlined "still to earn" stretch).
+        const CmpRow = (label, value, extra) => (
+          <div style={{ display: "flex", alignItems: "center", gap: theme.space[3], marginBottom: theme.space[1] }}>
+            <span style={{ width: 150, fontSize: theme.size.sm, color: theme.text.secondary }}>{label}</span>
+            <span style={{ width: 80, textAlign: "right", fontFamily: theme.font.mono, fontSize: theme.size.sm, color: value >= 0 ? theme.green : theme.red }}>{fmtMoney(value)}</span>
+            <div style={{ flex: 1, position: "relative", height: 8 }}>
+              <div style={{ position: "absolute", inset: 0, background: theme.bg.base, borderRadius: theme.radius.pill }} />
+              {extra}
+              <div style={{ ...bar(Math.min(0, value), Math.max(0, value)), background: value >= 0 ? theme.green : theme.red, borderRadius: theme.radius.pill }} />
+              <div style={{ position: "absolute", top: -3, bottom: -3, left: `${x(0)}%`, width: 2, marginLeft: -1, background: theme.border.strong }} />
             </div>
-          );
-        };
+          </div>
+        );
+
+        const toGoSeg = toGo > 0 && (
+          <div style={{ ...bar(Math.max(0, basketGain), target), boxSizing: "border-box", border: `1px dashed ${theme.text.subtle}`, borderRadius: theme.radius.pill }} />
+        );
 
         return (
           <div style={{ marginBottom: theme.space[5], padding: theme.space[3], background: theme.bg.surface, border: `1px solid ${theme.border.default}`, borderRadius: theme.radius.md }}>
@@ -470,10 +439,14 @@ export function StrategyBasketTab({ initialTag = null, entries = [], onEntriesCh
               <span style={{ fontSize: theme.size.xs, color: theme.text.muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>vs. holding {baseline.ticker}</span>
               <span style={{ fontSize: theme.size.xs, color: theme.text.subtle }}>since {fmtDate(baseline.closeDate ?? baseline.openDate)}</span>
             </div>
-            {CmpRow("Makeup basket", basketGain)}
+            {CmpRow("Makeup basket", basketGain, toGoSeg)}
             {CmpRow(`If held ${baseline.contracts != null ? baseline.contracts.toLocaleString() : "?"} @ $${baseline.exitCost}`, holdGain)}
             <div style={{ fontSize: theme.size.sm, color: theme.text.secondary, marginTop: theme.space[2] }}>
               → {delta >= 0 ? "Makeup" : "Holding"} ahead by {fmtMoney(Math.abs(delta))}
+              {toGo != null && (toGo > 0
+                ? ` · ${fmtMoney(toGo)} to go to the ${fmtMoney(target)} target (${((basketGain / target) * 100).toFixed(0)}%)`
+                : ` · ${fmtMoney(target)} target reached`)}
+              {cushion.unmarked > 0 ? ` · ${cushion.unmarked} position${cushion.unmarked > 1 ? "s" : ""} unmarked` : ""}
             </div>
             <div style={{ fontSize: theme.size.xs, color: theme.text.faint ?? theme.text.subtle, marginTop: theme.space[1] }}>
               Mark-to-market since the pivot · not capital-matched · excludes covered-call premium the shares would have earned
